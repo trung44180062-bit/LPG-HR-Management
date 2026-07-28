@@ -1,0 +1,47 @@
+/* LPGT Cong Ca v4 — module IN DON (A5 ngang / 2up A4 doc) */
+/* print module — form khổ A5 NGANG (như file Excel gốc: paperSize A5 landscape).
+   Bố cục mặc định "2up": 2 form xếp DỌC trên 1 tờ A4 đứng (mỗi nửa A4 ≈ 1 tờ A5 ngang) → tiết kiệm giấy.
+   Bố cục "a5": mỗi form 1 trang, @page đổi động sang A5 landscape (xem #pageDyn). */
+#printRoot{display:none}
+@media print{
+  html,body{background:#fff}
+  body>*:not(#printRoot){display:none!important}
+  #printRoot{display:block!important;color:#000}
+  #printRoot *{color:#000!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .print-page{page-break-after:always}
+  .print-page:last-child{page-break-after:auto}
+  .form-a5{width:100%;height:132mm;font-size:8.5pt;overflow:hidden;color:#000;font-family:'Times New Roman',Georgia,serif;box-sizing:border-box;padding:2mm 3mm}
+  .form-a5+.form-a5{border-top:1px dashed #999;margin-top:3mm;padding-top:4mm} /* vạch cắt đôi tờ A4 */
+  #printRoot.layout-a5 .form-a5{height:auto;min-height:126mm;font-size:9.5pt}
+  #printRoot.layout-a5 .form-a5+.form-a5{border-top:none;margin-top:0}
+  #printRoot.layout-a5 .pp-tbl{font-size:9pt}
+}
+.pp-top{display:flex;align-items:flex-start;gap:6px;margin-bottom:2px}
+.pp-logo{width:32mm;height:auto;object-fit:contain;flex-shrink:0}
+.pp-titles{flex:1;text-align:center}
+.pp-date{font-size:7.5pt;text-align:right;white-space:nowrap;flex-shrink:0}
+.pp-title{font-weight:700;font-size:11.5pt;text-transform:uppercase}
+.pp-title .en{display:block;font-size:9pt;font-style:italic;font-weight:600;text-transform:none}
+.pp-tbl{width:100%;border-collapse:collapse;margin-top:6px;font-size:7.8pt}
+.pp-tbl th,.pp-tbl td{border:1px solid #000;padding:2px 3px;text-align:center}
+.pp-tbl td.l{text-align:left}
+.pp-sign{display:flex;justify-content:space-between;margin-top:14px;gap:4px}
+.pp-sign .b{flex:1;text-align:center;font-size:7.5pt}
+.pp-sign .b .t{font-weight:700;margin-bottom:16px}
+.pp-sign .b .en2{font-weight:400;font-style:italic}
+.pp-legend{font-size:7pt;margin-top:6px;line-height:1.5}
+.pp-legend-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:0 6px;font-size:6.8pt}
+.pp-legend-grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:0 6px;font-size:6.8pt}
+.pp-wt-reason{font-size:7pt;text-align:left;line-height:1.6}
+.form-a5.solo .pp-tbl{font-size:10pt}
+.form-a5.solo .pp-legend,.form-a5.solo .pp-legend-grid,.form-a5.solo .pp-legend-grid2,.form-a5.solo .pp-wt-reason{font-size:9pt}
+.print-modal-list{max-height:38vh;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:6px}
+.print-modal-list label{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;padding:5px 2px;border-bottom:1px dashed var(--line)}
+/* mobile: input to hơn, dễ chạm; bảng phụ cho cuộn ngang trong khung */
+@media(max-width:767px){
+  .inp,select.inp,textarea.inp{min-height:44px}
+  textarea.inp{min-height:66px}
+  .req .acts .btn{min-height:44px;flex:1}
+  #v-mp .tbl,#v-stats .stbl,#v-setup .tbl,#v-data .tbl{display:block}
+  .card{overflow-x:auto}
+}
