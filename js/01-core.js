@@ -47,7 +47,9 @@ let S={
   meta:{schedFrom:'',schedTo:''},
   rev:0
 };
-let mgr=false, fb=null, fbRef=null, applyingRemote=false, curCell=null, curView='cal';
+/* mgr = được duyệt đơn & sửa lịch (quyền 'appr' hoặc 'admin')
+   adm = quản trị toàn quyền (quyền 'admin') — suy ra từ cột Quyền trong danh sách nhân viên */
+let mgr=false, adm=false, fb=null, fbRef=null, applyingRemote=false, curCell=null, curView='cal';
 /* v4 mobile cal state */
 let calMode='std', calMobileView='week', calDate=null, calCollapsed={};
 const isMobile=()=>window.matchMedia('(max-width:767px)').matches;

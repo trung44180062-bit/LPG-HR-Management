@@ -55,7 +55,36 @@ function hashPw(id,pw){return sha256(unescape(encodeURIComponent(id+'|'+pw)));}
    acc.init === true  →  vẫn đang dùng mật khẩu mặc định (hiện banner nhắc đổi).
    ==================================================================== */
 const SESS=LS+'_sess';
-const MGR_SESS=LS+'_mgr';
+
+/* ===================== PHÂN QUYỀN =====================
+   Không còn chế độ Quản lý mở bằng PIN. Quyền khai báo ngay trong danh sách
+   nhân viên (tab Nhóm & Lịch), lưu ở trường e.perm:
+     'staff' — nhân viên thường (mặc định)
+     'appr'  — duyệt đơn: thấy tab Duyệt, sửa lịch thực tế, in đơn
+     'admin' — quản trị: thêm Nhóm & Lịch, Dữ liệu, cấp/reset mật khẩu
+   ROOT_ADMIN luôn là quản trị để còn người cấp quyền cho những người khác.
+   ====================================================== */
+const ROOT_ADMIN='vc44180062';
+const PERM_LABEL={staff:'Nhân viên',appr:'Duyệt đơn',admin:'Quản trị'};
+
+function isRootAdmin(id){
+  if(!id)return false;
+  return String(id)===ROOT_ADMIN || loginKey(id)===loginKey(ROOT_ADMIN);
+}
+function permOf(id){
+  if(!id)return 'staff';
+  if(isRootAdmin(id))return 'admin';
+  const e=empById(id);
+  const p=e&&e.perm;
+  return (p==='admin'||p==='appr')?p:'staff';
+}
+/* Đọc lại quyền của người đang đăng nhập → cập nhật cờ mgr / adm */
+function applyPerm(){
+  const p=permOf(meId());
+  adm=(p==='admin');
+  mgr=(p==='admin'||p==='appr');
+  return p;
+}
 
 /* ---- TÊN ĐĂNG NHẬP = PHẦN SỐ CỦA MÃ NV ----------------------------
    Mã NV trong dữ liệu giữ nguyên (vd vc44180062) — mọi bảng biểu, biểu mẫu
@@ -117,23 +146,11 @@ function meId(){
 }
 function meEmp(){const id=meId();return id?empById(id):null;}
 
-/* ===== Chế độ quản lý mở bằng PIN ngay tại cổng đăng nhập ===== */
-function mgrPass(){try{return sessionStorage.getItem(MGR_SESS)==='1';}catch(e){return false;}}
-function gateMgr(){
-  const p=prompt('PIN quản lý:');
-  if(p===null)return;
-  if(p!==S.settings.pin){toast('Sai PIN');return;}
-  try{sessionStorage.setItem(MGR_SESS,'1');}catch(e){}
-  mgr=true;
-  const pill=$('mgrPill');if(pill){pill.classList.add('on');pill.textContent='🔓 Quản lý';}
-  renderGate();renderAll();go('cal');
-  toast('Đã vào chế độ quản lý');
-}
-
 /* ===== Cổng đăng nhập che toàn bộ ứng dụng ===== */
 function renderGate(){
   const g=$('gate');if(!g)return;
-  const open=!!meId()||mgrPass();
+  applyPerm();
+  const open=!!meId();
   g.style.display=open?'none':'flex';
   document.body.classList.toggle('locked',!open);
   if(open)return;
@@ -204,7 +221,7 @@ function doLogin(){
   gateMsg('');
   markSeen(id);
   toast('Xin chào '+(e.name||id)+' 👋');
-  renderGate();go('me');
+  renderGate();applyRoleUI();refreshBadge();go('me');
 }
 
 /* Hiện lỗi ngay trên thẻ đăng nhập (toast bị cổng che nên khó thấy) */
@@ -215,9 +232,8 @@ function gateMsg(html){
 }
 function doLogout(){
   localStorage.removeItem(SESS);
-  try{sessionStorage.removeItem(MGR_SESS);}catch(e){}
-  if(mgr){mgr=false;const p=$('mgrPill');if(p){p.classList.remove('on');p.textContent='🔒 Quản lý';}}
-  renderGate();renderMe();toast('Đã đăng xuất');
+  mgr=false;adm=false;
+  renderGate();applyRoleUI();renderMe();toast('Đã đăng xuất');
 }
 function changeMyPass(){
   const id=meId();if(!id)return;

@@ -35,11 +35,6 @@ body.locked .wrap{filter:blur(3px);pointer-events:none;user-select:none}
 .gate-card .inp.num{font-family:var(--mono,ui-monospace,monospace);letter-spacing:1.5px}
 .gate-btn{width:100%;height:48px;font-size:15.5px;margin-top:4px}
 .gate-hint{font-size:11.5px;color:#64748B;line-height:1.6;margin-top:14px}
-.gate-mgr{
-  margin-top:14px;width:100%;background:none;border:none;border-top:1px dashed #D6E0EA;
-  padding-top:13px;color:#64748B;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;
-}
-.gate-mgr:hover{color:var(--brand,#0B3B5C)}
 
 /* Thông báo lỗi ngay trên thẻ đăng nhập */
 .gate-msg{
@@ -93,30 +88,6 @@ body.locked .wrap{filter:blur(3px);pointer-events:none;user-select:none}
 .pv-alert.info{background:#E8F2FB;color:#0B3B5C;border:1px solid #C9E0F2}
 .pv-alert.sm{padding:8px 10px;font-size:11.5px;margin:8px 0}
 .pv-alert .btn{margin-left:auto;flex:none}
-
-/* ===================== THẺ CA KẾ TIẾP ===================== */
-.pv-hero{
-  display:flex;flex-wrap:wrap;gap:12px;align-items:stretch;
-  background:linear-gradient(135deg,#0B3B5C,#1B6E9E);color:#fff;
-  border-radius:16px;padding:15px 16px;margin-bottom:12px;
-  box-shadow:0 6px 18px rgba(11,59,92,.22);
-}
-.hero-main{flex:1 1 210px;min-width:0}
-.hero-k{font-size:10.5px;letter-spacing:.9px;text-transform:uppercase;opacity:.75;font-weight:700}
-.hero-v{display:flex;align-items:center;gap:8px;margin-top:6px;font-size:15.5px;font-weight:800;flex-wrap:wrap}
-.hero-v .cc{box-shadow:0 0 0 2px rgba(255,255,255,.35)}
-.hero-s{font-size:12px;opacity:.85;margin-top:6px;font-weight:600}
-.hero-s b{opacity:1;font-weight:800}
-.hero-side{display:flex;gap:8px;flex:0 0 auto}
-.hero-side .hs{
-  background:rgba(255,255,255,.13);border-radius:11px;padding:8px 10px;min-width:64px;text-align:center;
-  display:flex;flex-direction:column;justify-content:center;gap:5px;
-}
-.hero-side .k{font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;opacity:.8;font-weight:700}
-.hero-side .v{font-size:13px;font-weight:800}
-.hero-side .v.sm{font-size:11.5px}
-.hero-side .v i{font-style:normal;opacity:.7;font-size:10px}
-.hero-side .muted{color:rgba(255,255,255,.55)}
 
 /* ===================== Ô SỐ LIỆU ===================== */
 .pv-stats{display:grid;grid-template-columns:repeat(2,1fr);gap:9px;margin-bottom:13px}
@@ -196,16 +167,6 @@ i.d-ok{background:#0E9F6E}
   padding-top:9px;border-top:1px solid #EEF2F6}
 .tipdot{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;color:#64748B;font-weight:600}
 
-/* ===================== NÚT NHANH ===================== */
-.pv-quick{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:13px 0 6px}
-.pv-quick .qa{
-  background:#fff;border:1px solid #E3EAF1;border-radius:12px;padding:12px 6px;
-  display:flex;flex-direction:column;align-items:center;gap:6px;
-  font-size:11px;font-weight:700;color:#334155;cursor:pointer;font-family:inherit;transition:.15s;
-}
-.pv-quick .qa:hover{border-color:#8FB6D2;background:#F5FAFE;transform:translateY(-1px)}
-.pv-quick .qa .ic{font-size:19px;line-height:1}
-
 /* ===================== SHEET THEO NGÀY ===================== */
 .day-sheet{max-height:92vh;overflow-y:auto;padding-bottom:26px}
 .ds-head{display:flex;align-items:flex-start;gap:10px;padding-bottom:11px;
@@ -237,12 +198,16 @@ i.d-ok{background:#0E9F6E}
 .ds-req .tx i{display:block;font-style:normal;font-size:10.5px;color:#64748B;font-weight:600}
 .ds-req .st{flex:none}
 
-.ds-mates{display:flex;flex-wrap:wrap;gap:6px}
-.ds-mates .mate{
-  background:#EEF4F9;border-radius:9px;padding:6px 10px;font-size:11.5px;line-height:1.4;
+/* Nhân sự trực trong ngày, gom theo nhóm ca */
+.crew-g{border:1px solid #E8EDF3;border-radius:11px;padding:9px 10px;margin-bottom:7px;background:#FAFCFE}
+.crew-h{display:flex;align-items:center;gap:7px;margin-bottom:7px;font-size:12px;font-weight:700;color:#334155}
+.crew-h i{margin-left:auto;font-style:normal;font-size:10.5px;color:#94A3B8;font-weight:700;flex:none}
+.crew-n{display:flex;flex-wrap:wrap;gap:5px}
+.crew-n .mate{
+  background:#fff;border:1px solid #E3EAF1;border-radius:8px;padding:5px 9px;
+  font-size:11.5px;font-weight:600;color:#0F172A;line-height:1.3;white-space:nowrap;
 }
-.ds-mates .mate b{display:block;color:#0F172A;font-weight:700}
-.ds-mates .mate i{font-style:normal;color:#64748B;font-size:10px}
+.crew-n .mate.me{background:#0B3B5C;border-color:#0B3B5C;color:#fff;font-weight:800}
 
 .ds-acts{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:7px;margin-bottom:11px}
 .ds-acts .da{
@@ -288,12 +253,40 @@ i.d-ok{background:#0E9F6E}
 .acc-info span{color:#64748B;font-weight:600}
 .acc-info b{color:#0F172A;text-align:right}
 
+/* ============ ĐIỆN THOẠI <768px: vào là thấy ngay cả tháng ============ */
+@media(max-width:767px){
+  .pv-top{gap:9px;margin-bottom:9px}
+  .pv-top .av{width:38px;height:38px;border-radius:11px;font-size:13.5px}
+  .pv-top .nm{font-size:15px}
+  .pv-top .ps{font-size:10.5px}
+  .pv-icon{width:34px;height:34px;font-size:15px}
+
+  .pv-cal-card{padding:9px 8px 8px}
+  .pv-cal-head{gap:5px;margin-bottom:7px}
+  .pv-cal-head .nav{width:27px;height:27px}
+  .pv-cal-head .seg button{padding:5px 10px;font-size:11px}
+  .pv-cal-head .btn.sm{padding:5px 9px;font-size:11px}
+  .pv-range{order:-1;flex:1 0 100%;text-align:left;font-size:13.5px;min-width:0}
+
+  .pv-cal{gap:3px}
+  .pv-cal .hd{font-size:9px;padding:1px 0}
+  .pv-d{min-height:44px;padding:3px 1px;border-radius:8px;gap:2px}
+  .pv-d .dn{font-size:10.5px}
+  .pv-d .cbox{min-height:16px}
+  .pv-d .cc{padding:1px 4px;font-size:9.5px;border-radius:5px}
+  .pv-d .flags{top:2px;right:2px;gap:1px}
+  i.d-ovr,i.d-pend,i.d-ok{width:5px;height:5px}
+  .pv-cal.week .pv-d{min-height:78px}
+
+  .pv-foot{gap:7px;margin-top:7px;padding-top:7px}
+  .tipdot{font-size:9.5px}
+}
+
 /* ===================== DESKTOP ≥768px ===================== */
 @media(min-width:768px){
   .gate-card{max-width:420px;padding:32px 30px 24px}
   .pv-stats{grid-template-columns:repeat(4,1fr)}
   .pv-stats.in-panel{grid-template-columns:repeat(4,1fr)}
-  .pv-quick{grid-template-columns:repeat(6,1fr)}
   .pv-d{min-height:74px}
   .pv-d .dn{font-size:13px}
   .pv-d .cc{font-size:11.5px;padding:2px 8px}
@@ -307,9 +300,7 @@ i.d-ok{background:#0E9F6E}
 /* Màn hình rất hẹp */
 @media(max-width:359px){
   .pv-stats{grid-template-columns:1fr}
-  .pv-quick{grid-template-columns:repeat(2,1fr)}
-  .hero-side{width:100%}
-  .hero-side .hs{flex:1}
+  .pv-d .cc{font-size:9px;padding:1px 3px}
 }
 
 /* Không in cổng đăng nhập / các sheet */

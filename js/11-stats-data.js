@@ -109,14 +109,14 @@ function renderAccTbl(){
     const has=acc&&acc.hash;
     h+=`<tr><td style="font-family:var(--mono)">${esc(e.id)}</td><td>${esc(e.name||'—')}</td><td>${esc(e.team||'')}</td>
       <td>${has?'<span class="st approved">Đã cấp</span>':'<span class="st pending">Chưa cấp</span>'}</td>
-      <td class="emp-act">${mgr
+      <td class="emp-act">${adm
         ?`<button class="btn sec sm" onclick="setPass('${e.id}')">${has?'🔁 Reset MK':'🔑 Cấp MK'}</button>${has?`<button class="btn warn sm" onclick="delPass('${e.id}')">✕ Thu hồi</button>`:''}`
-        :'<span class="muted">Bật Quản lý để thao tác</span>'}</td></tr>`;
+        :'<span class="muted">Cần quyền quản trị</span>'}</td></tr>`;
   });
   tb.innerHTML=h+'</tbody>';
 }
 function setPass(id){
-  if(!mgr){toast('Bật chế độ Quản lý trước');return;}
+  if(!adm){toast('Cần quyền quản trị');return;}
   const e=empById(id);
   const pw=prompt('Mật khẩu cho '+(e&&e.name?e.name:id)+' (tối thiểu 4 ký tự):');
   if(pw===null)return;
@@ -126,7 +126,7 @@ function setPass(id){
   save();renderAccTbl();toast('Đã cấp mật khẩu cho '+id+' ✔');
 }
 function delPass(id){
-  if(!mgr)return;
+  if(!adm)return;
   if(!confirm('Thu hồi tài khoản đăng nhập của '+id+'?'))return;
   delete S.accounts[id];
   save();renderAccTbl();toast('Đã thu hồi tài khoản '+id);
@@ -179,9 +179,4 @@ function renderData(){
   $('setApprover2').value=S.settings.approver2||'';
   const cfg=localStorage.getItem(LS+'_fb');if(cfg&&!$('fbCfg').value)$('fbCfg').value=cfg;
   renderHoursTbl();renderAccTbl();
-}
-function changePin(){
-  if(!mgr){toast('Bật chế độ Quản lý trước');return;}
-  const p=$('setPin').value.trim();if(p.length<4){toast('PIN tối thiểu 4 ký tự');return;}
-  S.settings.pin=p;save();$('setPin').value='';toast('Đã đổi PIN');
 }

@@ -29,7 +29,7 @@ function renderSetup(){
       ${tm?`<button class="btn sec sm" onclick="renameGroup('${esc(tm)}')">✎ Tên nhóm</button>
         <button class="btn warn sm" onclick="delGroup('${esc(tm)}')">✕ Nhóm</button>`:''}</h3>
       <div style="overflow:auto"><table class="tbl setup"><thead><tr>
-        <th>Vai trò</th><th>Vị trí</th><th>Mã NV</th><th>Họ tên</th><th>Kiểu ca</th><th>Mốc 1</th><th>Mốc 2</th><th></th>
+        <th>Vai trò</th><th>Vị trí</th><th>Mã NV</th><th>Họ tên</th><th>Quyền</th><th>Kiểu ca</th><th>Mốc 1</th><th>Mốc 2</th><th></th>
       </tr></thead><tbody>`;
     mem.forEach(e=>h+=memberRow(e));
     h+=`</tbody></table></div></div>`;
@@ -40,6 +40,7 @@ function memberRow(e){
   const isAdmin=e.empType==='admin'||e.shiftType==='admin';
   const dis=isAdmin?'disabled':'';
   const sel=(v,cur)=>v===cur?' selected':'';
+  const root=isRootAdmin(e.id), perm=permOf(e.id);
   return `<tr>
    <td><select class="inp sm" onchange="updEmp('${e.id}','role',this.value,true)">
      <option value="eng"${sel('eng',e.role)}>Kỹ sư</option>
@@ -48,6 +49,12 @@ function memberRow(e){
    <td><input class="inp sm" value="${esc(e.pos||'')}" style="min-width:120px" placeholder="VD: Field Engineer" onchange="updEmp('${e.id}','pos',this.value)"></td>
    <td><input class="inp sm" value="${esc(e.id)}" style="width:100px;font-family:var(--mono)" onchange="changeId('${e.id}',this.value)"></td>
    <td><input class="inp sm" value="${esc(e.name)}" style="min-width:140px" placeholder="Họ tên" onchange="updEmp('${e.id}','name',this.value)"></td>
+   <td>${root
+     ?'<span class="st approved" title="Quản trị gốc — không thể hạ quyền">Quản trị</span>'
+     :`<select class="inp sm" style="min-width:104px" ${adm?'':'disabled'} onchange="updPerm('${e.id}',this.value)">
+        <option value="staff"${sel('staff',perm)}>Nhân viên</option>
+        <option value="appr"${sel('appr',perm)}>Duyệt đơn</option>
+        <option value="admin"${sel('admin',perm)}>Quản trị</option></select>`}</td>
    <td><select class="inp sm" onchange="updType('${e.id}',this.value)">
      <option value="type1"${sel('type1',e.shiftType)}>Ca 8 ngày (OODDNNRR)</option>
      <option value="type2"${sel('type2',e.shiftType)}>Ca 6 ngày (DDNNRR)</option>
@@ -56,6 +63,17 @@ function memberRow(e){
    <td><input type="date" class="inp sm" value="${e.a2||''}" ${dis} title="Cặp kế tiếp (để đo chu kỳ)" onchange="updEmp('${e.id}','a2',this.value)"></td>
    <td><button class="btn warn sm" onclick="delEmp('${e.id}')">✕</button></td>
   </tr>`;
+}
+/* Đổi quyền của một nhân viên — chỉ quản trị mới được đụng vào */
+function updPerm(id,v){
+  if(!adm){toast('Cần quyền quản trị');renderSetup();return;}
+  if(isRootAdmin(id)){renderSetup();return;}
+  const e=empById(id);if(!e)return;
+  e.perm=(v==='admin'||v==='appr')?v:'staff';
+  save();
+  if(id===meId()){applyPerm();applyRoleUI();refreshBadge();}
+  renderSetup();
+  toast('Đã đặt quyền '+(PERM_LABEL[e.perm]||e.perm)+' cho '+(e.name||id));
 }
 function updEmp(id,f,v,rerender){const e=empById(id);if(!e)return;e[f]=(f==='name'||f==='pos')?v.trim():v;save();if(rerender)renderSetup();}
 function updType(id,v){const e=empById(id);if(!e)return;e.shiftType=v;e.empType=(v==='admin')?'admin':'shift';save();renderSetup();}

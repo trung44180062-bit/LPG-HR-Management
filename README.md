@@ -40,7 +40,7 @@ LPGT-CongCa-Web/
 │   ├── config.js           # ❌ Cấu hình thật (gitignored)
 │   ├── 01-core.js          # State toàn cục, mã ca, hàm tiện ích
 │   ├── 02-storage.js       # localStorage + đồng bộ Firebase
-│   ├── 03-nav.js           # Chuyển tab, bottom sheet, chế độ quản lý
+│   ├── 03-nav.js           # Chuyển tab, bottom sheet
 │   ├── 04-schedule.js      # Kỳ công 21→20 + bộ sinh lịch ca
 │   ├── 05-roster.js        # Nhóm & danh sách nhân sự
 │   ├── 06-calendar.js      # Lịch ca: matrix desktop, thẻ tuần/ngày mobile
@@ -74,30 +74,46 @@ và điền mã NV + họ tên, app tự tạo tài khoản. Không cần cấp 
 - Nếu hai người trùng phần số, app báo lỗi thay vì cho vào nhầm — quản lý phải sửa mã cho khác nhau.
 - Đổi mã NV → tài khoản cũ bị thu hồi, tài khoản mới cấp lại với mật khẩu = mã số mới; đơn cũ và lịch ca tự trỏ sang mã mới.
 - Xoá nhân viên → thu hồi tài khoản.
-- Nhân viên vào mục **Tài khoản** để đổi mật khẩu. Khi còn dùng mật khẩu mặc định, trang chính hiện banner nhắc.
+- Nhân viên vào mục **Tài khoản** (biểu tượng 🔑 ở trang chính) để đổi mật khẩu.
 
-**Quản lý** vào bằng nút *🔑 Vào chế độ Quản lý (PIN)* ngay ở màn hình đăng nhập.
-PIN đặt trong `js/config.js` (`defaultPin`), đổi lại được ở tab Dữ liệu.
-Chế độ quản lý lưu trong `sessionStorage` → tự tắt khi đóng trình duyệt.
-Các nút chỉ dành cho quản lý mang class `.mgr-only` và bị ẩn với nhân viên thường.
+### Phân quyền
+
+Không còn chế độ Quản lý mở bằng PIN. Quyền khai báo ở cột **Quyền** trong bảng
+danh sách nhân viên (tab *🛠️ Nhóm & Lịch*), lưu ở trường `e.perm`:
+
+| `perm` | Thấy được |
+|---|---|
+| `staff` (mặc định) | Trang chính, Lịch, Nhân lực, Thống kê, gửi đơn |
+| `appr` | + tab **Duyệt**, sửa lịch thực tế, In đơn |
+| `admin` | + tab **Nhóm & Lịch**, **Dữ liệu**, cấp/reset mật khẩu, đổi quyền người khác |
+
+`ROOT_ADMIN` (`vc44180062` — Hoàng Trung) luôn là quản trị và không thể bị hạ quyền,
+để luôn có người cấp quyền cho những người còn lại.
+
+Trong code: `applyPerm()` (js/10-account.js) đọc quyền của người đang đăng nhập và đặt
+hai cờ toàn cục — `mgr` (duyệt đơn trở lên) và `adm` (quản trị). `applyRoleUI()` ẩn/hiện
+các phần tử mang class `.mgr-only` và `.admin-only` theo hai cờ này.
 
 ---
 
 ## Trang chính của nhân viên (`13-portal.js`)
 
-Là màn hình đầu tiên ngay sau khi đăng nhập:
+Là màn hình đầu tiên ngay sau khi đăng nhập. Bố cục tối ưu cho điện thoại: mở app lên
+là **thấy ngay lịch cả tháng**, các thẻ số liệu đẩy xuống dưới lịch.
 
-- **Lịch cá nhân** xem theo **Tuần** hoặc **Tháng**, lấy ca từ *lịch thực tế* (`eff()` = lịch chuẩn + điều chỉnh đã duyệt).
-- **Chạm vào ngày bất kỳ** → sheet hiện ca hôm đó, đồng nghiệp trực cùng, đơn đang có, và 7 nút gửi đơn
+- **Lịch cá nhân** mặc định xem **Tháng** (đổi được sang Tuần), lấy ca từ *lịch thực tế*
+  (`eff()` = lịch chuẩn + điều chỉnh đã duyệt).
+- **Chạm vào ngày bất kỳ** → sheet hiện ca hôm đó, **nhân sự trực trong ngày gom theo nhóm ca**
+  (tên rút gọn 2 chữ, ô của mình được tô đậm), đơn đang có, và 7 nút gửi đơn
   (nghỉ phép · đổi ca · tăng ca · đổi mã ca · bổ sung công · đi trễ/về sớm · làm liên tục nhiều ngày) — ngày đã điền sẵn.
 - **Đổi ca**: danh sách đồng nghiệp tự xếp người **đang nghỉ (R)** lên đầu, rồi tới người cùng nhóm.
 - **Cảnh báo trùng đơn** trước khi gửi; **thông báo** khi đơn được duyệt / từ chối.
-- **Đếm ngược ca kế tiếp**, ngày nghỉ gần nhất, cảnh báo khi làm ≥ 7 ngày liên tục.
+- Cảnh báo khi làm ≥ 7 ngày liên tục.
 - **Thẻ số liệu**: giờ công kỳ này · tăng ca đã duyệt + đang chờ · phép năm còn lại · số đơn đang chờ.
-- **Xuất lịch `.ics`** để thêm vào Lịch điện thoại.
 
 Tham số chỉnh nhanh ở đầu `js/13-portal.js`:
-`SHIFT_CLOCK` (giờ ca), `AL_QUOTA_DEFAULT` (quỹ phép năm), `STREAK_WARN` (ngưỡng cảnh báo ngày làm liên tục).
+`AL_QUOTA_DEFAULT` (quỹ phép năm), `STREAK_WARN` (ngưỡng cảnh báo ngày làm liên tục),
+`CREW_ORDER` (thứ tự nhóm ca hiển thị trong sheet ngày).
 
 ---
 

@@ -58,8 +58,6 @@
     <div class="gate-status" id="gateStatus">
       <span class="dot" id="gateDot"></span><span id="gateStatusTxt">Đang kết nối…</span>
     </div>
-
-    <button class="gate-mgr" onclick="gateMgr()">🔑 Vào chế độ Quản lý (PIN)</button>
   </div>
 </div>
 
@@ -67,13 +65,12 @@
   <div class="logo">⛽</div>
   <div>
     <h1>LPGT Cavern · Công Ca</h1>
-    <div class="sub">Working Schedule &amp; Manpower</div>
   </div>
   <div class="sp"></div>
-  <button class="pill sync" id="syncPill" onclick="go('data')"><span class="dot" id="syncDot"></span><span id="syncTxt">Offline</span></button>
-  <button class="icobtn mgr-only" title="Nhóm &amp; Lịch" onclick="go('setup')">🛠️</button>
-  <button class="icobtn mgr-only" title="Dữ liệu" onclick="go('data')">⚙️</button>
-  <button class="pill mgr" id="mgrPill" onclick="toggleMgr()">🔒 Quản lý</button>
+  <span class="syncdot" id="syncDot" title="Trạng thái đồng bộ"></span>
+  <span id="syncTxt" hidden>Offline</span>
+  <button class="icobtn admin-only" title="Nhóm &amp; Lịch" onclick="go('setup')">🛠️</button>
+  <button class="icobtn admin-only" title="Dữ liệu" onclick="go('data')">⚙️</button>
 </header>
 
 <!-- Desktop (≥768px): thanh tab ngang rút gọn -->
@@ -103,8 +100,8 @@
     <button class="si" onclick="closeMoreSheet();openMyPanel('ot')"><span class="ic">⚡</span>Tăng ca của tôi</button>
     <button class="si" onclick="closeMoreSheet();openMyPanel('req')"><span class="ic">📋</span>Đơn của tôi</button>
     <button class="si" onclick="closeMoreSheet();openMyPanel('acc')"><span class="ic">🔑</span>Tài khoản</button>
-    <button class="si mgr-only" onclick="closeMoreSheet();go('setup')"><span class="ic">🛠️</span>Nhóm &amp; Lịch</button>
-    <button class="si mgr-only" onclick="closeMoreSheet();go('data')"><span class="ic">⚙️</span>Dữ liệu</button>
+    <button class="si admin-only" onclick="closeMoreSheet();go('setup')"><span class="ic">🛠️</span>Nhóm &amp; Lịch</button>
+    <button class="si admin-only" onclick="closeMoreSheet();go('data')"><span class="ic">⚙️</span>Dữ liệu</button>
     <button class="si mgr-only" onclick="closeMoreSheet();openPrintBulk()" style="position:relative"><span class="ic">🖨️</span>In đơn<span class="bdg" id="printBdgSheet" style="display:none;position:static;margin-left:auto">0</span></button>
     <button class="si" onclick="closeMoreSheet();doLogout()"><span class="ic">↪</span>Đăng xuất</button>
   </div>
@@ -140,7 +137,7 @@
 <section class="view" id="v-me">
   <div id="meLogin" class="card login-card" style="display:none">
     <h3>🔐 Chưa đăng nhập</h3>
-    <p class="muted">Đang ở chế độ Quản lý. Đăng xuất rồi đăng nhập bằng mã nhân viên để xem trang cá nhân.</p>
+    <p class="muted">Đăng nhập bằng mã nhân viên để xem trang cá nhân.</p>
     <button class="btn sec" onclick="doLogout()">Về màn hình đăng nhập</button>
   </div>
   <div id="meBody" style="display:none"></div>
@@ -321,7 +318,7 @@
 <section class="view" id="v-appr">
   <div class="card" id="apprLock">
     <h3>🔒 Khu vực quản lý</h3>
-    <p class="muted">Bật chế độ Quản lý (nút góc phải trên) để duyệt yêu cầu.</p>
+    <p class="muted">Tài khoản của bạn chưa được cấp quyền duyệt đơn. Quản trị viên cấp quyền ở cột <b>Quyền</b> trong tab Nhóm &amp; Lịch.</p>
   </div>
   <div id="apprBody" style="display:none">
     <div class="row" style="margin-bottom:12px"><button class="btn" style="position:relative" onclick="openPrintBulk()">🖨️ In đơn<span class="bdg" id="printBdgAppr" style="display:none;position:static;margin-left:6px">0</span></button></div>
@@ -364,7 +361,7 @@
 
   <div class="card">
     <h3>👤 Tài khoản đăng nhập nhân viên</h3>
-    <p class="muted" style="margin-bottom:8px">Nhân viên vào tab <b>👤 Của tôi</b> đăng nhập bằng <b>Mã NV + mật khẩu</b> để xem lịch của mình và gửi đăng ký. Bật chế độ <b>Quản lý</b> để cấp / reset / thu hồi mật khẩu. Mật khẩu được mã hoá (hash) trước khi lưu lên Firebase.</p>
+    <p class="muted" style="margin-bottom:8px">Nhân viên vào tab <b>👤 Của tôi</b> đăng nhập bằng <b>Mã NV + mật khẩu</b> để xem lịch của mình và gửi đăng ký. Quản trị viên cấp / reset / thu hồi mật khẩu tại đây. Mật khẩu được mã hoá (hash) trước khi lưu lên Firebase.</p>
     <div style="overflow:auto"><table class="tbl" id="accTbl"></table></div>
   </div>
 
@@ -384,10 +381,7 @@
       <div class="fg"><label class="fl">Tối thiểu ca ngày (D)</label><input type="number" class="inp" id="setMinD" min="0"></div>
       <div class="fg"><label class="fl">Tối thiểu ca đêm (N)</label><input type="number" class="inp" id="setMinN" min="0"></div>
     </div>
-    <div class="fg"><label class="fl">Đổi mã PIN quản lý</label>
-      <div class="row"><input type="password" class="inp" id="setPin" placeholder="PIN mới" style="width:150px"><button class="btn sec sm" onclick="changePin()">Đổi PIN</button></div>
-      <p class="muted" style="margin-top:4px">PIN đặt trong <code>js/config.js</code>, đổi lại ở ô bên dưới.</p>
-    </div>
+    <p class="muted" style="margin:4px 0 10px">Phân quyền (Nhân viên · Duyệt đơn · Quản trị) khai báo ở cột <b>Quyền</b> trong tab <b>🛠️ Nhóm &amp; Lịch</b>.</p>
     <button class="btn warn sm" onclick="wipeAll()">🗑️ Xoá toàn bộ dữ liệu trên máy</button>
   </div>
 </section>

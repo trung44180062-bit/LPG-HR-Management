@@ -14,10 +14,7 @@ function renderAll(){
 }
 
 load();
-if(mgrPass()){                    // đã mở chế độ quản lý trong phiên trình duyệt này
-  mgr=true;
-  const p=$('mgrPill');if(p){p.classList.add('on');p.textContent='🔓 Quản lý';}
-}
+applyPerm();                      // quyền lấy từ cột Quyền của người đang đăng nhập
 fillMonthSelects();
 syncAccounts();
 renderAll();
@@ -27,8 +24,3 @@ initFb();
 renderGate();
 go('me');
 renderMe(true);
-
-/* Đếm ngược ca kế tiếp tự cập nhật mỗi phút (không phá khi đang mở sheet) */
-setInterval(()=>{
-  if(curView==='me'&&meId()&&!document.querySelector('.sheetmask.on'))renderMe();
-},60000);
