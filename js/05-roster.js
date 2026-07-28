@@ -67,7 +67,18 @@ function changeId(oldId,val){
   if(S.employees.some(x=>x.id===nid)){toast('Mã đã tồn tại');renderSetup();return;}
   if(S.base[oldId]){S.base[nid]=S.base[oldId];delete S.base[oldId];}
   if(S.over[oldId]){S.over[nid]=S.over[oldId];delete S.over[oldId];}
-  e.id=nid;save();renderSetup();renderBoth();toast('Đã đổi mã NV');
+  // Đơn đã gửi vẫn phải trỏ đúng người sau khi đổi mã
+  Object.values(S.requests||{}).forEach(r=>{
+    if(r.empId===oldId)r.empId=nid;
+    if(r.withId===oldId)r.withId=nid;
+    if(r.guarantorId===oldId)r.guarantorId=nid;
+  });
+  // Tài khoản: hash gắn với mã NV nên phải cấp lại, mật khẩu = mã NV mới
+  if(S.accounts&&S.accounts[oldId])delete S.accounts[oldId];
+  e.id=nid;
+  ensureAccount(nid,true);
+  save();renderSetup();renderBoth();
+  toast(isRealEmpId(nid)?('Đã đổi mã NV — tài khoản '+nid+', mật khẩu = mã NV'):'Đã đổi mã NV');
 }
 function addMember(team){
   S.employees.push({id:newVc(),name:'',pos:'',role:'oper',team:team||'',empType:'shift',shiftType:'type1',a1:'',a2:'',order:S.employees.length+1,active:true});
@@ -97,5 +108,6 @@ function delEmp(id){
   const e=empById(id);if(!e)return;
   if(!confirm('Xóa "'+(e.name||id)+'" khỏi danh sách?'))return;
   S.employees=S.employees.filter(x=>x.id!==id);delete S.base[id];delete S.over[id];
+  if(S.accounts)delete S.accounts[id];      // xoá luôn tài khoản đăng nhập
   save();renderSetup();renderBoth();
 }

@@ -33,6 +33,7 @@ LPGT-CongCa-Web/
 ├── index.html              # Khung HTML + nạp CSS/JS (không chứa logic)
 ├── css/
 │   ├── app.css             # Giao diện chính: biến màu, layout, các tab
+│   ├── portal.css          # Cổng đăng nhập + trang chính nhân viên
 │   └── print.css           # Module in đơn (A5 ngang / 2up A4 dọc)
 ├── js/
 │   ├── config.example.js   # MẪU cấu hình — copy thành config.js
@@ -46,15 +47,52 @@ LPGT-CongCa-Web/
 │   ├── 07-manpower.js      # Nhân lực theo ngày
 │   ├── 08-requests.js      # Đăng ký + Duyệt đơn
 │   ├── 09-print.js         # Dựng biểu mẫu, in lẻ / hàng loạt, nhật ký in
-│   ├── 10-account.js       # SHA-256, đăng nhập NV, tab "Của tôi"
+│   ├── 10-account.js       # SHA-256, tài khoản tự động, cổng đăng nhập
 │   ├── 11-stats-data.js    # Thống kê, khai báo giờ, export XLSX, cài đặt
-│   └── 12-main.js          # Boot
+│   ├── 13-portal.js        # Trang chính nhân viên (lịch tuần/tháng, sheet theo ngày)
+│   └── 12-main.js          # Boot — luôn nạp CUỐI CÙNG
 ├── .gitignore
 └── README.md
 ```
 
 **Thứ tự nạp script rất quan trọng** — các file dùng biến toàn cục dùng chung, không phải ES module.
-Khi thêm file mới, nhớ thêm thẻ `<script>` vào cuối `index.html` đúng vị trí.
+`12-main.js` phải nằm cuối vì nó gọi hàm của mọi file khác.
+Khi thêm file mới, chèn thẻ `<script>` vào trước `12-main.js`.
+
+---
+
+## Đăng nhập & phân quyền
+
+**Tài khoản = mã nhân viên.** Khi quản lý thêm một người vào tab *Nhóm & Lịch* và nhập mã NV thật,
+app tự tạo tài khoản đăng nhập với **mật khẩu ban đầu = chính mã NV đó**. Không cần cấp tay.
+
+- Mã tạm dạng `vc########` (do nút "＋ Người" sinh ra) chưa được coi là tài khoản.
+- Đổi mã NV → tài khoản cũ bị thu hồi, tài khoản mới cấp lại với mật khẩu = mã mới; đơn cũ và lịch ca tự trỏ sang mã mới.
+- Xoá nhân viên → thu hồi tài khoản.
+- Nhân viên vào mục **Tài khoản** để đổi mật khẩu. Khi còn dùng mật khẩu mặc định, trang chính hiện banner nhắc.
+
+**Quản lý** vào bằng nút *🔑 Vào chế độ Quản lý (PIN)* ngay ở màn hình đăng nhập.
+PIN đặt trong `js/config.js` (`defaultPin`), đổi lại được ở tab Dữ liệu.
+Chế độ quản lý lưu trong `sessionStorage` → tự tắt khi đóng trình duyệt.
+Các nút chỉ dành cho quản lý mang class `.mgr-only` và bị ẩn với nhân viên thường.
+
+---
+
+## Trang chính của nhân viên (`13-portal.js`)
+
+Là màn hình đầu tiên ngay sau khi đăng nhập:
+
+- **Lịch cá nhân** xem theo **Tuần** hoặc **Tháng**, lấy ca từ *lịch thực tế* (`eff()` = lịch chuẩn + điều chỉnh đã duyệt).
+- **Chạm vào ngày bất kỳ** → sheet hiện ca hôm đó, đồng nghiệp trực cùng, đơn đang có, và 7 nút gửi đơn
+  (nghỉ phép · đổi ca · tăng ca · đổi mã ca · bổ sung công · đi trễ/về sớm · làm liên tục nhiều ngày) — ngày đã điền sẵn.
+- **Đổi ca**: danh sách đồng nghiệp tự xếp người **đang nghỉ (R)** lên đầu, rồi tới người cùng nhóm.
+- **Cảnh báo trùng đơn** trước khi gửi; **thông báo** khi đơn được duyệt / từ chối.
+- **Đếm ngược ca kế tiếp**, ngày nghỉ gần nhất, cảnh báo khi làm ≥ 7 ngày liên tục.
+- **Thẻ số liệu**: giờ công kỳ này · tăng ca đã duyệt + đang chờ · phép năm còn lại · số đơn đang chờ.
+- **Xuất lịch `.ics`** để thêm vào Lịch điện thoại.
+
+Tham số chỉnh nhanh ở đầu `js/13-portal.js`:
+`SHIFT_CLOCK` (giờ ca), `AL_QUOTA_DEFAULT` (quỹ phép năm), `STREAK_WARN` (ngưỡng cảnh báo ngày làm liên tục).
 
 ---
 

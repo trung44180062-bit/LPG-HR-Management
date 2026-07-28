@@ -22,9 +22,19 @@ function go(v,opts){
   if(v==='data')renderData();
 }
 function toggleMgr(){
-  if(mgr){mgr=false;$('mgrPill').classList.remove('on');$('mgrPill').textContent='🔒 Quản lý';renderAll();return;}
+  if(mgr){
+    mgr=false;$('mgrPill').classList.remove('on');$('mgrPill').textContent='🔒 Quản lý';
+    try{sessionStorage.removeItem(MGR_SESS);}catch(e){}
+    applyRoleUI();
+    if(!meId()){renderGate();return;}       // quản lý không kèm tài khoản NV → về cổng đăng nhập
+    renderAll();return;
+  }
   const p=prompt('Nhập PIN quản lý:');
-  if(p===S.settings.pin){mgr=true;$('mgrPill').classList.add('on');$('mgrPill').textContent='🔓 Quản lý';toast('Đã bật chế độ quản lý');renderAll();}
+  if(p===S.settings.pin){
+    mgr=true;$('mgrPill').classList.add('on');$('mgrPill').textContent='🔓 Quản lý';
+    try{sessionStorage.setItem(MGR_SESS,'1');}catch(e){}
+    toast('Đã bật chế độ quản lý');applyRoleUI();renderAll();
+  }
   else if(p!==null)toast('Sai PIN');
 }
 function refreshBadge(){

@@ -16,10 +16,50 @@
 
 <!-- ===== CSS ===== -->
 <link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/portal.css">
 <link rel="stylesheet" href="css/print.css">
 <style id="pageDyn">@page{size:A4 portrait;margin:8mm}</style>
 </head>
-<body>
+<body class="locked">
+
+<!-- ============================================================
+     CỔNG ĐĂNG NHẬP — che toàn bộ app cho tới khi đăng nhập
+     ============================================================ -->
+<div class="gate" id="gate">
+  <div class="gate-card">
+    <div class="gate-logo">⛽</div>
+    <h1>LPGT Cavern</h1>
+    <p class="gate-sub">Quản lý Công Ca · Working Schedule</p>
+
+    <div class="fg">
+      <label class="fl" for="loginId">Mã nhân viên</label>
+      <input class="inp" id="loginId" placeholder="VD: 44180062" inputmode="numeric"
+             autocomplete="username" autocapitalize="off" spellcheck="false"
+             onkeydown="if(event.key==='Enter')$('loginPw').focus()">
+    </div>
+    <div class="fg">
+      <label class="fl" for="loginPw">Mật khẩu</label>
+      <div class="pw-wrap">
+        <input type="password" class="inp" id="loginPw" autocomplete="current-password"
+               onkeydown="if(event.key==='Enter')doLogin()">
+        <button type="button" class="pw-eye" onclick="togglePw('loginPw',this)" title="Hiện/ẩn mật khẩu">👁</button>
+      </div>
+    </div>
+
+    <div class="gate-msg" id="gateMsg" style="display:none"></div>
+
+    <button class="btn gate-btn" onclick="doLogin()">Đăng nhập</button>
+
+    <p class="gate-hint">Lần đầu đăng nhập: <b>mật khẩu = mã nhân viên</b> của bạn.<br>
+      Vào rồi nhớ đổi mật khẩu ở mục <b>Tài khoản</b>.</p>
+
+    <div class="gate-status" id="gateStatus">
+      <span class="dot" id="gateDot"></span><span id="gateStatusTxt">Đang kết nối…</span>
+    </div>
+
+    <button class="gate-mgr" onclick="gateMgr()">🔑 Vào chế độ Quản lý (PIN)</button>
+  </div>
+</div>
 
 <header class="hdr">
   <div class="logo">⛽</div>
@@ -29,38 +69,58 @@
   </div>
   <div class="sp"></div>
   <button class="pill sync" id="syncPill" onclick="go('data')"><span class="dot" id="syncDot"></span><span id="syncTxt">Offline</span></button>
-  <button class="icobtn" title="Nhóm &amp; Lịch" onclick="go('setup')">🛠️</button>
-  <button class="icobtn" title="Dữ liệu" onclick="go('data')">⚙️</button>
+  <button class="icobtn mgr-only" title="Nhóm &amp; Lịch" onclick="go('setup')">🛠️</button>
+  <button class="icobtn mgr-only" title="Dữ liệu" onclick="go('data')">⚙️</button>
   <button class="pill mgr" id="mgrPill" onclick="toggleMgr()">🔒 Quản lý</button>
 </header>
 
 <!-- Desktop (≥768px): thanh tab ngang rút gọn -->
 <nav class="topbar" id="tabs">
-  <button class="tab" data-v="me" onclick="go('me')"><span class="ic">👤</span>Của tôi</button>
-  <button class="tab on" data-v="cal" onclick="go('cal')"><span class="ic">📅</span>Lịch</button>
+  <button class="tab on" data-v="me" onclick="go('me')"><span class="ic">🏠</span>Trang chính</button>
+  <button class="tab" data-v="cal" onclick="go('cal')"><span class="ic">📅</span>Lịch</button>
   <button class="tab" data-v="reg" onclick="go('reg')"><span class="ic">📝</span>Đăng ký</button>
-  <button class="tab" data-v="appr" onclick="go('appr')" style="position:relative"><span class="ic">✅</span>Duyệt<span class="bdg" id="pendBdg" style="display:none">0</span></button>
+  <button class="tab mgr-only" data-v="appr" onclick="go('appr')" style="position:relative"><span class="ic">✅</span>Duyệt<span class="bdg" id="pendBdg" style="display:none">0</span></button>
   <button class="tab" data-v="mp" onclick="go('mp')"><span class="ic">👥</span>Nhân lực</button>
   <button class="tab" data-v="stats" onclick="go('stats')"><span class="ic">📊</span>Thống kê</button>
 </nav>
 
 <!-- Mobile (<768px): bottom bar 5 mục cố định đáy -->
 <nav class="bottombar" id="bottombar">
-  <button class="bb" data-v="me" onclick="go('me')"><span class="ic">👤</span>Của tôi</button>
-  <button class="bb on" data-v="cal" onclick="go('cal')"><span class="ic">📅</span>Lịch</button>
-  <button class="bb" data-v="reg" onclick="go('reg')"><span class="ic">📝</span>Đăng ký</button>
-  <button class="bb" data-v="appr" onclick="go('appr')"><span class="ic">✅</span>Duyệt<span class="bdg" id="pendBdgM" style="display:none">0</span></button>
+  <button class="bb on" data-v="me" onclick="go('me')"><span class="ic">🏠</span>Trang chính</button>
+  <button class="bb" data-v="cal" onclick="go('cal')"><span class="ic">📅</span>Lịch</button>
+  <button class="bb" data-v="mp" onclick="go('mp')"><span class="ic">👥</span>Nhân lực</button>
+  <button class="bb mgr-only" data-v="appr" onclick="go('appr')"><span class="ic">✅</span>Duyệt<span class="bdg" id="pendBdgM" style="display:none">0</span></button>
   <button class="bb" onclick="openMoreSheet()"><span class="ic">☰</span>Thêm</button>
 </nav>
 
 <div class="sheetmask" id="moreMask" onclick="if(event.target===this)closeMoreSheet()">
   <div class="sheet">
     <div class="bar"></div>
-    <button class="si" onclick="closeMoreSheet();go('mp')"><span class="ic">👥</span>Nhân lực</button>
+    <button class="si" onclick="closeMoreSheet();go('reg')"><span class="ic">📝</span>Đăng ký thủ công</button>
     <button class="si" onclick="closeMoreSheet();go('stats')"><span class="ic">📊</span>Thống kê</button>
-    <button class="si" onclick="closeMoreSheet();go('setup')"><span class="ic">🛠️</span>Nhóm &amp; Lịch</button>
-    <button class="si" onclick="closeMoreSheet();go('data')"><span class="ic">⚙️</span>Dữ liệu</button>
-    <button class="si" onclick="closeMoreSheet();openPrintBulk()" style="position:relative"><span class="ic">🖨️</span>In đơn<span class="bdg" id="printBdgSheet" style="display:none;position:static;margin-left:auto">0</span></button>
+    <button class="si" onclick="closeMoreSheet();openMyPanel('ot')"><span class="ic">⚡</span>Tăng ca của tôi</button>
+    <button class="si" onclick="closeMoreSheet();openMyPanel('req')"><span class="ic">📋</span>Đơn của tôi</button>
+    <button class="si" onclick="closeMoreSheet();openMyPanel('acc')"><span class="ic">🔑</span>Tài khoản</button>
+    <button class="si mgr-only" onclick="closeMoreSheet();go('setup')"><span class="ic">🛠️</span>Nhóm &amp; Lịch</button>
+    <button class="si mgr-only" onclick="closeMoreSheet();go('data')"><span class="ic">⚙️</span>Dữ liệu</button>
+    <button class="si mgr-only" onclick="closeMoreSheet();openPrintBulk()" style="position:relative"><span class="ic">🖨️</span>In đơn<span class="bdg" id="printBdgSheet" style="display:none;position:static;margin-left:auto">0</span></button>
+    <button class="si" onclick="closeMoreSheet();doLogout()"><span class="ic">↪</span>Đăng xuất</button>
+  </div>
+</div>
+
+<!-- Sheet thao tác theo ngày (trang chính) -->
+<div class="sheetmask" id="daySheetMask" onclick="if(event.target===this)closeDaySheet()">
+  <div class="sheet day-sheet">
+    <div class="bar"></div>
+    <div id="daySheetBody"></div>
+  </div>
+</div>
+
+<!-- Sheet phụ: Tăng ca của tôi / Đơn của tôi / Tài khoản -->
+<div class="sheetmask" id="myPanelMask" onclick="if(event.target===this)closeMyPanel()">
+  <div class="sheet day-sheet">
+    <div class="bar"></div>
+    <div id="myPanelBody"></div>
   </div>
 </div>
 
@@ -77,11 +137,9 @@
 <!-- ============ CỦA TÔI (nhân viên) ============ -->
 <section class="view" id="v-me">
   <div id="meLogin" class="card login-card" style="display:none">
-    <h3>🔐 Đăng nhập nhân viên</h3>
-    <div class="fg"><label class="fl">Mã nhân viên</label><input class="inp" id="loginId" placeholder="VD: 44180062" autocomplete="username" autocapitalize="off"></div>
-    <div class="fg"><label class="fl">Mật khẩu</label><input type="password" class="inp" id="loginPw" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
-    <button class="btn" style="width:100%" onclick="doLogin()">Đăng nhập</button>
-    <p class="muted" style="margin-top:10px">Chưa có tài khoản? Liên hệ quản lý để được cấp mật khẩu (tab Dữ liệu → Tài khoản nhân viên).</p>
+    <h3>🔐 Chưa đăng nhập</h3>
+    <p class="muted">Đang ở chế độ Quản lý. Đăng xuất rồi đăng nhập bằng mã nhân viên để xem trang cá nhân.</p>
+    <button class="btn sec" onclick="doLogout()">Về màn hình đăng nhập</button>
   </div>
   <div id="meBody" style="display:none"></div>
 </section>
@@ -400,6 +458,7 @@
 <script src="js/09-print.js"></script>
 <script src="js/10-account.js"></script>
 <script src="js/11-stats-data.js"></script>
+<script src="js/13-portal.js"></script>
 <script src="js/12-main.js"></script>
 </body>
 </html>

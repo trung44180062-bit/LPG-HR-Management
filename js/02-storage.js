@@ -54,7 +54,16 @@ function initFb(){
     setSync(true,'Đang kết nối…');
   }catch(e){setSync(false,'Lỗi kết nối');console.warn(e);}
 }
-function setSync(on,txt){$('syncDot').classList.toggle('on',on);$('syncTxt').textContent=txt;$('fbStatus').textContent=txt;}
+function setSync(on,txt){
+  $('syncDot').classList.toggle('on',on);$('syncTxt').textContent=txt;$('fbStatus').textContent=txt;
+  // Hiện luôn trạng thái ở màn hình đăng nhập — không thì người dùng không biết vì sao login trượt
+  const gd=$('gateDot'),gt=$('gateStatusTxt');
+  if(gd)gd.classList.toggle('on',on);
+  if(gt){
+    const n=(S.employees||[]).length;
+    gt.textContent=txt+(n?(' · '+n+' nhân viên'):' · chưa có dữ liệu nhân sự');
+  }
+}
 function saveFbCfg(){
   const v=$('fbCfg').value.trim();
   if(!v){toast('Chưa dán config');return;}
