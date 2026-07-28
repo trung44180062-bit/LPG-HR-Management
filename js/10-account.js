@@ -57,19 +57,39 @@ function hashPw(id,pw){return sha256(unescape(encodeURIComponent(id+'|'+pw)));}
 const SESS=LS+'_sess';
 const MGR_SESS=LS+'_mgr';
 
+/* ---- TÊN ĐĂNG NHẬP = PHẦN SỐ CỦA MÃ NV ----------------------------
+   Mã NV trong dữ liệu giữ nguyên (vd vc44180062) — mọi bảng biểu, biểu mẫu
+   in và file Excel vẫn hiện đúng như cũ. Riêng màn hình đăng nhập chỉ dùng
+   phần số (44180062) cho cả tên đăng nhập lẫn mật khẩu mặc định, để bàn phím
+   điện thoại bật sẵn chế độ số.
+   ------------------------------------------------------------------- */
+function loginKey(id){
+  const d=String(id||'').replace(/\D/g,'');
+  return d||String(id||'');
+}
 /* Dòng đã điền đủ để trở thành tài khoản đăng nhập */
 function canHaveAccount(e){return !!(e&&e.id&&String(e.name||'').trim());}
 function isRealEmpId(id){return canHaveAccount(empById(id));}
 
-/* Tạo tài khoản mặc định cho 1 mã NV (không ghi đè nếu đã có) */
+/* Tạo tài khoản mặc định cho 1 mã NV (không ghi đè nếu đã có).
+   Tài khoản cũ còn dùng mật khẩu mặc định kiểu cũ (= cả mã vc…) được cấp lại
+   theo phần số, để không ai phải nhớ hai kiểu. */
 function ensureAccount(id,silent){
   if(!id)return false;
   const e=empById(id);
   if(e&&!canHaveAccount(e))return false;      // dòng chưa nhập tên → bỏ qua
   S.accounts=S.accounts||{};
-  if(S.accounts[id]&&S.accounts[id].hash)return false;
-  S.accounts[id]={hash:hashPw(id,id),by:'auto',at:Date.now(),init:true};
-  if(!silent)toast('Đã tạo tài khoản cho '+id+' (mật khẩu = mã NV)');
+  const want=hashPw(id,loginKey(id));
+  const a=S.accounts[id];
+  if(a&&a.hash){
+    if(a.init&&a.hash!==want&&a.hash===hashPw(id,id)){   // chuyển mặc định cũ → mới
+      a.hash=want;a.at=Date.now();a.by='auto';
+      return true;
+    }
+    return false;
+  }
+  S.accounts[id]={hash:want,by:'auto',at:Date.now(),init:true};
+  if(!silent)toast('Đã tạo tài khoản '+loginKey(id)+' (mật khẩu = mã số)');
   return true;
 }
 /* Quét toàn bộ danh sách — gọi sau khi load / khi roster đổi */
@@ -85,7 +105,8 @@ function syncAccounts(){
 /* Có đang dùng mật khẩu mặc định không */
 function usingDefaultPw(id){
   const a=S.accounts&&S.accounts[id];
-  return !!(a&&(a.init||a.hash===hashPw(id,id)));
+  if(!a)return false;
+  return !!(a.init||a.hash===hashPw(id,loginKey(id))||a.hash===hashPw(id,id));
 }
 
 function meId(){
@@ -123,14 +144,22 @@ function renderGate(){
   }
   const f=$('loginId');if(f&&!f.value)setTimeout(()=>{try{f.focus();}catch(e){}},80);
 }
-/* Tìm nhân viên theo mã — bỏ qua khoảng trắng và HOA/thường cho dễ gõ trên điện thoại */
+/* Tìm nhân viên theo mã số — bỏ qua khoảng trắng, HOA/thường và tiền tố chữ.
+   Trả về {emp} nếu khớp duy nhất, {many:[...]} nếu nhiều người trùng phần số. */
 function findEmpLoose(raw){
   const k=String(raw||'').trim();
-  if(!k)return null;
-  let e=empById(k);
-  if(e)return e;
-  const lk=k.toLowerCase().replace(/\s+/g,'');
-  return S.employees.find(x=>String(x.id||'').toLowerCase().replace(/\s+/g,'')===lk)||null;
+  if(!k)return{};
+  const e=empById(k);
+  if(e)return{emp:e};
+  const norm=s=>String(s||'').toLowerCase().replace(/\s+/g,'');
+  const byFull=S.employees.filter(x=>norm(x.id)===norm(k));
+  if(byFull.length===1)return{emp:byFull[0]};
+  const num=k.replace(/\D/g,'');
+  if(!num)return{};
+  const byNum=S.employees.filter(x=>loginKey(x.id)===num);
+  if(byNum.length===1)return{emp:byNum[0]};
+  if(byNum.length>1)return{many:byNum};
+  return{};
 }
 
 function doLogin(){
@@ -142,21 +171,31 @@ function doLogin(){
     return;
   }
 
-  const e=findEmpLoose(raw);
-  if(!e){
-    gateMsg('Không tìm thấy mã nhân viên "'+raw+'". Mã phải trùng đúng ô <b>Mã NV</b> trong tab Nhóm &amp; Lịch (kể cả tiền tố nếu có).');
+  const found=findEmpLoose(raw);
+  if(found.many){
+    gateMsg('Có '+found.many.length+' người cùng mã số <b>'+esc(loginKey(raw))+'</b>. Nhờ quản lý sửa lại cho mỗi người một mã riêng.');
     return;
   }
-  const id=e.id;
+  const e=found.emp;
+  if(!e){
+    gateMsg('Không tìm thấy mã nhân viên <b>'+esc(raw)+'</b>. Nhập phần số trong ô <b>Mã NV</b> ở tab Nhóm &amp; Lịch, ví dụ <b>44180062</b>.');
+    return;
+  }
+  const id=e.id, key=loginKey(id);
   if(!canHaveAccount(e)){
-    gateMsg('Mã "'+id+'" chưa có họ tên trong danh sách nên chưa được cấp tài khoản. Nhờ quản lý điền họ tên giúp.');
+    gateMsg('Mã <b>'+esc(key)+'</b> chưa có họ tên trong danh sách nên chưa được cấp tài khoản. Nhờ quản lý điền họ tên giúp.');
     return;
   }
   ensureAccount(id,true);                       // NV chưa có tài khoản → tạo ngay
   const acc=S.accounts&&S.accounts[id];
   if(!acc||!acc.hash){gateMsg('Không tạo được tài khoản cho mã này — liên hệ quản lý.');return;}
-  if(hashPw(id,pw)!==acc.hash){
-    gateMsg('Sai mật khẩu. Nếu chưa từng đổi, mật khẩu chính là mã nhân viên: <b>'+esc(id)+'</b>');
+
+  // Còn dùng mật khẩu mặc định thì chấp nhận cả phần số lẫn mã đầy đủ (tránh kẹt khi chuyển đổi)
+  const ok = hashPw(id,pw)===acc.hash ||
+             (acc.init && (hashPw(id,key)===acc.hash || hashPw(id,id)===acc.hash) &&
+              (pw===key || pw===id));
+  if(!ok){
+    gateMsg('Sai mật khẩu. Nếu chưa từng đổi, mật khẩu chính là mã số của bạn: <b>'+esc(key)+'</b>');
     return;
   }
   localStorage.setItem(SESS,JSON.stringify({id,at:Date.now()}));
@@ -187,7 +226,7 @@ function changeMyPass(){
   if(!acc||hashPw(id,cur)!==acc.hash){toast('Mật khẩu hiện tại không đúng');return;}
   if(n1.trim().length<4){toast('Mật khẩu mới tối thiểu 4 ký tự');return;}
   if(n1.trim()!==n2.trim()){toast('Hai ô mật khẩu mới chưa khớp');return;}
-  if(n1.trim()===id){toast('Không dùng lại mã NV làm mật khẩu');return;}
+  if(n1.trim()===id||n1.trim()===loginKey(id)){toast('Không dùng lại mã nhân viên làm mật khẩu');return;}
   acc.hash=hashPw(id,n1.trim());acc.at=Date.now();acc.by='self';acc.init=false;
   save();
   ['mePwCur','mePwNew','mePwNew2'].forEach(k=>{if($(k))$(k).value='';});

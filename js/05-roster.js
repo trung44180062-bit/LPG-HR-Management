@@ -78,7 +78,7 @@ function changeId(oldId,val){
   e.id=nid;
   ensureAccount(nid,true);
   save();renderSetup();renderBoth();
-  toast(isRealEmpId(nid)?('Đã đổi mã NV — tài khoản '+nid+', mật khẩu = mã NV'):'Đã đổi mã NV');
+  toast(isRealEmpId(nid)?('Đã đổi mã NV — đăng nhập '+loginKey(nid)+', mật khẩu = '+loginKey(nid)):'Đã đổi mã NV');
 }
 function addMember(team){
   S.employees.push({id:newVc(),name:'',pos:'',role:'oper',team:team||'',empType:'shift',shiftType:'type1',a1:'',a2:'',order:S.employees.length+1,active:true});

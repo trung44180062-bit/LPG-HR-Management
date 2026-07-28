@@ -63,11 +63,16 @@ Khi thêm file mới, chèn thẻ `<script>` vào trước `12-main.js`.
 
 ## Đăng nhập & phân quyền
 
-**Tài khoản = mã nhân viên.** Khi quản lý thêm một người vào tab *Nhóm & Lịch* và nhập mã NV thật,
-app tự tạo tài khoản đăng nhập với **mật khẩu ban đầu = chính mã NV đó**. Không cần cấp tay.
+**Tài khoản = phần số của mã nhân viên.** Khi quản lý thêm một người vào tab *Nhóm & Lịch*
+và điền mã NV + họ tên, app tự tạo tài khoản. Không cần cấp tay.
 
-- Mã tạm dạng `vc########` (do nút "＋ Người" sinh ra) chưa được coi là tài khoản.
-- Đổi mã NV → tài khoản cũ bị thu hồi, tài khoản mới cấp lại với mật khẩu = mã mới; đơn cũ và lịch ca tự trỏ sang mã mới.
+- Mã NV trong dữ liệu giữ nguyên (vd `vc44180062`) — bảng danh sách, biểu mẫu in, file Excel không đổi.
+- **Màn hình đăng nhập chỉ dùng phần số**: tên đăng nhập `44180062`, mật khẩu ban đầu cũng `44180062`.
+  Hàm `loginKey()` trong `10-account.js` lo việc này; bàn phím điện thoại nhờ vậy bật sẵn chế độ số.
+- Vẫn chấp nhận gõ cả mã đầy đủ `vc44180062` để không ai bị kẹt.
+- Dòng chưa điền họ tên thì chưa được cấp tài khoản.
+- Nếu hai người trùng phần số, app báo lỗi thay vì cho vào nhầm — quản lý phải sửa mã cho khác nhau.
+- Đổi mã NV → tài khoản cũ bị thu hồi, tài khoản mới cấp lại với mật khẩu = mã số mới; đơn cũ và lịch ca tự trỏ sang mã mới.
 - Xoá nhân viên → thu hồi tài khoản.
 - Nhân viên vào mục **Tài khoản** để đổi mật khẩu. Khi còn dùng mật khẩu mặc định, trang chính hiện banner nhắc.
 

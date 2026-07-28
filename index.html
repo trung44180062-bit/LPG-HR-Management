@@ -33,14 +33,15 @@
 
     <div class="fg">
       <label class="fl" for="loginId">Mã nhân viên</label>
-      <input class="inp" id="loginId" placeholder="VD: 44180062" inputmode="numeric"
+      <input class="inp num" id="loginId" placeholder="44180062" inputmode="numeric" pattern="[0-9]*"
              autocomplete="username" autocapitalize="off" spellcheck="false"
              onkeydown="if(event.key==='Enter')$('loginPw').focus()">
     </div>
     <div class="fg">
       <label class="fl" for="loginPw">Mật khẩu</label>
       <div class="pw-wrap">
-        <input type="password" class="inp" id="loginPw" autocomplete="current-password"
+        <input type="password" class="inp num" id="loginPw" inputmode="numeric"
+               autocomplete="current-password"
                onkeydown="if(event.key==='Enter')doLogin()">
         <button type="button" class="pw-eye" onclick="togglePw('loginPw',this)" title="Hiện/ẩn mật khẩu">👁</button>
       </div>
@@ -50,7 +51,8 @@
 
     <button class="btn gate-btn" onclick="doLogin()">Đăng nhập</button>
 
-    <p class="gate-hint">Lần đầu đăng nhập: <b>mật khẩu = mã nhân viên</b> của bạn.<br>
+    <p class="gate-hint">Chỉ nhập <b>phần số</b> của mã nhân viên (bỏ chữ đầu).<br>
+      Lần đầu đăng nhập: <b>mật khẩu = mã số</b> đó.
       Vào rồi nhớ đổi mật khẩu ở mục <b>Tài khoản</b>.</p>
 
     <div class="gate-status" id="gateStatus">

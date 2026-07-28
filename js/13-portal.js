@@ -727,10 +727,11 @@ function myPanelAcc(id){
   <h3 style="margin:4px 0 10px">🔑 Tài khoản của tôi</h3>
   <div class="acc-info">
     <div><span>Họ tên</span><b>${esc(e.name||'—')}</b></div>
-    <div><span>Mã NV (tên đăng nhập)</span><b style="font-family:var(--mono)">${esc(id)}</b></div>
+    <div><span>Tên đăng nhập</span><b style="font-family:var(--mono)">${esc(loginKey(id))}</b></div>
+    ${loginKey(id)!==id?`<div><span>Mã NV trên hồ sơ</span><b style="font-family:var(--mono)">${esc(id)}</b></div>`:''}
     <div><span>Vị trí</span><b>${esc(e.pos||'—')}</b></div>
     <div><span>Nhóm</span><b>${esc(e.team||'—')}</b></div>
-    <div><span>Mật khẩu</span><b>${usingDefaultPw(id)?'<span class="st pending">Đang dùng mặc định</span>':'<span class="st approved">Đã đổi</span>'}</b></div>
+    <div><span>Mật khẩu</span><b>${usingDefaultPw(id)?'<span class="st pending">Đang dùng mặc định (= '+esc(loginKey(id))+')</span>':'<span class="st approved">Đã đổi</span>'}</b></div>
     ${acc.at?`<div><span>Cập nhật lần cuối</span><b>${new Date(acc.at).toLocaleString('vi-VN')}</b></div>`:''}
   </div>
   ${usingDefaultPw(id)?`<div class="pv-alert warn sm">Mật khẩu của bạn đang bằng mã NV — ai biết mã cũng đăng nhập được. Nên đổi ngay.</div>`:''}
