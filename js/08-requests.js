@@ -126,9 +126,9 @@ function apprWarnLine(r){
   }
   if(!warnings.length)return '';
   const w=warnings[0],parts=[];
-  if(w.cD<S.settings.minD)parts.push(`ca D còn ${w.cD}/${S.settings.minD}`);
-  if(w.cN<S.settings.minN)parts.push(`ca N còn ${w.cN}/${S.settings.minN}`);
-  return `<div class="hint" style="background:#FEF2F2;color:#991B1B;margin-top:6px">⚠️ Nếu duyệt: ngày ${fmtVN(w.iso)} ${parts.join(', ')}${warnings.length>1?` (+${warnings.length-1} ngày khác)`:''}</div>`;
+  if(w.cD<S.settings.minD)parts.push(`${t('ca D còn')} ${w.cD}/${S.settings.minD}`);
+  if(w.cN<S.settings.minN)parts.push(`${t('ca N còn')} ${w.cN}/${S.settings.minN}`);
+  return `<div class="hint" style="background:#FEF2F2;color:#991B1B;margin-top:6px">${t('⚠️ Nếu duyệt: ngày')} ${fmtVN(w.iso)} ${parts.join(', ')}${warnings.length>1?` (+${warnings.length-1} ${t('ngày khác)')}`:''}</div>`;
 }
 function reqCard(r,withActs){
   const{e,body}=reqDesc(r);
@@ -139,8 +139,8 @@ function reqCard(r,withActs){
       ${r.printedAt?'<span class="src" style="background:#E7EFF6;color:var(--brand)">🖨️ đã in</span>':''}</div>
     <div class="body">${body}</div>
     ${withActs?apprWarnLine(r):''}
-    <div class="meta"><span>Gửi: ${new Date(r.createdAt).toLocaleString('vi-VN')}</span>
-      ${r.decidedAt?`<span>Duyệt: ${new Date(r.decidedAt).toLocaleString('vi-VN')}</span>`:''}
+    <div class="meta"><span>Gửi: ${fmtDateTime(r.createdAt)}</span>
+      ${r.decidedAt?`<span>Duyệt: ${fmtDateTime(r.decidedAt)}</span>`:''}
       ${r.reason?`<span>Lý do: ${esc(r.reason)}</span>`:''}</div>
     <div class="acts">
       ${withActs?`<button class="btn ok sm" onclick="decide('${r.id}',true)">✓ Duyệt</button>
@@ -164,7 +164,7 @@ function* dateRange(f,t){let d=new Date(f+'T00:00:00');const e=new Date(t+'T00:0
 function decide(id,ok){
   const r=S.requests[id];if(!r||r.status!=='pending')return;
   if(!ok){
-    const reason=prompt('Lý do từ chối (tuỳ chọn):')||'';
+    const reason=prompt(t('Lý do từ chối (tuỳ chọn):'))||'';
     r.status='rejected';r.reason=reason;r.decidedAt=Date.now();r.decidedBy='manager';
     save();renderAppr();toast('Đã từ chối');return;
   }

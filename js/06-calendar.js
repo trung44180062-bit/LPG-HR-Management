@@ -212,7 +212,7 @@ function renderCalWeekCards(){
   weeks.forEach((wk,wi)=>{
     if(wk.some(w=>w.iso===tIso))firstOpenIdx=wi;
     h+=`<div class="wk-card" id="wkc${wi}"><div class="wk-head">Tuần ${isoWeekNum(wk[0].iso)} · ${fmtVN(wk[0].iso)} – ${fmtVN(wk[6].iso)}</div>`;
-    h+='<div class="wk-dow"><span></span>'+wk.map(w=>{const dw=new Date(w.iso+'T00:00:00').getDay();return `<span class="${w.iso===tIso?'today':''}">${DOW[dw]} ${+w.iso.slice(8)}</span>`;}).join('')+'</div>';
+    h+='<div class="wk-dow"><span></span>'+wk.map(w=>{const dw=new Date(w.iso+'T00:00:00').getDay();return `<span class="${w.iso===tIso?'today':''}">${dowOf(w.iso)} ${+w.iso.slice(8)}</span>`;}).join('')+'</div>';
     teams.forEach(tm=>{
       const mem=byTeam[tm];
       const key=tm||'__none';
@@ -279,7 +279,7 @@ function renderCalDayView(){
       <input type="date" class="inp sm" style="width:auto" value="${iso}" onchange="calDaySet(this.value)">
       <button class="btn sec sm" onclick="calDayShift(1)">ngày mai ▶</button>
     </div>
-    <div class="dv-sum">Ngày ${fmtVN(iso)} · ${DOW[dw]}
+    <div class="dv-sum">Ngày ${fmtVN(iso)} · ${dowOf(iso)}
       &nbsp;·&nbsp;D: <b class="${lowD?'low':''}">${B.D.length}</b>
       &nbsp;·&nbsp;N: <b class="${lowN?'low':''}">${B.N.length}</b>
       &nbsp;·&nbsp;O: ${B.O.length}

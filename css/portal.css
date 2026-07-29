@@ -173,9 +173,14 @@ i.d-ok{background:#0E9F6E}
 .tipdot{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;color:#64748B;font-weight:600}
 
 /* ===================== SHEET THEO NGÀY ===================== */
-.day-sheet{max-height:92vh;overflow-y:auto;padding-bottom:26px}
-.ds-head{display:flex;align-items:flex-start;gap:10px;padding-bottom:11px;
-  border-bottom:1px solid #EEF2F6;margin-bottom:12px}
+/* dvh = chiều cao màn hình thật sự nhìn thấy trên điện thoại (đã trừ thanh địa chỉ) */
+.day-sheet{max-height:92vh;max-height:calc(100dvh - 56px);overflow-y:auto;padding-bottom:26px}
+/* Đầu sheet ghim lại: cuộn tới đâu vẫn thấy ngày và nút ✕ */
+.ds-head{display:flex;align-items:flex-start;gap:10px;padding:10px 0 11px;
+  border-bottom:1px solid #EEF2F6;margin-bottom:12px;
+  position:sticky;top:0;z-index:6;background:#fff}
+.ds-head::before{content:'';position:absolute;left:-14px;right:-14px;top:0;bottom:0;
+  background:#fff;z-index:-1}
 .ds-date{font-size:15px;font-weight:800;color:#0F172A}
 .ds-date .tag{background:#0B3B5C;color:#fff;font-size:9.5px;padding:2px 7px;
   border-radius:20px;vertical-align:middle;margin-left:4px;font-weight:700}
@@ -215,14 +220,26 @@ i.d-ok{background:#0E9F6E}
 .crew-col.rest .crew-h i{background:#D8EDE2}
 .crew-n{display:flex;flex-wrap:wrap;gap:4px}
 .crew-n .mate{
-  display:inline-flex;align-items:baseline;gap:4px;
+  display:inline-flex;align-items:center;gap:4px;
   background:#fff;border:1px solid #E3EAF1;border-radius:8px;padding:4px 8px;
   font-size:11.5px;font-weight:600;color:#0F172A;line-height:1.3;white-space:nowrap;
 }
-.crew-n .mate i{font-style:normal;font-size:9.5px;font-weight:800;color:#94A3B8}
+.crew-n .mate .nm{font-weight:700}
+.crew-n .mate i,.crew-n .mate .tm{font-style:normal;font-size:9.5px;font-weight:800;color:#94A3B8}
 .crew-n .mate.me{background:#0B3B5C;border-color:#0B3B5C;color:#fff;font-weight:800}
-.crew-n .mate.me i{color:#9FC4DC}
+.crew-n .mate.me .tm{color:#9FC4DC}
+/* Ca thực tế khác lịch chuẩn → viền cam + hiện "chuẩn → thực tế" */
+.crew-n .mate.ovr{border-color:#F59E0B;background:#FFFBEB;box-shadow:inset 3px 0 0 #F59E0B}
+.crew-n .mate.me.ovr{background:#0B3B5C;box-shadow:inset 3px 0 0 #F59E0B}
+.crew-n .mate .chg,.crew-n .mate .now{display:inline-flex;align-items:center;gap:2px;font-style:normal}
+.crew-n .mate .chg .cc{opacity:.62;text-decoration:line-through}
+.crew-n .mate .chg .ar{color:#B45309;font-size:10px;font-weight:800}
+.crew-n .mate .cc{font-size:9.5px;padding:1px 5px;border-radius:5px;font-weight:800;color:#fff}
+.crew-note{font-size:10.5px;color:#64748B;line-height:1.55;margin-top:8px}
+.crew-note .ovr-dot{color:#B45309}
 .ds-block h4 .h4n{margin-left:6px;font-size:10.5px;font-weight:700;color:#94A3B8}
+.ds-block h4 .h4c{margin-left:6px;font-size:10px;font-weight:800;color:#B45309;
+  background:#FEF3C7;border-radius:20px;padding:2px 8px;text-transform:none;letter-spacing:0}
 
 .ds-acts{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:7px;margin-bottom:11px}
 .ds-acts .da{
@@ -294,6 +311,10 @@ i.d-ok{background:#0E9F6E}
 }
 .mp-tabs button.on{background:#0B3B5C;border-color:#0B3B5C;color:#fff}
 .mp-tabs .ds-x{margin-left:auto}
+/* Hàng tab của bảng phụ cũng ghim để luôn bấm được nút ✕ */
+.mp-tabs{position:sticky;top:0;z-index:6;background:#fff;padding:10px 0 8px}
+.mp-tabs::before{content:'';position:absolute;left:-14px;right:-14px;top:0;bottom:0;
+  background:#fff;z-index:-1}
 
 .ot-list{border:1px solid #E8EDF3;border-radius:10px;overflow:hidden}
 .ot-row{display:flex;align-items:center;gap:9px;padding:8px 11px;font-size:12px;border-bottom:1px solid #F1F5F9}

@@ -62,10 +62,14 @@ const SESS=LS+'_sess';
      'staff' — nhân viên thường (mặc định)
      'appr'  — duyệt đơn: thấy tab Duyệt, sửa lịch thực tế, in đơn
      'admin' — quản trị: thêm Nhóm & Lịch, Dữ liệu, cấp/reset mật khẩu
+     'kmgr'  — Quản lý người Hàn: quyền y hệt 'admin', khác duy nhất ở chỗ
+               đăng nhập vào là giao diện TIẾNG ANH (xem js/14-i18n.js).
+               Vẫn tự đổi được sang tiếng Việt bằng nút EN/VI trên đầu trang.
    ROOT_ADMIN luôn là quản trị để còn người cấp quyền cho những người khác.
    ====================================================== */
 const ROOT_ADMIN='vc44180062';
-const PERM_LABEL={staff:'Nhân viên',appr:'Duyệt đơn',admin:'Quản trị'};
+const PERM_LABEL={staff:'Nhân viên',appr:'Duyệt đơn',admin:'Quản trị',kmgr:'Quản lý người Hàn (EN)'};
+const PERM_VALUES=['staff','appr','admin','kmgr'];
 
 function isRootAdmin(id){
   if(!id)return false;
@@ -76,13 +80,14 @@ function permOf(id){
   if(isRootAdmin(id))return 'admin';
   const e=empById(id);
   const p=e&&e.perm;
-  return (p==='admin'||p==='appr')?p:'staff';
+  return PERM_VALUES.includes(p)?p:'staff';
 }
 /* Đọc lại quyền của người đang đăng nhập → cập nhật cờ mgr / adm */
 function applyPerm(){
   const p=permOf(meId());
-  adm=(p==='admin');
-  mgr=(p==='admin'||p==='appr');
+  adm=(p==='admin'||p==='kmgr');
+  mgr=(p==='admin'||p==='kmgr'||p==='appr');
+  if(typeof applyLangForUser==='function')applyLangForUser();
   return p;
 }
 
@@ -220,8 +225,9 @@ function doLogin(){
   $('loginPw').value='';$('loginId').value='';
   gateMsg('');
   markSeen(id);
-  toast('Xin chào '+(e.name||id)+' 👋');
   renderGate();applyRoleUI();refreshBadge();go('me');
+  applyLangForUser();                       // quyền kmgr → giao diện tiếng Anh
+  toast(t('Xin chào')+' '+(e.name||id)+' 👋');
 }
 
 /* Hiện lỗi ngay trên thẻ đăng nhập (toast bị cổng che nên khó thấy) */

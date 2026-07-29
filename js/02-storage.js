@@ -71,4 +71,4 @@ function saveFbCfg(){
   localStorage.setItem(LS+'_fb',v);toast('Đã lưu — đang kết nối');initFb();
 }
 function clearFbCfg(){localStorage.removeItem(LS+'_fb');if(fbRef){fbRef.off();fbRef=null;}$('fbCfg').value='';toast('Về config mặc định — đang kết nối');initFb();}
-function wipeAll(){if(!confirm('Xoá toàn bộ dữ liệu trên máy này?'))return;localStorage.removeItem(LS);location.reload();}
+function wipeAll(){if(!confirm(t('Xoá toàn bộ dữ liệu trên máy này?')))return;localStorage.removeItem(LS);location.reload();}

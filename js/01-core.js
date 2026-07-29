@@ -63,7 +63,11 @@ const DOW=['CN','T2','T3','T4','T5','T6','T7'];
 const DOW_EN=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const fmtVN=iso=>{const[y,m,d]=iso.split('-');return d+'/'+m;};
 const fmtVNfull=iso=>{const[y,m,d]=iso.split('-');return d+'/'+m+'/'+y;};
-const dowOf=iso=>DOW[new Date(iso+'T00:00:00').getDay()];
+/* Thứ trong tuần — đổi theo ngôn ngữ đang dùng (xem js/14-i18n.js) */
+const isEN=()=>{try{return LANG==='en';}catch(e){return false;}};
+const dowOf=iso=>(isEN()?DOW_EN:DOW)[new Date(iso+'T00:00:00').getDay()];
+const dowShort=i=>(isEN()?['Mon','Tue','Wed','Thu','Fri','Sat','Sun']:['T2','T3','T4','T5','T6','T7','CN'])[i];
+const fmtDateTime=ts=>new Date(ts).toLocaleString(isEN()?'en-GB':'vi-VN');
 const dayNum=iso=>Math.round(new Date(iso+'T00:00:00').getTime()/86400000);
 function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(t._t);t._t=setTimeout(()=>t.style.display='none',2600);}
 function allCodes(){return DEFAULT_CODES.concat((S.settings&&S.settings.customCodes)||[]);}

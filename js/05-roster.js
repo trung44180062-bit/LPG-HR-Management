@@ -54,7 +54,8 @@ function memberRow(e){
      :`<select class="inp sm" style="min-width:104px" ${adm?'':'disabled'} onchange="updPerm('${e.id}',this.value)">
         <option value="staff"${sel('staff',perm)}>Nhân viên</option>
         <option value="appr"${sel('appr',perm)}>Duyệt đơn</option>
-        <option value="admin"${sel('admin',perm)}>Quản trị</option></select>`}</td>
+        <option value="admin"${sel('admin',perm)}>Quản trị</option>
+        <option value="kmgr"${sel('kmgr',perm)}>Quản lý người Hàn (EN)</option></select>`}</td>
    <td><select class="inp sm" onchange="updType('${e.id}',this.value)">
      <option value="type1"${sel('type1',e.shiftType)}>Ca 8 ngày (OODDNNRR)</option>
      <option value="type2"${sel('type2',e.shiftType)}>Ca 6 ngày (DDNNRR)</option>
@@ -69,7 +70,7 @@ function updPerm(id,v){
   if(!adm){toast('Cần quyền quản trị');renderSetup();return;}
   if(isRootAdmin(id)){renderSetup();return;}
   const e=empById(id);if(!e)return;
-  e.perm=(v==='admin'||v==='appr')?v:'staff';
+  e.perm=PERM_VALUES.includes(v)?v:'staff';
   save();
   if(id===meId()){applyPerm();applyRoleUI();refreshBadge();}
   renderSetup();
@@ -103,7 +104,7 @@ function addMember(team){
   save();renderSetup();
 }
 function addGroup(){
-  const name=prompt('Tên nhóm (VD: A, B, C, D):');if(!name)return;
+  const name=prompt(t('Tên nhóm (VD: A, B, C, D):'));if(!name)return;
   const tm=name.trim();
   const tpl=[['eng','Field Engineer'],['eng','DCS Boardman'],['oper','Operator'],['oper','Operator']];
   tpl.forEach(([role,pos])=>{
@@ -112,19 +113,19 @@ function addGroup(){
   save();renderSetup();toast('Đã tạo nhóm '+tm);
 }
 function renameGroup(team){
-  const nn=prompt('Đổi tên nhóm:',team);if(nn===null)return;
-  const t=nn.trim();S.employees.forEach(e=>{if((e.team||'')===team)e.team=t;});
+  const nn=prompt(t('Đổi tên nhóm:'),team);if(nn===null)return;
+  const nt=nn.trim();S.employees.forEach(e=>{if((e.team||'')===team)e.team=nt;});
   save();renderSetup();renderBoth();
 }
 function delGroup(team){
-  if(!confirm('Xóa nhóm "'+team+'" và toàn bộ người trong nhóm?'))return;
+  if(!confirm(t('Xóa nhóm "')+team+t('" và toàn bộ người trong nhóm?')))return;
   S.employees.filter(e=>(e.team||'')===team).forEach(e=>{delete S.base[e.id];delete S.over[e.id];});
   S.employees=S.employees.filter(e=>(e.team||'')!==team);
   save();renderSetup();renderBoth();toast('Đã xóa nhóm');
 }
 function delEmp(id){
   const e=empById(id);if(!e)return;
-  if(!confirm('Xóa "'+(e.name||id)+'" khỏi danh sách?'))return;
+  if(!confirm(t('Xóa "')+(e.name||id)+t('" khỏi danh sách?')))return;
   S.employees=S.employees.filter(x=>x.id!==id);delete S.base[id];delete S.over[id];
   if(S.accounts)delete S.accounts[id];      // xoá luôn tài khoản đăng nhập
   save();renderSetup();renderBoth();

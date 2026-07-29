@@ -5,12 +5,15 @@
 /* =================== SCHEDULE PERIOD (21 → 20) =================== */
 // A "schedule month" YM = 'YYYY-MM' (kỳ tháng N) = Hyosung period: 21/(N-1) → 20/N.
 // Ví dụ: kỳ Tháng 7 = 21/06 → 20/07.
+/* Nhãn ngắn của kỳ công — đổi theo ngôn ngữ (xem js/14-i18n.js) */
+function periodShort(m,y){return isEN()?`Period M${m}/${y}`:`Kỳ T${m}/${y}`;}
 function periodFor(ym){
   const[y,m]=ym.split('-').map(Number);
   const pm=m===1?12:m-1, py=m===1?y-1:y;
   const from=`${py}-${pad(pm)}-21`;
   const to=`${y}-${pad(m)}-20`;
-  return {from,to,y,m,pm,py,label:`Kỳ T${m}/${y} · 21/${pad(pm)} → 20/${pad(m)}`};
+  return {from,to,y,m,pm,py,short:periodShort(m,y),
+          label:`${periodShort(m,y)} · 21/${pad(pm)} → 20/${pad(m)}`};
 }
 // Which schedule month (kỳ) does an ISO date belong to?  Ngày ≥21 thuộc kỳ tháng SAU.
 function schedMonthOf(iso){
@@ -132,7 +135,7 @@ function periodFromAnchor(){
   toast('Kỳ theo mốc: '+periodFor(ym).label);
 }
 function newSchedule(){
-  const m=prompt('Tạo lịch cho kỳ tháng (nhập YYYY-MM, ví dụ 2026-07 = kỳ Tháng 7 = 21/06→20/07):',curSchedMonth());
+  const m=prompt(t('Tạo lịch cho kỳ tháng (nhập YYYY-MM, ví dụ 2026-07 = kỳ Tháng 7 = 21/06→20/07):'),curSchedMonth());
   if(!m||!/^\d{4}-\d{2}$/.test(m)){if(m!==null)toast('Định dạng YYYY-MM');return;}
   const p=periodFor(m);
   $('setFrom').value=p.from;$('setTo').value=p.to;fillPeriodSel();$('setPeriod').value=m;
@@ -146,18 +149,18 @@ function nextMonthSchedule(){
   const nm=m===12?1:m+1, ny=m===12?y+1:y;
   const nym=ny+'-'+pad(nm);
   const p=periodFor(nym);
-  if(!confirm('Tạo lịch chuẩn cho '+p.label+' — nối tiếp từ khai báo nhóm hiện tại?'))return;
+  if(!confirm(t('Tạo lịch chuẩn cho')+' '+p.label+' '+t('— nối tiếp từ khai báo nhóm hiện tại?')))return;
   $('setFrom').value=p.from;$('setTo').value=p.to;fillPeriodSel();$('setPeriod').value=nym;
   fillSchedule();
 }
 function clearSchedRange(){
   const sd=schedDays();if(!sd){toast('Chọn khoảng ngày');return;}
-  if(!confirm('Xóa lịch từ '+fmtVNfull(sd.f)+' đến '+fmtVNfull(sd.t)+'?'))return;
+  if(!confirm(t('Xóa lịch từ')+' '+fmtVNfull(sd.f)+' '+t('đến')+' '+fmtVNfull(sd.t)+'?'))return;
   for(const id in S.base)for(const iso in S.base[id])if(iso>=sd.f&&iso<=sd.t)delete S.base[id][iso];
   for(const id in S.over)for(const iso in S.over[id])if(iso>=sd.f&&iso<=sd.t)delete S.over[id][iso];
   save();renderSetup();renderBoth();toast('Đã xóa lịch trong khoảng');
 }
 function clearSchedAll(){
-  if(!confirm('Xóa TOÀN BỘ lịch ca? (giữ danh sách nhân sự)'))return;
+  if(!confirm(t('Xóa TOÀN BỘ lịch ca? (giữ danh sách nhân sự)')))return;
   S.base={};S.over={};save();renderSetup();renderBoth();toast('Đã xóa toàn bộ lịch');
 }

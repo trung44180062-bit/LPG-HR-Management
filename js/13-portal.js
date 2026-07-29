@@ -82,24 +82,44 @@ function conflictReqs(id,isoList,type){
   });
 }
 
-/* ---- Nhân sự trong ngày, gom theo nhóm ca (O / D / N / … / R) ---- */
-/* Từ 07/2026: hiện cả người nghỉ ca R để biết ai đang rảnh mà nhờ đổi ca */
-const CREW_SHOW=c=>{const k=codeInfo(c).cat;return k==='work'||k==='swap'||k==='ot'||k==='rest';};
-const CREW_ORDER=['O','D','N','OTD','OTN','X','R'];
+/* ---- Nhân sự trong ngày, gom theo nhóm ca (O / D / N / OT / R / nghỉ) ----
+   Hiện LỊCH THỰC TẾ (base + điều chỉnh + đơn đã duyệt). Ai có ca thực tế khác
+   lịch chuẩn thì đánh dấu và hiện luôn "chuẩn → thực tế" để người sắp làm đơn
+   biết ngay hôm đó ai nghỉ, ai đã đổi ca. */
+const CREW_SHOW=c=>{const k=codeInfo(c).cat;return k==='work'||k==='swap'||k==='ot'||k==='rest'||k==='leave';};
+const CREW_ORDER=['O','D','N','OTD','OTN','X','R','LEAVE'];
+/* Nhóm hiển thị của một mã ca */
+function crewGroupOf(c){
+  const cat=codeInfo(c).cat;
+  if(cat==='leave')return 'LEAVE';
+  if(cat==='rest') return 'R';
+  return baseShiftOf(c)||c;
+}
+/* Nhãn + màu của cột nhóm */
+function crewGroupInfo(g){
+  if(g==='LEAVE')return{code:'AL',label:'Nghỉ phép / vắng mặt',col:'var(--cAL)',rest:true};
+  const i=codeInfo(g);
+  return{code:g,label:i.l,col:i.col,rest:i.cat==='rest'};
+}
 function crewOfDay(iso){
   const g={};
   activeEmps().forEach(e=>{
-    const c=eff(e.id,iso).code;
+    const r=eff(e.id,iso), c=r.code;
     if(!c||!CREW_SHOW(c))return;
-    const b=baseShiftOf(c)||c;
-    (g[b]=g[b]||[]).push(e);
+    const std=(S.base[e.id]||{})[iso]||'';
+    (g[crewGroupOf(c)]=g[crewGroupOf(c)]||[]).push({
+      e,code:c,std,
+      ovr:!!(std&&std!==c)          // ca thực tế khác lịch chuẩn
+    });
   });
   return Object.keys(g)
     .sort((a,b)=>{
       const ia=CREW_ORDER.indexOf(a),ib=CREW_ORDER.indexOf(b);
       return (ia<0?99:ia)-(ib<0?99:ib)||a.localeCompare(b);
     })
-    .map(b=>[b,g[b].sort((x,y)=>String(x.team||'').localeCompare(String(y.team||''),'vi',{numeric:true}))]);
+    .map(k=>[k,g[k].sort((x,y)=>
+      (y.ovr-x.ovr)||                                    // người có biến động lên trước
+      String(x.e.team||'').localeCompare(String(y.e.team||''),'vi',{numeric:true}))]);
 }
 /* ---- Người đang nghỉ (R) ngày đó → ưu tiên gợi ý đổi ca ---- */
 function swapCandidates(id,iso){
@@ -258,7 +278,7 @@ function renderMe(force){
   ${streak>=STREAK_WARN?`<div class="pv-alert warn">⚠️ Bạn đã làm <b>${streak} ngày liên tục</b>. Cân nhắc xin nghỉ bù.</div>`:''}
 
   <div class="pv-stats">
-    <button class="sbox" onclick="go('stats')"><div class="v">${rnd1(st.hWork)}<i>h</i></div><div class="k">Giờ công · ${esc(per.label.replace('Kỳ ','').split(' ·')[0])}</div></button>
+    <button class="sbox" onclick="go('stats')"><div class="v">${rnd1(st.hWork)}<i>h</i></div><div class="k">Giờ công · ${esc(per.short)}</div></button>
     <button class="sbox ot" onclick="openMyPanel('ot')"><div class="v">${rnd1(ot.approved)}<i>h</i></div>
       <div class="k">Tăng ca đã duyệt${ot.pending?` <span class="pd">+${rnd1(ot.pending)}h chờ</span>`:''}</div></button>
     <button class="sbox al" onclick="openMyPanel('al')"><div class="v">${rnd1(leftAL)}<i>ngày</i></div>
@@ -286,14 +306,14 @@ function pvDays(){
   if(pvMode==='week'){
     const mon=mondayOf(a);
     return{days:Array.from({length:7},(_,i)=>addDaysIso(mon,i)),lead:0,
-      label:'Tuần '+fmtVN(mon)+' – '+fmtVN(addDaysIso(mon,6))};
+      label:t('Tuần')+' '+fmtVN(mon)+' – '+fmtVN(addDaysIso(mon,6))};
   }
   /* Chế độ "tháng" = KỲ CÔNG của công ty: 21 tháng trước → 20 tháng này */
   const ym=schedMonthOf(a), p=periodFor(ym);
   const days=daysOfPeriod(ym);
   return{days,
     lead:(new Date(p.from+'T00:00:00').getDay()+6)%7,
-    label:`Kỳ T${p.m}/${p.y} · 21/${pad(p.pm)} → 20/${pad(p.m)}`};
+    label:p.label};
 }
 
 /* Dấu hiệu đơn trên ô ngày */
@@ -309,7 +329,7 @@ function renderPvCal(){
   const rg=$('pvRange');if(rg)rg.textContent=label;
   const t=todayIso();
   let h=`<div class="pv-cal ${pvMode}">`;
-  ['T2','T3','T4','T5','T6','T7','CN'].forEach((d,i)=>h+=`<div class="hd${i>4?' we':''}">${d}</div>`);
+  for(let i=0;i<7;i++)h+=`<div class="hd${i>4?' we':''}">${dowShort(i)}</div>`;
   for(let k=0;k<lead;k++)h+='<div class="pd"></div>';
   days.forEach(iso=>{
     const r=eff(id,iso), f=pvDayFlags(id,iso);
@@ -483,6 +503,7 @@ function renderDaySheet(){
   const rs=reqsOfDay(id,iso);
   const crew=crewOfDay(iso);
   const totalCrew=crew.reduce((a,[,l])=>a+l.length,0);
+  const nChanged=crew.reduce((a,[,l])=>a+l.filter(m=>m.ovr).length,0);
 
   box.innerHTML=`
    <div class="ds-head">
@@ -508,13 +529,25 @@ function renderDaySheet(){
    </div>`:''}
 
    ${crew.length?`<div class="ds-block">
-     <h4>👥 Nhân sự ngày ${fmtVN(iso)} <span class="h4n">${totalCrew} người</span></h4>
+     <h4>👥 Nhân sự ngày ${fmtVN(iso)} <span class="h4n">${totalCrew} người</span>${
+        nChanged?`<span class="h4c">${nChanged} khác lịch chuẩn</span>`:''}</h4>
      <div class="crew-grid">
-       ${crew.map(([b,list])=>`<div class="crew-col${codeInfo(b).cat==='rest'?' rest':''}">
-          <div class="crew-h">${chip(b)}<b>${esc(codeInfo(b).l)}</b><i>${list.length}</i></div>
-          <div class="crew-n">${list.map(m=>`<span class="mate${m.id===id?' me':''}">${esc(shortName(m.name)||m.id)}${m.team?`<i>${esc(m.team)}</i>`:''}</span>`).join('')}</div>
-        </div>`).join('')}
+       ${crew.map(([b,list])=>{
+          const gi=crewGroupInfo(b);
+          return `<div class="crew-col${gi.rest?' rest':''}">
+          <div class="crew-h"><span class="cc" style="background:${gi.col}">${esc(gi.code)}</span><b>${esc(gi.label)}</b><i>${list.length}</i></div>
+          <div class="crew-n">${list.map(m=>`<span class="mate${m.e.id===id?' me':''}${m.ovr?' ovr':''}">
+              ${m.ovr?`<em class="chg">${chip(m.std)}<b class="ar">→</b></em>`:''}
+              <b class="nm">${esc(shortName(m.e.name)||m.e.id)}</b>
+              ${m.code!==gi.code?`<em class="now">${chip(m.code)}</em>`:''}
+              ${m.e.team?`<i class="tm">${esc(m.e.team)}</i>`:''}
+            </span>`).join('')}</div>
+        </div>`;}).join('')}
      </div>
+     <p class="crew-note">Đang xem lịch thực tế: lịch chuẩn + điều chỉnh + đơn đã duyệt.</p>
+     <p class="crew-note">${nChanged
+        ?'Ô viền cam là người có ca khác lịch chuẩn, hiện dạng chuẩn → thực tế.'
+        :'Ngày này chưa có ai đổi so với lịch chuẩn.'}</p>
    </div>`:''}
 
    <div class="ds-block">
@@ -731,16 +764,16 @@ function dsSubmit(t){
   pvSheetForm=null;
   closeDaySheet();
   renderMe(true);
-  const who=empId!==me?(' cho '+shortName((empById(empId)||{}).name||empId)):'';
-  toastWithPrint('Đã gửi đơn '+(REQ_LABEL[t]||t)+who+' — chờ duyệt ✔',r.id);
+  const who=empId!==me?(' '+t2('cho')+' '+shortName((empById(empId)||{}).name||empId)):'';
+  toastWithPrint(t2('Đã gửi đơn')+' '+t2(REQ_LABEL[t]||t)+who+' '+t2('— chờ duyệt ✔'),r.id);
 }
 
 function cancelMyReq(rid){
   const id=meId(),r=S.requests[rid];
   if(!r||(r.empId!==id&&r.byId!==id)||r.status!=='pending')return;
-  if(!confirm('Huỷ đơn này?'))return;
+  if(!confirm(t('Huỷ đơn này?')))return;
   delete S.requests[rid];
-  save();renderDaySheet();renderMe(true);toast('Đã huỷ đơn');
+  save();renderDaySheet();renderMe(true);toast(t('Đã huỷ đơn'));
 }
 
 /* ============================================================
@@ -904,7 +937,7 @@ function myPanelAl(id){
       <button class="btn" style="flex:1" onclick="saveMyAl()">💾 Lưu</button>
       ${hasBase?`<button class="btn sec" style="flex:1" onclick="clearMyAl()">Bỏ mốc (dùng quỹ ${quota} ngày)</button>`:''}
     </div>
-    ${e.alLeftUpdAt?`<p class="muted" style="margin-top:6px">Cập nhật lần cuối: ${new Date(e.alLeftUpdAt).toLocaleString('vi-VN')}${e.alLeftBy&&e.alLeftBy!==id?' bởi '+esc(e.alLeftBy):''}</p>`:''}
+    ${e.alLeftUpdAt?`<p class="muted" style="margin-top:6px">Cập nhật lần cuối: ${fmtDateTime(e.alLeftUpdAt)}${e.alLeftBy&&e.alLeftBy!==id?' bởi '+esc(e.alLeftBy):''}</p>`:''}
   </div>
 
   <div class="ds-block"><h4>Các ngày nghỉ trong năm (${list.length})</h4>
@@ -920,17 +953,17 @@ function myPanelAl(id){
 function saveMyAl(){
   const id=meId(),e=empById(id);if(!e)return;
   const v=$('alBaseVal')?$('alBaseVal').value:'', at=$('alBaseAt')?$('alBaseAt').value:'';
-  if(v===''||at===''){toast('Nhập đủ số ngày và mốc ngày');return;}
-  if(isNaN(+v)||+v<0){toast('Số ngày phép không hợp lệ');return;}
+  if(v===''||at===''){toast(t('Nhập đủ số ngày và mốc ngày'));return;}
+  if(isNaN(+v)||+v<0){toast(t('Số ngày phép không hợp lệ'));return;}
   e.alLeftBase=+v;e.alLeftAt=at;e.alLeftBy=id;e.alLeftUpdAt=Date.now();
   save();renderMyPanel();renderMe(true);
-  toast('Đã lưu — còn '+rnd1(alLeft(id))+' ngày phép');
+  toast(t('Đã lưu — còn')+' '+rnd1(alLeft(id))+' '+t('ngày phép'));
 }
 function clearMyAl(){
   const id=meId(),e=empById(id);if(!e)return;
-  if(!confirm('Bỏ mốc đã khai và quay lại tính theo quỹ phép năm?'))return;
+  if(!confirm(t('Bỏ mốc đã khai và quay lại tính theo quỹ phép năm?')))return;
   delete e.alLeftBase;delete e.alLeftAt;delete e.alLeftBy;delete e.alLeftUpdAt;
-  save();renderMyPanel();renderMe(true);toast('Đã bỏ mốc');
+  save();renderMyPanel();renderMe(true);toast(t('Đã bỏ mốc'));
 }
 
 /* ---- Tài khoản ---- */
@@ -945,7 +978,7 @@ function myPanelAcc(id){
     <div><span>Vị trí</span><b>${esc(e.pos||'—')}</b></div>
     <div><span>Nhóm</span><b>${esc(e.team||'—')}</b></div>
     <div><span>Mật khẩu</span><b>${usingDefaultPw(id)?'<span class="st pending">Đang dùng mặc định (= '+esc(loginKey(id))+')</span>':'<span class="st approved">Đã đổi</span>'}</b></div>
-    ${acc.at?`<div><span>Cập nhật lần cuối</span><b>${new Date(acc.at).toLocaleString('vi-VN')}</b></div>`:''}
+    ${acc.at?`<div><span>Cập nhật lần cuối</span><b>${fmtDateTime(acc.at)}</b></div>`:''}
   </div>
   ${usingDefaultPw(id)?`<div class="pv-alert warn sm">Mật khẩu của bạn đang bằng mã NV — ai biết mã cũng đăng nhập được. Nên đổi ngay.</div>`:''}
   <div class="ds-block"><h4>Đổi mật khẩu</h4>

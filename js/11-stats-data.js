@@ -83,13 +83,13 @@ function setHour(c,v){
   save();toast('Đã lưu: '+c+' = '+(+v||0)+'h/ngày');
 }
 function addCustomCode(){
-  const c=(prompt('Mã ca mới (viết tắt, VD: XT, H8):')||'').trim().toUpperCase();
+  const c=(prompt(t('Mã ca mới (viết tắt, VD: XT, H8):'))||'').trim().toUpperCase();
   if(!c)return;
   if(allCodes().some(x=>x.c===c)){toast('Mã "'+c+'" đã tồn tại');return;}
-  const l=(prompt('Diễn giải (VD: Tăng ca xuất tàu):')||c).trim();
-  let cat=(prompt('Loại — nhập 1 trong: work (ca làm việc) / ot (tăng ca) / leave (nghỉ phép) / rest (nghỉ ca):','ot')||'ot').trim().toLowerCase();
+  const l=(prompt(t('Diễn giải (VD: Tăng ca xuất tàu):'))||c).trim();
+  let cat=(prompt(t('Loại — nhập 1 trong: work (ca làm việc) / ot (tăng ca) / leave (nghỉ phép) / rest (nghỉ ca):'),'ot')||'ot').trim().toLowerCase();
   if(!['work','ot','leave','rest','swap'].includes(cat))cat='other';
-  const hrs=+(prompt('Số giờ / ngày:','12')||0)||0;
+  const hrs=+(prompt(t('Số giờ / ngày:'),'12')||0)||0;
   const col={work:'var(--cD)',ot:'var(--cOT)',leave:'var(--cAL)',rest:'var(--cR)',swap:'var(--cSW)'}[cat]||'#64748B';
   S.settings.customCodes=S.settings.customCodes||[];
   S.settings.customCodes.push({c,l,col,cat});
@@ -97,7 +97,7 @@ function addCustomCode(){
   save();renderHoursTbl();toast('Đã thêm mã '+c+' ('+hrs+'h)');
 }
 function delCustomCode(c){
-  if(!confirm('Xóa mã "'+c+'"? (các ô lịch đang dùng mã này vẫn giữ nguyên chữ)'))return;
+  if(!confirm(t('Xóa mã "')+c+t('"? (các ô lịch đang dùng mã này vẫn giữ nguyên chữ)')))return;
   S.settings.customCodes=(S.settings.customCodes||[]).filter(x=>x.c!==c);
   save();renderHoursTbl();
 }
@@ -118,7 +118,7 @@ function renderAccTbl(){
 function setPass(id){
   if(!adm){toast('Cần quyền quản trị');return;}
   const e=empById(id);
-  const pw=prompt('Mật khẩu cho '+(e&&e.name?e.name:id)+' (tối thiểu 4 ký tự):');
+  const pw=prompt(t('Mật khẩu cho')+' '+(e&&e.name?e.name:id)+' '+t('(tối thiểu 4 ký tự):'));
   if(pw===null)return;
   if(pw.trim().length<4){toast('Tối thiểu 4 ký tự');return;}
   S.accounts=S.accounts||{};
@@ -127,7 +127,7 @@ function setPass(id){
 }
 function delPass(id){
   if(!adm)return;
-  if(!confirm('Thu hồi tài khoản đăng nhập của '+id+'?'))return;
+  if(!confirm(t('Thu hồi tài khoản đăng nhập của')+' '+id+'?'))return;
   delete S.accounts[id];
   save();renderAccTbl();toast('Đã thu hồi tài khoản '+id);
 }

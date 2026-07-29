@@ -135,6 +135,41 @@ Tham số chỉnh nhanh ở đầu `js/13-portal.js`:
 
 ---
 
+## Phân quyền & ngôn ngữ
+
+Quyền khai ở cột **Quyền** trong tab 🛠️ Nhóm & Lịch, lưu ở `e.perm`:
+
+| Giá trị | Nhãn | Làm được gì |
+|---|---|---|
+| `staff` | Nhân viên | Xem lịch của mình, gửi đơn |
+| `appr` | Duyệt đơn | Thêm: duyệt/từ chối đơn, sửa lịch thực tế, in đơn |
+| `admin` | Quản trị | Thêm: Nhóm & Lịch, Dữ liệu, cấp/reset mật khẩu |
+| `kmgr` | **Quản lý người Hàn (EN)** | Quyền y hệt `admin`, khác duy nhất: **đăng nhập vào là giao diện tiếng Anh** |
+
+`ROOT_ADMIN` (Hoàng Trung) luôn là quản trị, không hạ quyền được.
+
+### Giao diện Việt / Anh (`js/14-i18n.js`)
+
+- Mã nguồn vẫn viết **tiếng Việt** như cũ — không phải sửa template khi thêm màn hình mới.
+- Khi `LANG==='en'`, hàm `i18nApply()` **quét DOM** và thay các nút văn bản khớp **chính xác**
+  với khoá trong từ điển `I18N_EN` (≈580 khoá) sau khi chuẩn hoá (gộp khoảng trắng, `&amp;`→`&`).
+  Không khớp thì thử `I18N_RE` (quy tắc có chèn số/tên), rồi ghép `MÃ — nhãn`, rồi phần đuôi là ngày/giờ.
+- `MutationObserver` gọi lại sau mỗi lần giao diện vẽ lại, nên màn hình mới tự được dịch.
+- **`#printRoot` và mọi phần tử `data-noi18n` luôn bị bỏ qua** — biểu mẫu in là giấy tờ chính thức,
+  giữ nguyên song ngữ Việt/Anh như bản gốc Hyosung.
+- Chuỗi ngoài DOM (`confirm`, `prompt`, chuỗi ghép động) bọc bằng `t('…')`.
+  Trong hàm đã có biến cục bộ tên `t` (loại đơn) thì dùng bí danh `t2('…')`.
+- Nút **EN / VI** trên thanh tiêu đề cho ai cũng tự đổi được; lựa chọn lưu theo từng mã NV
+  (`localStorage`), ưu tiên hơn mặc định theo quyền. Chuyển EN → VI thì tải lại trang
+  (tiếng Việt là bản gốc, chữ đã dịch không quay ngược được).
+- Thứ trong tuần, định dạng ngày giờ và nhãn kỳ công (`Kỳ T7/2026` ↔ `Period M7/2026`)
+  đổi theo `isEN()`.
+
+**Thêm chuỗi mới**: mở `js/14-i18n.js`, thêm một dòng `'chuỗi tiếng Việt':'English string',`
+vào đúng nhóm. Khoá phải khớp đúng đoạn văn bản hiển thị (một nút văn bản, không kèm thẻ HTML).
+
+---
+
 ## Cài đặt trên máy mới
 
 1. Clone / tải repo về.

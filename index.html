@@ -69,6 +69,7 @@
   <div class="sp"></div>
   <span class="syncdot" id="syncDot" title="Trạng thái đồng bộ"></span>
   <span id="syncTxt" hidden>Offline</span>
+  <button class="icobtn lang-btn" id="langBtn" data-noi18n title="Switch to English" onclick="toggleLang()">EN</button>
   <button class="icobtn admin-only" title="Nhóm &amp; Lịch" onclick="go('setup')">🛠️</button>
   <button class="icobtn admin-only" title="Dữ liệu" onclick="go('data')">⚙️</button>
 </header>
@@ -376,6 +377,8 @@
      ============================================================ -->
 <script src="js/config.js"></script>
 <script src="js/01-core.js"></script>
+<!-- i18n phai nap ngay sau 01-core (can bien LS) va truoc moi man hinh -->
+<script src="js/14-i18n.js"></script>
 <script src="js/02-storage.js"></script>
 <script src="js/03-nav.js"></script>
 <script src="js/04-schedule.js"></script>
@@ -388,5 +391,6 @@
 <script src="js/11-stats-data.js"></script>
 <script src="js/13-portal.js"></script>
 <script src="js/12-main.js"></script>
+
 </body>
 </html>

@@ -24,3 +24,7 @@ initFb();
 renderGate();
 go('me');
 renderMe(true);
+
+/* Ngôn ngữ: Quản lý người Hàn (quyền kmgr) mặc định vào là tiếng Anh,
+   ai đã tự bấm nút EN/VI thì theo lựa chọn đã lưu. Xem js/14-i18n.js. */
+applyLangForUser();

@@ -37,7 +37,7 @@ function renderMp(){
     const line=(code,arr)=>`<div class="mp-line">${chip(code)}<span class="who">${arr.length?arr.map(e=>esc(e.name||e.id)).join(', '):'—'}</span></div>`;
     rows+=`<div class="mp2-row${iso===todayIso()?' today':''}${low?' low':''}">
       <div class="mp2-main" onclick="this.parentElement.classList.toggle('open')">
-        <div class="dt"><div class="d1">${fmtVN(iso)}</div><div class="d2 ${dw===0?'dowSun':dw===6?'dowSat':''}">${DOW[dw]}${iso===todayIso()?' · Hôm nay':''}</div></div>
+        <div class="dt"><div class="d1">${fmtVN(iso)}</div><div class="d2 ${dw===0?'dowSun':dw===6?'dowSat':''}">${dowOf(iso)}${iso===todayIso()?' · '+t('Hôm nay'):''}</div></div>
         <div class="pillrow">
           ${pill(B.D.length,'NGÀY','var(--cD)',lowD)}
           ${pill(B.N.length,'ĐÊM','var(--cN)',lowN)}

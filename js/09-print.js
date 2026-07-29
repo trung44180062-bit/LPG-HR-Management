@@ -308,7 +308,7 @@ function doPrintBulk(){
   closePrintBulk();
   setTimeout(()=>{
     window.print();
-    if(confirm('Đã in thành công? Đánh dấu đã in ('+sel.length+' đơn)?')){
+    if(confirm(t('Đã in thành công? Đánh dấu đã in (')+sel.length+' '+t('đơn)?'))){
       const now=Date.now();
       S.printLog=S.printLog||{};
       groups.forEach(g=>{
@@ -329,7 +329,7 @@ function renderPrintLogList(){
     if(q&&!names.some(n=>n.toLowerCase().includes(q)))return;
     const def=FORM_DEFS[log.formType];
     h+=`<div class="req" style="padding:10px">
-      <div class="top"><span class="who">${def?def.label:log.formType}</span><span class="muted" style="font-size:11px">${new Date(log.ts).toLocaleString('vi-VN')}</span>${log.reprint?' <span class="grp-tag">in lại</span>':''}</div>
+      <div class="top"><span class="who">${def?def.label:log.formType}</span><span class="muted" style="font-size:11px">${fmtDateTime(log.ts)}</span>${log.reprint?' <span class="grp-tag">in lại</span>':''}</div>
       <div class="body">${log.rows} dòng · ${log.pages} tờ · ${names.length} người: ${esc(names.join(', ')||'—')}</div>
       <div class="acts"><button class="btn sec sm" onclick="reprintBatch('${bid}')">🔁 In lại nguyên lô</button></div>
     </div>`;
