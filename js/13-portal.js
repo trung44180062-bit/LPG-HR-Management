@@ -1,6 +1,6 @@
 /* ============================================================
    TRANG CHINH NHAN VIEN (tab "Trang chinh" — id v-me)
-   Lich tuan / thang ca nhan + bam vao ngay de dang ky.
+   Lich ca ca nhan + bam vao ngay de gui don (moi ngay 1 dong).
    LPGT Cavern — Quan ly Cong Ca v4
    ============================================================ */
 
@@ -9,12 +9,24 @@
 const AL_QUOTA_DEFAULT=12;
 /* Số ngày làm liên tục vượt ngưỡng thì cảnh báo */
 const STREAK_WARN=7;
+/* Tối đa số dòng (ngày) trong 1 đơn — biểu mẫu in có 10 dòng */
+const DS_MAX_ROWS=10;
 
 /* =================== TRẠNG THÁI MÀN HÌNH =================== */
 let pvMode='month';          // 'week' | 'month'
 let pvAnchor=null;           // ngày mốc đang xem (iso)
 let pvSheetDate=null;        // ngày đang mở trong sheet
 let pvSheetForm=null;        // loại đơn đang mở trong sheet
+
+/* Trạng thái form đơn nhiều dòng */
+let dsRows=[];               // [{iso, code, timeIn, timeOut}]
+let dsOwnerId='';            // người đứng đơn (đổi ca cho phép khai hộ người khác)
+let dsWithId='';             // người đổi ca cùng
+let dsGuarId='';             // người bảo lãnh (đơn bổ sung công)
+let dsNoteVal='';            // ghi chú (giữ trong state để không mất khi vẽ lại)
+let dsReasonCode='forgot_card', dsReasonOther='';   // đơn bổ sung công
+let dsLateType='come_late';                         // đơn đi trễ / về sớm
+let dsMultiFrom='', dsMultiTo='', dsMultiIn='08:00', dsMultiOut='17:00';
 
 /* =================== TIỆN ÍCH =================== */
 const SEEN=()=>LS+'_seen';
@@ -47,11 +59,11 @@ function shortName(n){
 /* ---- Đơn liên quan tới 1 ngày của 1 người ---- */
 function reqsOfDay(id,iso){
   return Object.values(S.requests||{}).filter(r=>
-    (r.empId===id||r.withId===id) && r.from<=iso && iso<=(r.to||r.from));
+    (r.empId===id||r.withId===id) && reqHasDay(r,iso));
 }
 function myReqs(id){
   return Object.values(S.requests||{})
-    .filter(r=>r.empId===id||r.withId===id)
+    .filter(r=>r.empId===id||r.withId===id||r.byId===id)
     .sort((a,b)=>b.createdAt-a.createdAt);
 }
 /* Đơn đã có quyết định mà nhân viên chưa xem */
@@ -59,22 +71,26 @@ function unseenDecisions(id){
   const t=lastSeen(id);
   return myReqs(id).filter(r=>r.decidedAt&&r.decidedAt>t);
 }
-/* Trùng đơn: đã có đơn pending/approved cùng loại phủ lên khoảng ngày này chưa */
-function conflictReqs(id,from,to,type){
-  return Object.values(S.requests||{}).filter(r=>
-    r.empId===id && r.status!=='rejected' &&
-    r.from<=to && from<=(r.to||r.from) &&
-    (!type||r.type===type));
+/* Trùng đơn: đã có đơn pending/approved nào phủ lên các ngày đang khai chưa */
+function conflictReqs(id,isoList,type){
+  const want=new Set(isoList);
+  return Object.values(S.requests||{}).filter(r=>{
+    if(r.empId!==id||r.status==='rejected')return false;
+    if(type&&r.type!==type&&r.status!=='approved')return false;
+    for(const iso of reqDaySet(r))if(want.has(iso))return true;
+    return false;
+  });
 }
 
-/* ---- Nhân sự đi làm trong ngày, gom theo nhóm ca (O / D / N / …) ---- */
-const WORKING=c=>{const k=codeInfo(c).cat;return k==='work'||k==='swap'||k==='ot';};
-const CREW_ORDER=['O','D','N','OTD','OTN','X'];
+/* ---- Nhân sự trong ngày, gom theo nhóm ca (O / D / N / … / R) ---- */
+/* Từ 07/2026: hiện cả người nghỉ ca R để biết ai đang rảnh mà nhờ đổi ca */
+const CREW_SHOW=c=>{const k=codeInfo(c).cat;return k==='work'||k==='swap'||k==='ot'||k==='rest';};
+const CREW_ORDER=['O','D','N','OTD','OTN','X','R'];
 function crewOfDay(iso){
   const g={};
   activeEmps().forEach(e=>{
     const c=eff(e.id,iso).code;
-    if(!c||!WORKING(c))return;
+    if(!c||!CREW_SHOW(c))return;
     const b=baseShiftOf(c)||c;
     (g[b]=g[b]||[]).push(e);
   });
@@ -111,21 +127,58 @@ function workStreak(id){
   return n;
 }
 
-/* =================== PHÉP NĂM & TĂNG CA =================== */
-/* Đếm ngày phép năm đã dùng trong năm dương lịch (mã AL8 = 1 ngày, AL4 = 0.5) */
+/* ============================================================
+   PHÉP NĂM
+   Phần mềm đưa vào dùng giữa năm nên số phép đã dùng trước đó
+   không có trong hệ thống. Nhân viên khai số phép CÒN LẠI tại
+   một mốc ngày (e.alLeftBase / e.alLeftAt); app trừ dần từ mốc.
+   Chưa khai mốc thì tính theo quỹ phép năm như cũ.
+   ============================================================ */
+function alDayValue(c){
+  if(!c)return 0;
+  if(c==='AL8')return 1;
+  if(c==='AL4')return 0.5;
+  if(codeInfo(c).cat==='leave'&&/^AL/.test(c))return 1;
+  return 0;
+}
+/* Đếm ngày phép năm đã dùng trong năm dương lịch */
 function alUsed(id,year){
-  let used=0;
-  const scan=iso=>{
-    if(iso.slice(0,4)!==String(year))return;
-    const c=eff(id,iso).code;if(!c)return;
-    if(c==='AL8')used+=1; else if(c==='AL4')used+=0.5;
-    else if(codeInfo(c).cat==='leave'&&/^AL/.test(c))used+=1;
-  };
-  const seen=new Set();
-  [S.base[id],S.over[id]].forEach(o=>{for(const iso in (o||{}))if(!seen.has(iso)){seen.add(iso);scan(iso);}});
+  let used=0;const seen=new Set();
+  [S.base[id],S.over[id]].forEach(o=>{for(const iso in (o||{})){
+    if(seen.has(iso)||iso.slice(0,4)!==String(year))continue;
+    seen.add(iso);used+=alDayValue(eff(id,iso).code);
+  }});
+  return used;
+}
+/* Đếm ngày phép năm đã dùng KỂ TỪ một mốc ngày (tính cả ngày mốc) */
+function alUsedSince(id,fromIso){
+  let used=0;const seen=new Set();
+  [S.base[id],S.over[id]].forEach(o=>{for(const iso in (o||{})){
+    if(seen.has(iso)||iso<fromIso)continue;
+    seen.add(iso);used+=alDayValue(eff(id,iso).code);
+  }});
   return used;
 }
 function alQuota(id){const e=empById(id);return (e&&+e.alQuota)||+(S.settings.alQuota)||AL_QUOTA_DEFAULT;}
+function alHasBase(id){
+  const e=empById(id)||{};
+  return !!(e.alLeftAt&&e.alLeftBase!==''&&e.alLeftBase!==undefined&&e.alLeftBase!==null);
+}
+/* Số phép năm còn lại hiện tại */
+function alLeft(id){
+  const e=empById(id)||{};
+  if(alHasBase(id))return +e.alLeftBase-alUsedSince(id,e.alLeftAt);
+  return alQuota(id)-alUsed(id,new Date().getFullYear());
+}
+/* Số ngày phép đang chờ duyệt (chưa trừ vào lịch) */
+function alPending(id){
+  let n=0;
+  Object.values(S.requests||{}).forEach(r=>{
+    if(r.empId!==id||r.type!=='leave'||r.status!=='pending')return;
+    reqDays(r).forEach(d=>{n+=alDayValue(d.code);});
+  });
+  return n;
+}
 
 /* Giờ tăng ca: đã duyệt (đã vào lịch) vs đang chờ duyệt (còn trong đơn) */
 function otSummary(id,ym){
@@ -137,9 +190,7 @@ function otSummary(id,ym){
   });
   Object.values(S.requests||{}).forEach(r=>{
     if(r.empId!==id||r.type!=='ot'||r.status!=='pending')return;
-    for(const iso of dateRange(r.from,r.to||r.from)){
-      if(days.includes(iso))pending+=getHours(r.code||'OTD');
-    }
+    reqDays(r).forEach(d=>{if(days.includes(d.iso))pending+=getHours(d.code||'OTD');});
   });
   return{approved,pending};
 }
@@ -165,7 +216,7 @@ function renderMe(force){
   const streak=workStreak(id);
   const news=unseenDecisions(id);
   const pendingMine=myReqs(id).filter(r=>r.status==='pending').length;
-  const usedAL=alUsed(id,new Date().getFullYear()), quotaAL=alQuota(id);
+  const leftAL=alLeft(id);
 
   body.innerHTML=`
   <div class="pv-top">
@@ -210,7 +261,8 @@ function renderMe(force){
     <button class="sbox" onclick="go('stats')"><div class="v">${rnd1(st.hWork)}<i>h</i></div><div class="k">Giờ công · ${esc(per.label.replace('Kỳ ','').split(' ·')[0])}</div></button>
     <button class="sbox ot" onclick="openMyPanel('ot')"><div class="v">${rnd1(ot.approved)}<i>h</i></div>
       <div class="k">Tăng ca đã duyệt${ot.pending?` <span class="pd">+${rnd1(ot.pending)}h chờ</span>`:''}</div></button>
-    <button class="sbox al" onclick="openMyPanel('al')"><div class="v">${rnd1(quotaAL-usedAL)}<i>ngày</i></div><div class="k">Phép năm còn lại</div></button>
+    <button class="sbox al" onclick="openMyPanel('al')"><div class="v">${rnd1(leftAL)}<i>ngày</i></div>
+      <div class="k">Phép năm còn lại${alHasBase(id)?'':' <span class="pd">cần khai</span>'}</div></button>
     <button class="sbox rq" onclick="openMyPanel('req')"><div class="v">${pendingMine}</div><div class="k">Đơn đang chờ duyệt</div></button>
   </div>`;
 
@@ -220,12 +272,11 @@ function renderMe(force){
 /* =================== LỊCH TUẦN / THÁNG =================== */
 function pvSetMode(m){pvMode=m;renderMe(true);}
 function pvShift(d){
-  pvAnchor=addDaysIso(pvAnchorIso(),pvMode==='week'?7*d:0);
-  if(pvMode==='month'){
-    const a=new Date(pvAnchorIso()+'T00:00:00');
-    a.setDate(1);a.setMonth(a.getMonth()+d);
-    pvAnchor=isoOf(a);
-  }
+  if(pvMode==='week'){pvAnchor=addDaysIso(pvAnchorIso(),7*d);renderMe(true);return;}
+  // Chế độ tháng = kỳ công 21 → 20: nhảy sang kỳ trước / kỳ sau
+  const[y,m]=schedMonthOf(pvAnchorIso()).split('-').map(Number);
+  const a=new Date(y,m-1+d,1);
+  pvAnchor=periodFor(a.getFullYear()+'-'+pad(a.getMonth()+1)).from;
   renderMe(true);
 }
 function pvToday(){pvAnchor=todayIso();renderMe(true);}
@@ -237,13 +288,12 @@ function pvDays(){
     return{days:Array.from({length:7},(_,i)=>addDaysIso(mon,i)),lead:0,
       label:'Tuần '+fmtVN(mon)+' – '+fmtVN(addDaysIso(mon,6))};
   }
-  const d=new Date(a+'T00:00:00');
-  const y=d.getFullYear(),m=d.getMonth();
-  const n=new Date(y,m+1,0).getDate();
-  const first=new Date(y,m,1);
-  return{days:Array.from({length:n},(_,i)=>isoOf(new Date(y,m,i+1))),
-    lead:(first.getDay()+6)%7,
-    label:'Tháng '+pad(m+1)+'/'+y};
+  /* Chế độ "tháng" = KỲ CÔNG của công ty: 21 tháng trước → 20 tháng này */
+  const ym=schedMonthOf(a), p=periodFor(ym);
+  const days=daysOfPeriod(ym);
+  return{days,
+    lead:(new Date(p.from+'T00:00:00').getDay()+6)%7,
+    label:`Kỳ T${p.m}/${p.y} · 21/${pad(p.pm)} → 20/${pad(p.m)}`};
 }
 
 /* Dấu hiệu đơn trên ô ngày */
@@ -265,9 +315,12 @@ function renderPvCal(){
     const r=eff(id,iso), f=pvDayFlags(id,iso);
     const dw=new Date(iso+'T00:00:00').getDay();
     const info=r.code?codeInfo(r.code):null;
-    h+=`<button class="pv-d${iso===t?' today':''}${r.code?'':' empty'}${dw===0||dw===6?' we':''}"
+    const dd=+iso.slice(8), mm=+iso.slice(5,7);
+    // Kỳ công vắt qua 2 tháng: ngày ≥21 là của tháng đầu kỳ → tô nhạt cho dễ phân biệt
+    const head=pvMode==='month'&&dd>=21;
+    h+=`<button class="pv-d${iso===t?' today':''}${r.code?'':' empty'}${dw===0||dw===6?' we':''}${head?' pmo':''}"
         onclick="openDaySheet('${iso}')" title="${fmtVNfull(iso)} ${dowOf(iso)}${info?' — '+esc(info.l):''}">
-      <span class="dn">${+iso.slice(8)}</span>
+      <span class="dn">${dd}${dd===1?`<i class="mo">/${mm}</i>`:''}</span>
       ${pvMode==='week'?`<span class="dw">${dowOf(iso)}</span>`:''}
       <span class="cbox">${r.code?`<span class="cc" style="background:${info.col}">${r.code}</span>`:'<span class="dash">—</span>'}</span>
       ${pvMode==='week'&&info?`<span class="clbl">${esc(info.l)}</span>`:''}
@@ -288,15 +341,139 @@ function renderPvCal(){
 const REQ_LABEL={leave:'Nghỉ phép',swap:'Đổi ca',ot:'Tăng ca',change:'Đổi mã ca',
                  wt:'Bổ sung công',late:'Đi trễ / Về sớm',multi:'Làm liên tục nhiều ngày'};
 const REQ_ICON ={leave:'🏖',swap:'🔄',ot:'⚡',change:'✏️',wt:'🪪',late:'⏰',multi:'🔁'};
+/* Đơn khai theo dòng (mỗi ngày 1 dòng); riêng "multi" khai theo khoảng ngày liên tục */
+const REQ_RANGE_TYPES=['multi'];
+const isRangeForm=t=>REQ_RANGE_TYPES.includes(t);
 
 function openDaySheet(iso,form){
   if(!meId()){toast('Phiên đăng nhập đã hết');renderGate();return;}
-  pvSheetDate=iso;pvSheetForm=form||null;
+  pvSheetDate=iso;pvSheetForm=null;
   renderDaySheet();
   $('daySheetMask').classList.add('on');
+  if(form)dsForm(form);
 }
 function closeDaySheet(){$('daySheetMask').classList.remove('on');pvSheetForm=null;}
-function dsForm(t){pvSheetForm=(pvSheetForm===t)?null:t;renderDaySheet();}
+
+/* Mở / đóng 1 loại đơn → khởi tạo lại state form */
+function dsForm(t){
+  if(pvSheetForm===t){pvSheetForm=null;renderDaySheet();return;}
+  pvSheetForm=t;
+  const me=meId();
+  dsOwnerId=me;dsWithId='';dsGuarId='';dsNoteVal='';
+  dsReasonCode='forgot_card';dsReasonOther='';dsLateType='come_late';
+  dsMultiFrom=pvSheetDate;dsMultiTo=pvSheetDate;dsMultiIn='08:00';dsMultiOut='17:00';
+  dsRows=isRangeForm(t)?[]:[dsNewRow(t,pvSheetDate)];
+  renderDaySheet();
+}
+
+/* ---- Dòng đơn ---- */
+function dsCodesFor(t){
+  if(t==='leave')return allCodes().filter(c=>c.cat==='leave');
+  if(t==='ot')   return allCodes().filter(c=>c.cat==='ot');
+  return allCodes().filter(c=>c.cat==='work'||c.cat==='rest'||c.cat==='swap');
+}
+function dsDefaultCode(t,iso){
+  const id=dsOwnerId||meId();
+  const cur=eff(id,iso).code;
+  if(t==='leave')return 'AL8';
+  if(t==='ot')   return baseShiftOf(cur)==='N'?'OTN':'OTD';
+  if(t==='change')return (dsCodesFor(t)[0]||{}).c||'';
+  return '';
+}
+function dsDefaultTimes(iso){
+  const id=dsOwnerId||meId();
+  const b=baseShiftOf(eff(id,iso).code);
+  return b?SHIFT_HOURS[b]:['08:00','17:00'];
+}
+function dsNewRow(t,iso){
+  const hrs=dsDefaultTimes(iso);
+  return{iso,code:dsDefaultCode(t,iso),
+    timeIn:(t==='wt'||t==='late')?hrs[0]:'',
+    timeOut:(t==='wt'||t==='late')?hrs[1]:''};
+}
+function dsAddRow(){
+  const t=pvSheetForm;if(!t)return;
+  if(dsRows.length>=DS_MAX_ROWS){toast('Một đơn tối đa '+DS_MAX_ROWS+' ngày — gửi thêm đơn mới');return;}
+  const last=dsRows[dsRows.length-1];
+  const iso=last?addDaysIso(last.iso,1):pvSheetDate;
+  dsRows.push(dsNewRow(t,iso));
+  dsRenderForm();
+}
+function dsDelRow(i){
+  if(dsRows.length<=1){toast('Đơn phải có ít nhất 1 ngày');return;}
+  dsRows.splice(i,1);dsRenderForm();
+}
+function dsSetRow(i,k,v){
+  if(!dsRows[i])return;
+  dsRows[i][k]=v;
+  if(k==='iso'){
+    const cell=$('dsCur'+i);
+    if(cell)cell.innerHTML=dsRowCurHtml(pvSheetForm,dsRows[i]);
+  }
+  dsFormUI();
+}
+/* Ca hiện tại của (các) người liên quan trong ngày của dòng */
+function dsRowCurHtml(t,row){
+  const own=dsOwnerId||meId();
+  const ca=eff(own,row.iso).code;
+  if(t==='swap'&&dsWithId){
+    const cb=eff(dsWithId,row.iso).code;
+    return `${ca?chip(ca):'<span class="muted">—</span>'} <span class="ar">⇄</span> ${cb?chip(cb):'<span class="muted">—</span>'}`;
+  }
+  return ca?chip(ca):'<span class="muted">—</span>';
+}
+
+/* ---- Chọn người: ô tìm theo tên (bỏ dấu vẫn khớp) ---- */
+function dsPersonPicker(key,label,curId,hint){
+  const e=curId?empById(curId):null;
+  return `<div class="fg pick">
+    <label class="fl">${label}</label>
+    <div class="pick-cur">
+      ${e?`<span class="pc-n"><b>${esc(e.name||e.id)}</b><i>${e.team?'Nhóm '+esc(e.team)+' · ':''}${esc(e.id)}</i></span>`
+         :'<span class="pc-n muted">Chưa chọn ai</span>'}
+      <button type="button" class="btn sec sm" onclick="dsPickToggle('${key}')">${e?'Đổi':'Chọn'}</button>
+    </div>
+    <div class="pick-box" id="pkBox_${key}" style="display:none">
+      <input class="inp" id="pkQ_${key}" placeholder="Gõ tên hoặc mã NV… (không cần dấu)"
+             autocomplete="off" oninput="dsPickFilter('${key}')">
+      <div class="pick-list" id="pkList_${key}"></div>
+    </div>
+    ${hint?`<p class="muted" style="margin-top:4px">${hint}</p>`:''}
+  </div>`;
+}
+function dsPickToggle(key){
+  const box=$('pkBox_'+key);if(!box)return;
+  const show=box.style.display==='none';
+  box.style.display=show?'':'none';
+  if(show){const q=$('pkQ_'+key);if(q){q.value='';}dsPickFilter(key);if(q)q.focus();}
+}
+function dsPickFilter(key){
+  const box=$('pkList_'+key);if(!box)return;
+  const q=noAccent($('pkQ_'+key)?$('pkQ_'+key).value:'');
+  const iso=(dsRows[0]&&dsRows[0].iso)||pvSheetDate;
+  const own=dsOwnerId||meId();
+  let list;
+  if(key==='with')list=swapCandidates(own,iso);          // người nghỉ R lên đầu
+  else list=activeEmps().slice();
+  if(key==='with')list=list.filter(e=>e.id!==own);
+  if(key==='owner')list=list.filter(e=>e.id!==dsWithId);
+  if(key==='guar') list=list.filter(e=>e.id!==own);
+  if(q)list=list.filter(e=>noAccent(e.name).includes(q)||noAccent(e.id).includes(q));
+  box.innerHTML=list.slice(0,50).map(e=>{
+    const c=eff(e.id,iso).code, rest=codeInfo(c).cat==='rest';
+    return `<button type="button" class="pk-item${rest?' free':''}" onclick="dsPickSet('${key}','${e.id}')">
+      <span class="n">${rest?'🟢 ':''}${esc(e.name||e.id)}</span>
+      <span class="m">${e.team?'Nhóm '+esc(e.team)+' · ':''}${esc(e.id)}</span>
+      ${c?`<span class="cc" style="background:${codeInfo(c).col}">${c}</span>`:'<span class="cc" style="background:#94A3B8">—</span>'}
+    </button>`;
+  }).join('')||'<p class="muted" style="padding:8px 4px">Không tìm thấy ai khớp.</p>';
+}
+function dsPickSet(key,id){
+  if(key==='owner'){dsOwnerId=id;if(dsWithId===id)dsWithId='';}
+  else if(key==='with')dsWithId=id;
+  else dsGuarId=id;
+  dsRenderForm();
+}
 
 function renderDaySheet(){
   const id=meId(),iso=pvSheetDate;
@@ -305,6 +482,7 @@ function renderDaySheet(){
   const info=r.code?codeInfo(r.code):null;
   const rs=reqsOfDay(id,iso);
   const crew=crewOfDay(iso);
+  const totalCrew=crew.reduce((a,[,l])=>a+l.length,0);
 
   box.innerHTML=`
    <div class="ds-head">
@@ -321,166 +499,245 @@ function renderDaySheet(){
      ${rs.map(x=>`<div class="ds-req ${x.status}">
         <span class="ic">${REQ_ICON[x.type]||'📄'}</span>
         <span class="tx"><b>${esc(REQ_LABEL[x.type]||x.type)}</b>${x.code?' · '+esc(x.code):''}
-          ${x.from!==x.to?`<i>(${fmtVN(x.from)}–${fmtVN(x.to)})</i>`:''}
+          ${reqDays(x).length>1?`<i>(${reqDays(x).length} ngày)</i>`:''}
+          ${x.withId?`<i>với ${esc((empById(x.withId)||{}).name||x.withId)}</i>`:''}
           ${x.reason?`<i>Lý do từ chối: ${esc(x.reason)}</i>`:''}</span>
         <span class="st ${x.status}">${{pending:'CHỜ',approved:'DUYỆT',rejected:'TỪ CHỐI'}[x.status]}</span>
-        ${x.status==='pending'&&x.empId===id?`<button class="btn warn sm" onclick="cancelMyReq('${x.id}')">Huỷ</button>`:''}
+        ${x.status==='pending'&&(x.empId===id||x.byId===id)?`<button class="btn warn sm" onclick="cancelMyReq('${x.id}')">Huỷ</button>`:''}
       </div>`).join('')}
    </div>`:''}
 
    ${crew.length?`<div class="ds-block">
-     <h4>👥 Nhân sự trực ngày ${fmtVN(iso)}</h4>
-     ${crew.map(([b,list])=>`<div class="crew-g">
-        <div class="crew-h">${chip(b)}<span>${esc(codeInfo(b).l)}</span><i>${list.length} người</i></div>
-        <div class="crew-n">${list.map(m=>`<span class="mate${m.id===id?' me':''}">${esc(shortName(m.name)||m.id)}</span>`).join('')}</div>
-      </div>`).join('')}
+     <h4>👥 Nhân sự ngày ${fmtVN(iso)} <span class="h4n">${totalCrew} người</span></h4>
+     <div class="crew-grid">
+       ${crew.map(([b,list])=>`<div class="crew-col${codeInfo(b).cat==='rest'?' rest':''}">
+          <div class="crew-h">${chip(b)}<b>${esc(codeInfo(b).l)}</b><i>${list.length}</i></div>
+          <div class="crew-n">${list.map(m=>`<span class="mate${m.id===id?' me':''}">${esc(shortName(m.name)||m.id)}${m.team?`<i>${esc(m.team)}</i>`:''}</span>`).join('')}</div>
+        </div>`).join('')}
+     </div>
    </div>`:''}
 
    <div class="ds-block">
-     <h4>✍️ Gửi đơn cho ngày ${fmtVN(iso)}</h4>
+     <h4>✍️ Gửi đơn</h4>
      <div class="ds-acts">
        ${Object.keys(REQ_LABEL).map(t=>`<button class="da${pvSheetForm===t?' on':''}" onclick="dsForm('${t}')">
           <span class="ic">${REQ_ICON[t]}</span>${esc(REQ_LABEL[t])}</button>`).join('')}
      </div>
-     <div id="dsForm">${pvSheetForm?dsFormHtml(id,iso,pvSheetForm):''}</div>
+     <div id="dsForm">${pvSheetForm?dsFormHtml(pvSheetForm):''}</div>
    </div>`;
   if(pvSheetForm)dsFormUI();
 }
 
-/* ---- HTML của form theo loại đơn ---- */
-function dsFormHtml(id,iso,t){
-  const cur=eff(id,iso).code;
-  const codes=t==='leave'?allCodes().filter(c=>c.cat==='leave')
-            :t==='ot'   ?allCodes().filter(c=>c.cat==='ot')
-            :allCodes().filter(c=>c.cat==='work'||c.cat==='rest'||c.cat==='swap');
-  const multi=(t==='multi'||t==='leave'||t==='ot'||t==='change'||t==='swap');
-  return `
-  <div class="ds-form">
-    <div class="grid2">
-      <div class="fg"><label class="fl">Từ ngày</label><input type="date" class="inp" id="dsFrom" value="${iso}" onchange="dsFormUI()"></div>
-      <div class="fg"><label class="fl">Đến ngày${multi?'':' (không đổi)'}</label>
-        <input type="date" class="inp" id="dsTo" value="${iso}" ${multi?'':'readonly'} onchange="dsFormUI()"></div>
-    </div>
-
-    ${(t==='leave'||t==='ot'||t==='change')?`
-    <div class="fg"><label class="fl">Mã áp dụng</label>
-      <select class="inp" id="dsCode">${codes.map(c=>`<option value="${c.c}">${c.c} — ${esc(c.l)}</option>`).join('')}</select></div>`:''}
-
-    ${t==='swap'?`
-    <div class="fg"><label class="fl">Đổi ca với ${cur?`(ca của bạn: ${cur})`:''}</label>
-      <select class="inp" id="dsSwapWith"></select>
-      <p class="muted" style="margin-top:4px">Người đang <b>nghỉ (R)</b> ngày này được xếp lên đầu danh sách.</p></div>`:''}
-
-    ${t==='wt'?`
-    <div class="fg"><label class="fl">Lý do</label>
-      <select class="inp" id="dsWtReason" onchange="dsWtReasonUI()">
-        <option value="forgot_card">Quên thẻ / Left the card at home</option>
-        <option value="forgot_scan">Quên quẹt thẻ / Forgot to scan the card</option>
-        <option value="lost_card">Mất thẻ / Lost the card</option>
-        <option value="damaged_card">Thẻ hỏng / The card was damaged</option>
-        <option value="other">Lý do khác / Others</option>
-      </select>
-      <input class="inp" id="dsWtOther" style="margin-top:6px;display:none" placeholder="Ghi rõ lý do khác...">
-    </div>
-    <div class="grid2">
-      <div class="fg"><label class="fl">Giờ vào</label><input type="time" class="inp" id="dsWtIn"></div>
-      <div class="fg"><label class="fl">Giờ ra</label><input type="time" class="inp" id="dsWtOut"></div>
-    </div>
-    <div class="fg"><label class="fl">Người bảo lãnh (không bắt buộc)</label>
-      <select class="inp" id="dsWtGuarantor"><option value="">— Không có —</option></select></div>`:''}
-
-    ${t==='late'?`
-    <div class="fg"><label class="fl">Loại đơn</label>
-      <select class="inp" id="dsLateType">
-        <option value="come_late">Đi trễ / Come late</option>
-        <option value="leave_early">Về sớm / Leave early</option>
-      </select></div>
-    <div class="grid2">
-      <div class="fg"><label class="fl">Từ giờ</label><input type="time" class="inp" id="dsLateFrom"></div>
-      <div class="fg"><label class="fl">Đến giờ</label><input type="time" class="inp" id="dsLateTo"></div>
-    </div>`:''}
-
-    ${t==='multi'?`
-    <div class="grid2">
-      <div class="fg"><label class="fl">Giờ vào (ngày đầu)</label><input type="time" class="inp" id="dsMultiIn" value="08:00"></div>
-      <div class="fg"><label class="fl">Giờ ra (ngày cuối)</label><input type="time" class="inp" id="dsMultiOut" value="17:00"></div>
-    </div>`:''}
-
-    <div class="fg"><label class="fl">Lý do / ghi chú</label>
-      <textarea class="inp" id="dsNote" rows="2" placeholder="VD: việc gia đình, khám bệnh..."></textarea></div>
-
-    <div id="dsWarn"></div>
-    <button class="btn ds-submit" onclick="dsSubmit('${t}')">Gửi đơn ${esc(REQ_LABEL[t])}</button>
-  </div>`;
+/* Vẽ lại riêng phần form (không đụng tới phần trên của sheet) */
+function dsRenderForm(){
+  const el=$('dsForm');if(!el)return;
+  el.innerHTML=pvSheetForm?dsFormHtml(pvSheetForm):'';
+  dsFormUI();
 }
 
-function dsWtReasonUI(){const o=$('dsWtOther'),r=$('dsWtReason');if(o&&r)o.style.display=r.value==='other'?'':'none';}
+/* ---- HTML của form theo loại đơn ---- */
+function dsFormHtml(t){
+  const own=dsOwnerId||meId();
+  const codes=dsCodesFor(t);
+  const needCode=(t==='leave'||t==='ot'||t==='change');
+  const needTime=(t==='wt'||t==='late');
 
-/* ---- Cập nhật động trong form: gợi ý người đổi ca, giờ mặc định, cảnh báo trùng ---- */
+  /* --- Đơn làm liên tục nhiều ngày: chọn theo KHOẢNG ngày --- */
+  if(isRangeForm(t)){
+    return `
+    <div class="ds-form">
+      <div class="pv-alert info sm">Loại đơn này khai theo <b>khoảng ngày liên tục</b> (một lần vào – một lần ra).</div>
+      <div class="grid2">
+        <div class="fg"><label class="fl">Từ ngày</label>
+          <input type="date" class="inp" value="${dsMultiFrom}" onchange="dsMultiFrom=this.value;dsFormUI()"></div>
+        <div class="fg"><label class="fl">Đến ngày</label>
+          <input type="date" class="inp" value="${dsMultiTo}" onchange="dsMultiTo=this.value;dsFormUI()"></div>
+      </div>
+      <div class="grid2">
+        <div class="fg"><label class="fl">Giờ vào (ngày đầu)</label>
+          <input type="time" class="inp" value="${dsMultiIn}" onchange="dsMultiIn=this.value;dsFormUI()"></div>
+        <div class="fg"><label class="fl">Giờ ra (ngày cuối)</label>
+          <input type="time" class="inp" value="${dsMultiOut}" onchange="dsMultiOut=this.value;dsFormUI()"></div>
+      </div>
+      ${dsNoteHtml()}
+      <div id="dsWarn"></div>
+      <button class="btn ds-submit" onclick="dsSubmit('${t}')">Gửi đơn ${esc(REQ_LABEL[t])}</button>
+    </div>`;
+  }
+
+  /* --- Các đơn còn lại: MỖI NGÀY 1 DÒNG --- */
+  let h='<div class="ds-form">';
+
+  if(t==='swap'){
+    h+=`<div class="pv-alert info sm">Đơn đổi ca ghi nhận cho <b>cả hai người</b> — khi in ra mỗi ngày có 2 dòng thể hiện hai bên đổi ca cho nhau. Bạn có thể <b>khai hộ</b> đồng nghiệp.</div>`;
+    h+=dsPersonPicker('owner','Người đứng đơn',own,
+        own===meId()?'Mặc định là bạn. Đổi sang người khác nếu bạn khai hộ.':'⚠️ Bạn đang khai hộ người này.');
+    h+=dsPersonPicker('with','Đổi ca với',dsWithId,
+        'Người đang <b>nghỉ ca R</b> ngày đó được xếp lên đầu danh sách.');
+  }
+
+  /* Bảng dòng */
+  h+=`<div class="fg"><label class="fl">Các ngày xin ${esc((REQ_LABEL[t]||'').toLowerCase())} — mỗi ngày một dòng</label>
+    <div class="ds-rows">
+      <div class="ds-row hd${needTime?' wt':''}">
+        <span class="c1">Ngày</span>
+        ${needCode?'<span class="c2">Mã áp dụng</span>':''}
+        ${needTime?'<span class="c2">Giờ vào</span><span class="c2">Giờ ra</span>':''}
+        <span class="c3">${t==='swap'?'Ca hai bên':'Ca hiện tại'}</span>
+        <span class="c4"></span>
+      </div>
+      ${dsRows.map((row,i)=>`<div class="ds-row${needTime?' wt':''}">
+        <span class="c1"><input type="date" class="inp" value="${row.iso}" onchange="dsSetRow(${i},'iso',this.value)"></span>
+        ${needCode?`<span class="c2"><select class="inp" onchange="dsSetRow(${i},'code',this.value)">
+          ${codes.map(c=>`<option value="${c.c}"${c.c===row.code?' selected':''}>${c.c} — ${esc(c.l)}</option>`).join('')}
+        </select></span>`:''}
+        ${needTime?`<span class="c2"><input type="time" class="inp" value="${row.timeIn||''}" onchange="dsSetRow(${i},'timeIn',this.value)"></span>
+        <span class="c2"><input type="time" class="inp" value="${row.timeOut||''}" onchange="dsSetRow(${i},'timeOut',this.value)"></span>`:''}
+        <span class="c3" id="dsCur${i}">${dsRowCurHtml(t,row)}</span>
+        <span class="c4"><button type="button" class="rowx" onclick="dsDelRow(${i})" title="Xoá dòng">✕</button></span>
+      </div>`).join('')}
+    </div>
+    <button type="button" class="btn sec sm addrow" onclick="dsAddRow()">＋ Thêm ngày</button>
+    <p class="muted" style="margin-top:4px">Nghỉ nhiều ngày rời rạc thì bấm <b>Thêm ngày</b> cho từng ngày. Tối đa ${DS_MAX_ROWS} dòng / đơn.</p>
+  </div>`;
+
+  if(t==='wt'){
+    h+=`<div class="fg"><label class="fl">Lý do</label>
+      <select class="inp" onchange="dsReasonCode=this.value;dsWtReasonUI()" id="dsWtReason">
+        ${WT_REASONS.map(x=>`<option value="${x.v}"${x.v===dsReasonCode?' selected':''}>${esc(x.vn)} / ${esc(x.en)}</option>`).join('')}
+      </select>
+      <input class="inp" id="dsWtOther" style="margin-top:6px;display:${dsReasonCode==='other'?'':'none'}"
+             placeholder="Ghi rõ lý do khác..." value="${esc(dsReasonOther)}" oninput="dsReasonOther=this.value">
+    </div>`;
+    h+=dsPersonPicker('guar','Người bảo lãnh (không bắt buộc)',dsGuarId,'');
+  }
+  if(t==='late'){
+    h+=`<div class="fg"><label class="fl">Loại đơn</label>
+      <select class="inp" onchange="dsLateType=this.value">
+        <option value="come_late"${dsLateType==='come_late'?' selected':''}>Đi trễ / Come late</option>
+        <option value="leave_early"${dsLateType==='leave_early'?' selected':''}>Về sớm / Leave early</option>
+      </select></div>`;
+  }
+
+  h+=dsNoteHtml();
+  h+=`<div id="dsWarn"></div>
+    <button class="btn ds-submit" onclick="dsSubmit('${t}')">Gửi đơn ${esc(REQ_LABEL[t])}</button>
+  </div>`;
+  return h;
+}
+function dsNoteHtml(){
+  return `<div class="fg"><label class="fl">Lý do / ghi chú</label>
+    <textarea class="inp" rows="2" placeholder="VD: việc gia đình, khám bệnh..."
+      oninput="dsNoteVal=this.value">${esc(dsNoteVal)}</textarea></div>`;
+}
+function dsWtReasonUI(){const o=$('dsWtOther');if(o)o.style.display=dsReasonCode==='other'?'':'none';}
+
+/* ---- Cảnh báo động trong form ---- */
 function dsFormUI(){
-  const id=meId(),t=pvSheetForm;if(!id||!t)return;
-  const from=$('dsFrom')?$('dsFrom').value:pvSheetDate;
-  const to=$('dsTo')?($('dsTo').value||from):from;
-
-  if($('dsSwapWith')){
-    $('dsSwapWith').innerHTML=swapCandidates(id,from).map(e=>{
-      const c=eff(e.id,from).code, rest=codeInfo(c).cat==='rest';
-      return `<option value="${e.id}">${rest?'🟢 ':''}${esc(shortName(e.name)||e.id)}${e.team?' · Nhóm '+esc(e.team):''} · ${from?(c||'chưa xếp'):''}</option>`;
-    }).join('');
-  }
-  if($('dsWtIn')&&!$('dsWtIn').value){
-    const b=baseShiftOf(eff(id,from).code);
-    const hrs=b?SHIFT_HOURS[b]:['08:00','17:00'];
-    $('dsWtIn').value=hrs[0];$('dsWtOut').value=hrs[1];
-  }
-  if($('dsWtReason'))dsWtReasonUI();
-
-  // cảnh báo trùng đơn
+  const t=pvSheetForm;if(!t)return;
+  const own=dsOwnerId||meId();
   const w=$('dsWarn');if(!w)return;
-  const cf=conflictReqs(id,from,to).filter(r=>r.type===t||r.status==='approved');
-  const many=(()=>{let n=0;for(const _ of dateRange(from,to))n++;return n;})();
   let h='';
-  if(cf.length)h+=`<div class="pv-alert warn sm">⚠️ Đã có ${cf.length} đơn khác phủ lên khoảng ngày này
+
+  if(isRangeForm(t)){
+    if(dsMultiFrom&&dsMultiTo&&dsMultiTo<dsMultiFrom)h+=`<div class="pv-alert warn sm">⚠️ Ngày kết thúc nhỏ hơn ngày bắt đầu.</div>`;
+    w.innerHTML=h;return;
+  }
+
+  const isos=dsRows.map(r=>r.iso).filter(Boolean);
+  const dup=isos.filter((x,i)=>isos.indexOf(x)!==i);
+  if(dup.length)h+=`<div class="pv-alert warn sm">⚠️ Có ngày bị khai trùng: ${[...new Set(dup)].map(fmtVN).join(', ')}.</div>`;
+
+  if(t==='swap'&&!dsWithId)h+=`<div class="pv-alert warn sm">⚠️ Chưa chọn người đổi ca.</div>`;
+  if(t==='swap'&&dsWithId===own)h+=`<div class="pv-alert warn sm">⚠️ Không thể đổi ca với chính mình.</div>`;
+
+  const cf=conflictReqs(own,isos,t);
+  if(cf.length)h+=`<div class="pv-alert warn sm">⚠️ Đã có ${cf.length} đơn khác phủ lên ngày đang khai
      (${cf.slice(0,3).map(r=>esc(REQ_LABEL[r.type]||r.type)+' '+fmtVN(r.from)).join(', ')}). Gửi tiếp có thể bị trùng.</div>`;
-  if(many>1)h+=`<div class="pv-alert info sm">Đơn áp dụng cho <b>${many} ngày</b> (${fmtVN(from)} → ${fmtVN(to)}).</div>`;
+
+  if(t==='leave'){
+    const want=dsRows.reduce((a,r)=>a+alDayValue(r.code),0);
+    const left=alLeft(own), pend=alPending(own);
+    if(want>0){
+      const after=left-pend-want;
+      h+=`<div class="pv-alert ${after<0?'warn':'info'} sm">
+        Phép năm: còn <b>${rnd1(left)}</b> ngày${pend?` (đang chờ duyệt ${rnd1(pend)})`:''} · đơn này <b>${rnd1(want)}</b> ngày
+        → còn lại <b>${rnd1(after)}</b> ngày.${after<0?' ⚠️ Vượt quá số phép còn lại.':''}</div>`;
+    }
+  }
+  if(isos.length>1)h+=`<div class="pv-alert info sm">Đơn gồm <b>${isos.length} dòng</b> — khi in ra mỗi ngày là một dòng riêng${t==='swap'?' cho mỗi người':''}.</div>`;
   w.innerHTML=h;
 }
 
 /* ---- Gửi đơn ---- */
 function dsSubmit(t){
-  const empId=meId();
-  if(!empId){toast('Phiên đăng nhập đã hết — đăng nhập lại');renderGate();return;}
-  const from=$('dsFrom').value;
-  const to=($('dsTo')&&$('dsTo').value)||from;
-  if(!from){toast('Chọn ngày');return;}
-  if(to<from){toast('Ngày kết thúc nhỏ hơn ngày bắt đầu');return;}
+  const me=meId();
+  if(!me){toast('Phiên đăng nhập đã hết — đăng nhập lại');renderGate();return;}
+  const empId=(t==='swap')?(dsOwnerId||me):me;
+  if(!empById(empId)){toast('Người đứng đơn không hợp lệ');return;}
 
-  const r={id:uid(),empId,type:t,from,to,
-    code:(t==='leave'||t==='ot'||t==='change')&&$('dsCode')?$('dsCode').value:'',
-    withId:t==='swap'&&$('dsSwapWith')?$('dsSwapWith').value:'',
-    note:$('dsNote')?$('dsNote').value.trim():'',
-    status:'pending',source:'app',createdAt:Date.now()};
-  if(t==='swap'&&(!r.withId||r.withId===empId)){toast('Chọn người đổi ca hợp lệ');return;}
+  const r={id:uid(),empId,type:t,byId:me,
+    note:(dsNoteVal||'').trim(),status:'pending',source:'app',createdAt:Date.now()};
 
-  // đọc các ô phụ (prefix ds → dùng chung readExtraFields)
-  Object.assign(r,readExtraFields(empId,t,'ds',from));
-
-  r.before={};if(t==='swap')r.beforeW={};
-  for(const iso of dateRange(from,to)){
-    r.before[iso]=eff(empId,iso).code||'';
-    if(t==='swap')r.beforeW[iso]=eff(r.withId,iso).code||'';
+  if(isRangeForm(t)){
+    if(!dsMultiFrom){toast('Chọn ngày bắt đầu');return;}
+    const to=dsMultiTo||dsMultiFrom;
+    if(to<dsMultiFrom){toast('Ngày kết thúc nhỏ hơn ngày bắt đầu');return;}
+    r.from=dsMultiFrom;r.to=to;r.code='';r.withId='';
+    r.timeIn=dsMultiIn||'08:00';r.timeOut=dsMultiOut||'17:00';
+  }else{
+    // gom dòng, bỏ trống & trùng, sắp theo ngày
+    const seen=new Set(),days=[];
+    dsRows.slice().sort((a,b)=>a.iso<b.iso?-1:1).forEach(row=>{
+      if(!row.iso||seen.has(row.iso))return;
+      seen.add(row.iso);
+      const d={iso:row.iso};
+      if(t==='leave'||t==='ot'||t==='change')d.code=row.code||dsDefaultCode(t,row.iso);
+      if(t==='wt'||t==='late'){
+        const hrs=dsDefaultTimes(row.iso);
+        d.timeIn=row.timeIn||hrs[0];d.timeOut=row.timeOut||hrs[1];
+      }
+      days.push(d);
+    });
+    if(!days.length){toast('Thêm ít nhất 1 ngày cho đơn');return;}
+    if(t==='swap'){
+      if(!dsWithId||dsWithId===empId){toast('Chọn người đổi ca hợp lệ');return;}
+      r.withId=dsWithId;
+    }else r.withId='';
+    r.days=days;
+    r.from=days[0].iso;r.to=days[days.length-1].iso;
+    r.code=days[0].code||'';           // giữ tương thích chỗ hiển thị cũ
+    if(t==='wt'){
+      r.reasonCode=dsReasonCode||'forgot_card';
+      r.reasonOther=dsReasonCode==='other'?(dsReasonOther||'').trim():'';
+      r.guarantorId=dsGuarId||'';
+      r.timeIn=days[0].timeIn;r.timeOut=days[0].timeOut;
+    }
+    if(t==='late'){
+      r.subType=dsLateType||'come_late';
+      r.timeFrom=days[0].timeIn;r.timeTo=days[0].timeOut;
+    }
   }
+
+  // Chụp lại ca hiện tại trước khi duyệt để chi tiết đơn ổn định về sau
+  r.before={};if(t==='swap')r.beforeW={};
+  reqDays(r).forEach(d=>{
+    r.before[d.iso]=eff(empId,d.iso).code||'';
+    if(t==='swap')r.beforeW[d.iso]=eff(r.withId,d.iso).code||'';
+  });
+
   S.requests[r.id]=r;
   save();
   pvSheetForm=null;
   closeDaySheet();
   renderMe(true);
-  toastWithPrint('Đã gửi đơn '+(REQ_LABEL[t]||t)+' — chờ duyệt ✔',r.id);
+  const who=empId!==me?(' cho '+shortName((empById(empId)||{}).name||empId)):'';
+  toastWithPrint('Đã gửi đơn '+(REQ_LABEL[t]||t)+who+' — chờ duyệt ✔',r.id);
 }
 
 function cancelMyReq(rid){
   const id=meId(),r=S.requests[rid];
-  if(!r||r.empId!==id||r.status!=='pending')return;
+  if(!r||(r.empId!==id&&r.byId!==id)||r.status!=='pending')return;
   if(!confirm('Huỷ đơn này?'))return;
   delete S.requests[rid];
   save();renderDaySheet();renderMe(true);toast('Đã huỷ đơn');
@@ -528,7 +785,7 @@ function myPanelOt(id){
   const wait=Object.values(S.requests||{}).filter(r=>r.empId===id&&r.type==='ot'&&r.status==='pending');
   const rej =Object.values(S.requests||{}).filter(r=>r.empId===id&&r.type==='ot'&&r.status==='rejected').slice(0,5);
   const hDone=done.reduce((a,x)=>a+x.h,0);
-  let hWait=0;wait.forEach(r=>{for(const iso of dateRange(r.from,r.to||r.from))hWait+=getHours(r.code||'OTD');});
+  let hWait=0;wait.forEach(r=>reqDays(r).forEach(d=>{hWait+=getHours(d.code||'OTD');}));
 
   // tổng cả năm
   let hYear=0;const yr=String(new Date().getFullYear());
@@ -557,7 +814,7 @@ function myPanelOt(id){
   <div class="ds-block"><h4>⏳ Đang chờ duyệt (${wait.length})</h4>
     ${wait.length?wait.map(r=>`<div class="ds-req pending">
         <span class="ic">⚡</span>
-        <span class="tx"><b>${esc(r.code||'OT')}</b> ${fmtVN(r.from)}${r.from!==r.to?' – '+fmtVN(r.to):''}
+        <span class="tx"><b>${esc(r.code||'OT')}</b> ${reqDays(r).map(d=>fmtVN(d.iso)).join(', ')}
           ${r.note?`<i>${esc(r.note)}</i>`:''}</span>
         <span class="st pending">CHỜ</span>
         <button class="btn warn sm" onclick="cancelMyReq('${r.id}');renderMyPanel()">Huỷ</button>
@@ -580,10 +837,14 @@ function myPanelReq(id){
   const row=r=>`<div class="ds-req ${r.status}">
       <span class="ic">${REQ_ICON[r.type]||'📄'}</span>
       <span class="tx"><b>${esc(REQ_LABEL[r.type]||r.type)}</b>${r.code?' · '+esc(r.code):''}
-        <i>${fmtVNfull(r.from)}${r.from!==r.to?' → '+fmtVNfull(r.to):''}${r.withId?' · với '+esc((empById(r.withId)||{}).name||r.withId):''}</i>
+        <i>${r.type==='multi'
+             ? fmtVNfull(r.from)+' → '+fmtVNfull(r.to)
+             : reqDays(r).map(d=>fmtVN(d.iso)+(d.code?' ('+d.code+')':'')).join(' · ')}</i>
+        ${r.withId?`<i>Đổi ca với ${esc((empById(r.withId)||{}).name||r.withId)}</i>`:''}
+        ${r.byId&&r.byId!==r.empId?`<i>✍️ ${r.byId===id?'Bạn khai hộ '+esc((empById(r.empId)||{}).name||r.empId):'Khai hộ bởi '+esc((empById(r.byId)||{}).name||r.byId)}</i>`:''}
         ${r.note?`<i>${esc(r.note)}</i>`:''}${r.reason?`<i>Lý do: ${esc(r.reason)}</i>`:''}</span>
       <span class="st ${r.status}">${{pending:'CHỜ',approved:'DUYỆT',rejected:'TỪ CHỐI'}[r.status]}</span>
-      ${r.status==='pending'&&r.empId===id?`<button class="btn warn sm" onclick="cancelMyReq('${r.id}');renderMyPanel()">Huỷ</button>`:''}
+      ${r.status==='pending'&&(r.empId===id||r.byId===id)?`<button class="btn warn sm" onclick="cancelMyReq('${r.id}');renderMyPanel()">Huỷ</button>`:''}
       ${r.status==='approved'?`<button class="btn sec sm" onclick="printOne('${r.id}')">🖨️</button>`:''}
     </div>`;
   return `
@@ -596,38 +857,80 @@ function myPanelReq(id){
     ${grp.rejected.slice(0,10).map(row).join('')}</div>`:''}`;
 }
 
-/* ---- Phép năm ---- */
+/* ---- Phép năm (cho phép tự khai số còn lại) ---- */
 function myPanelAl(id){
+  const e=empById(id)||{};
   const yr=new Date().getFullYear();
-  const used=alUsed(id,yr), quota=alQuota(id), left=quota-used;
-  const pct=Math.max(0,Math.min(100,Math.round(used/quota*100)));
-  // liệt kê ngày phép đã dùng
-  const list=[];
-  const seen=new Set();
+  const quota=alQuota(id);
+  const hasBase=alHasBase(id);
+  const left=alLeft(id), pend=alPending(id);
+  const usedSince=hasBase?alUsedSince(id,e.alLeftAt):alUsed(id,yr);
+  const total=hasBase?(+e.alLeftBase):quota;
+  const pct=total>0?Math.max(0,Math.min(100,Math.round(usedSince/total*100))):0;
+
+  // liệt kê ngày phép đã dùng trong năm
+  const list=[];const seen=new Set();
   [S.base[id],S.over[id]].forEach(o=>{for(const iso in (o||{})){
     if(seen.has(iso)||iso.slice(0,4)!==String(yr))continue;seen.add(iso);
     const c=eff(id,iso).code;
     if(c&&codeInfo(c).cat==='leave')list.push({iso,code:c});
   }});
   list.sort((a,b)=>a.iso<b.iso?-1:1);
-  const wait=Object.values(S.requests||{}).filter(r=>r.empId===id&&r.type==='leave'&&r.status==='pending');
+
   return `
   <h3 style="margin:4px 0 10px">🏖 Phép năm ${yr}</h3>
+
+  ${hasBase?'':`<div class="pv-alert warn sm">Phần mềm mới đưa vào dùng giữa năm nên chưa có số phép bạn đã nghỉ trước đó.
+     Hãy nhập <b>số phép còn lại</b> theo bảng công của công ty ở ô bên dưới — từ mốc đó hệ thống tự trừ dần.</div>`}
+
   <div class="al-bar"><div class="fill" style="width:${pct}%"></div>
-    <span>${rnd1(used)} / ${quota} ngày đã dùng</span></div>
+    <span>${rnd1(usedSince)} / ${rnd1(total)} ngày đã dùng${hasBase?' (từ '+fmtVNfull(e.alLeftAt)+')':''}</span></div>
   <div class="pv-stats in-panel">
     <div class="sbox al"><div class="v">${rnd1(left)}<i>ngày</i></div><div class="k">Còn lại</div></div>
-    <div class="sbox"><div class="v">${rnd1(used)}<i>ngày</i></div><div class="k">Đã dùng</div></div>
-    <div class="sbox ot"><div class="v">${wait.length}</div><div class="k">Đơn nghỉ chờ duyệt</div></div>
+    <div class="sbox"><div class="v">${rnd1(usedSince)}<i>ngày</i></div><div class="k">Đã dùng${hasBase?' từ mốc':''}</div></div>
+    <div class="sbox ot"><div class="v">${rnd1(pend)}<i>ngày</i></div><div class="k">Đơn nghỉ chờ duyệt</div></div>
   </div>
+
+  <div class="ds-block"><h4>✏️ Khai số phép còn lại</h4>
+    <p class="muted" style="margin-bottom:8px">Nhập số ngày phép <b>còn lại</b> tại một mốc ngày (lấy theo bảng công / phòng nhân sự).
+      Hệ thống sẽ trừ dần các ngày nghỉ phép <b>kể từ mốc đó</b> trở đi.</p>
+    <div class="grid2">
+      <div class="fg"><label class="fl">Số phép còn lại (ngày)</label>
+        <input type="number" step="0.5" min="0" class="inp" id="alBaseVal" value="${hasBase?esc(e.alLeftBase):''}" placeholder="VD 7.5"></div>
+      <div class="fg"><label class="fl">Tính từ ngày</label>
+        <input type="date" class="inp" id="alBaseAt" value="${hasBase?esc(e.alLeftAt):todayIso()}"></div>
+    </div>
+    <div class="row" style="gap:8px">
+      <button class="btn" style="flex:1" onclick="saveMyAl()">💾 Lưu</button>
+      ${hasBase?`<button class="btn sec" style="flex:1" onclick="clearMyAl()">Bỏ mốc (dùng quỹ ${quota} ngày)</button>`:''}
+    </div>
+    ${e.alLeftUpdAt?`<p class="muted" style="margin-top:6px">Cập nhật lần cuối: ${new Date(e.alLeftUpdAt).toLocaleString('vi-VN')}${e.alLeftBy&&e.alLeftBy!==id?' bởi '+esc(e.alLeftBy):''}</p>`:''}
+  </div>
+
   <div class="ds-block"><h4>Các ngày nghỉ trong năm (${list.length})</h4>
-    ${list.length?`<div class="ot-list">${list.map(x=>`<div class="ot-row">
+    ${list.length?`<div class="ot-list">${list.map(x=>`<div class="ot-row${hasBase&&x.iso<e.alLeftAt?' pre':''}">
       <span class="d">${dowOf(x.iso)} ${fmtVNfull(x.iso)}</span>${chip(x.code)}
       <span class="h">${esc(codeInfo(x.code).l)}</span></div>`).join('')}</div>`
       :'<p class="muted">Chưa dùng ngày nghỉ nào trong năm.</p>'}
+    ${hasBase?'<p class="muted" style="margin-top:6px">Dòng mờ là ngày <b>trước mốc</b> — không trừ lần nữa vì đã nằm trong số bạn khai.</p>':''}
   </div>
-  <p class="muted">Quỹ phép mặc định ${quota} ngày/năm — quản lý chỉnh trong tab Dữ liệu nếu công ty áp mức khác.</p>
+
   <button class="btn" style="width:100%" onclick="closeMyPanel();openDaySheet(todayIso(),'leave')">＋ Đăng ký nghỉ phép</button>`;
+}
+function saveMyAl(){
+  const id=meId(),e=empById(id);if(!e)return;
+  const v=$('alBaseVal')?$('alBaseVal').value:'', at=$('alBaseAt')?$('alBaseAt').value:'';
+  if(v===''||at===''){toast('Nhập đủ số ngày và mốc ngày');return;}
+  if(isNaN(+v)||+v<0){toast('Số ngày phép không hợp lệ');return;}
+  e.alLeftBase=+v;e.alLeftAt=at;e.alLeftBy=id;e.alLeftUpdAt=Date.now();
+  save();renderMyPanel();renderMe(true);
+  toast('Đã lưu — còn '+rnd1(alLeft(id))+' ngày phép');
+}
+function clearMyAl(){
+  const id=meId(),e=empById(id);if(!e)return;
+  if(!confirm('Bỏ mốc đã khai và quay lại tính theo quỹ phép năm?'))return;
+  delete e.alLeftBase;delete e.alLeftAt;delete e.alLeftBy;delete e.alLeftUpdAt;
+  save();renderMyPanel();renderMe(true);toast('Đã bỏ mốc');
 }
 
 /* ---- Tài khoản ---- */

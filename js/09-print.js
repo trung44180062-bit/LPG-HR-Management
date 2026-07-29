@@ -9,63 +9,90 @@ function reqFormType(r){return FORM_OF_TYPE[r.type]||'leave';}
 function numDaysInc(f,t){return Math.round((new Date(t+'T00:00:00')-new Date(f+'T00:00:00'))/86400000)+1;}
 function deptOf(empId){const e=empById(empId);return (e&&e.team)?('Nhóm '+e.team):(S.settings.deptDefault||DEPT_DEFAULT_FALLBACK);}
 function chunk10(arr){const out=[];for(let i=0;i<arr.length;i+=10)out.push(arr.slice(i,i+10));return out;}
+/* Quy định công ty: MỖI NGÀY LÀ MỘT DÒNG trên biểu mẫu.
+   Các hàm build dưới đây duyệt reqDays(r) — đơn 3 ngày sinh 3 dòng. */
 function buildLeaveRows(reqs){
-  return reqs.map(r=>{
-    const e=empById(r.empId);
-    const hrs=getHours(r.code)>0&&getHours(r.code)<=4?['08:00','12:00']:['08:00','17:00'];
-    return{name:e?e.name:r.empId,id:r.empId,dept:deptOf(r.empId),
-      fromTime:hrs[0],fromDate:fmtVNfull(r.from),toTime:hrs[1],toDate:fmtVNfull(r.to),
-      days:numDaysInc(r.from,r.to),code:r.code||'',note:r.note||''};
-  });
-}
-function buildOtRows(reqs){
-  return reqs.map(r=>{
-    const e=empById(r.empId);const days=numDaysInc(r.from,r.to);
-    const b=baseShiftOf(r.code)||'D';const hrs=SHIFT_HOURS[b];
-    return{name:e?e.name:r.empId,id:r.empId,dept:deptOf(r.empId),
-      fromTime:hrs[0],fromDate:fmtVNfull(r.from),toTime:hrs[1],toDate:fmtVNfull(r.to),
-      hours:rnd1(days*getHours(r.code||'OTD')),note:r.note||''};
-  });
-}
-function buildShiftRows(reqs){
-  // mỗi ngày 1 dòng; đổi ca sinh dòng cho CẢ 2 người
   const rows=[];
   reqs.forEach(r=>{
-    const days=[...dateRange(r.from,r.to)];
+    const e=empById(r.empId);
+    reqDays(r).forEach(d=>{
+      const code=d.code||r.code||'';
+      const h=getHours(code);
+      const hrs=(h>0&&h<=4)?['08:00','12:00']:['08:00','17:00'];
+      rows.push({name:e?e.name:r.empId,id:r.empId,dept:deptOf(r.empId),
+        fromTime:hrs[0],fromDate:fmtVNfull(d.iso),toTime:hrs[1],toDate:fmtVNfull(d.iso),
+        days:(h>0&&h<=4)?0.5:1,code,note:r.note||''});
+    });
+  });
+  return rows;
+}
+function buildOtRows(reqs){
+  const rows=[];
+  reqs.forEach(r=>{
+    const e=empById(r.empId);
+    reqDays(r).forEach(d=>{
+      const code=d.code||r.code||'OTD';
+      const b=baseShiftOf(code)||'D';const hrs=SHIFT_HOURS[b];
+      rows.push({name:e?e.name:r.empId,id:r.empId,dept:deptOf(r.empId),
+        fromTime:hrs[0],fromDate:fmtVNfull(d.iso),toTime:hrs[1],toDate:fmtVNfull(d.iso),
+        hours:rnd1(getHours(code)),note:r.note||''});
+    });
+  });
+  return rows;
+}
+function buildShiftRows(reqs){
+  // mỗi ngày 1 dòng; đổi ca sinh 2 dòng (cả 2 người) để thấy rõ đổi qua đổi lại
+  const rows=[];
+  reqs.forEach(r=>{
     const a=empById(r.empId),b=r.withId?empById(r.withId):null;
-    days.forEach(iso=>{
+    reqDays(r).forEach(d=>{
+      const iso=d.iso;
       const beA=(r.before&&r.before[iso]!==undefined)?r.before[iso]:eff(r.empId,iso).code;
       if(r.type==='swap'&&b){
         const beB=(r.beforeW&&r.beforeW[iso]!==undefined)?r.beforeW[iso]:eff(r.withId,iso).code;
-        rows.push({name:a?a.name:r.empId,id:r.empId,dept:deptOf(r.empId),oldCode:beA||'—',oldDate:fmtVNfull(iso),newCode:beB||'—',newDate:fmtVNfull(iso),note:'Cover '+(b?b.name:r.withId)});
-        rows.push({name:b?b.name:r.withId,id:r.withId,dept:deptOf(r.withId),oldCode:beB||'—',oldDate:fmtVNfull(iso),newCode:beA||'—',newDate:fmtVNfull(iso),note:'Cover '+(a?a.name:r.empId)});
+        rows.push({name:a?a.name:r.empId,id:r.empId,dept:deptOf(r.empId),
+          oldCode:beA||'—',oldDate:fmtVNfull(iso),newCode:beB||'—',newDate:fmtVNfull(iso),
+          note:'Đổi ca với '+(b?b.name:r.withId)+(r.note?' — '+r.note:'')});
+        rows.push({name:b?b.name:r.withId,id:r.withId,dept:deptOf(r.withId),
+          oldCode:beB||'—',oldDate:fmtVNfull(iso),newCode:beA||'—',newDate:fmtVNfull(iso),
+          note:'Đổi ca với '+(a?a.name:r.empId)+(r.note?' — '+r.note:'')});
       }else{
-        rows.push({name:a?a.name:r.empId,id:r.empId,dept:deptOf(r.empId),oldCode:beA||'—',oldDate:fmtVNfull(iso),newCode:r.code||'—',newDate:fmtVNfull(iso),note:r.note||''});
+        rows.push({name:a?a.name:r.empId,id:r.empId,dept:deptOf(r.empId),
+          oldCode:beA||'—',oldDate:fmtVNfull(iso),newCode:d.code||r.code||'—',newDate:fmtVNfull(iso),note:r.note||''});
       }
     });
   });
   return rows;
 }
 function buildWtRows(reqs){
-  return reqs.map(r=>{
+  const rows=[];
+  reqs.forEach(r=>{
     const e=empById(r.empId);
-    const shiftCode=eff(r.empId,r.from).code;
-    return{name:e?e.name:r.empId,id:r.empId,dept:deptOf(r.empId),
-      inTime:r.timeIn||'',inDate:fmtVNfull(r.from),outTime:r.timeOut||'',outDate:fmtVNfull(r.to),
-      shiftLabel:shiftLabelOf(shiftCode),reasonCode:r.reasonCode,reasonOther:r.reasonOther,
-      guarantor:r.guarantorId?((empById(r.guarantorId)||{}).name||''):''};
+    reqDays(r).forEach(d=>{
+      rows.push({name:e?e.name:r.empId,id:r.empId,dept:deptOf(r.empId),
+        inTime:d.timeIn||r.timeIn||'',inDate:fmtVNfull(d.iso),
+        outTime:d.timeOut||r.timeOut||'',outDate:fmtVNfull(d.iso),
+        shiftLabel:shiftLabelOf(eff(r.empId,d.iso).code),
+        reasonCode:r.reasonCode,reasonOther:r.reasonOther,
+        guarantor:r.guarantorId?((empById(r.guarantorId)||{}).name||''):''});
+    });
   });
+  return rows;
 }
 function buildLateRows(reqs){
-  return reqs.map(r=>{
+  const rows=[];
+  reqs.forEach(r=>{
     const e=empById(r.empId);
-    const t1=r.timeFrom||'',t2=r.timeTo||'';
-    let hrs=0;
-    if(t1&&t2){const[h1,m1]=t1.split(':').map(Number),[h2,m2]=t2.split(':').map(Number);hrs=rnd1(((h2*60+m2)-(h1*60+m1))/60);if(hrs<0)hrs+=24;}
-    return{name:e?e.name:r.empId,id:r.empId,dept:deptOf(r.empId),
-      fromTime:t1,fromDate:fmtVNfull(r.from),toTime:t2,toDate:fmtVNfull(r.to),
-      total:hrs,subType:r.subType==='leave_early'?'Về sớm':'Đi trễ',note:r.note||''};
+    reqDays(r).forEach(d=>{
+      const t1=d.timeIn||r.timeFrom||'',t2=d.timeOut||r.timeTo||'';
+      let hrs=0;
+      if(t1&&t2){const[h1,m1]=t1.split(':').map(Number),[h2,m2]=t2.split(':').map(Number);hrs=rnd1(((h2*60+m2)-(h1*60+m1))/60);if(hrs<0)hrs+=24;}
+      rows.push({name:e?e.name:r.empId,id:r.empId,dept:deptOf(r.empId),
+        fromTime:t1,fromDate:fmtVNfull(d.iso),toTime:t2,toDate:fmtVNfull(d.iso),
+        total:hrs,subType:r.subType==='leave_early'?'Về sớm':'Đi trễ',note:r.note||''});
+    });
   });
+  return rows;
 }
 function buildMultiRows(reqs){
   return reqs.map(r=>{
@@ -187,9 +214,10 @@ function printOne(reqId){
   const key=reqFormType(r);
   const def=FORM_DEFS[key];if(!def){toast('Loại đơn không hỗ trợ in');return;}
   const rows=def.build([r]);
-  // in lẻ 1 đơn → 1 tờ A5 ngang, chữ to
+  if(!rows.length){toast('Đơn không có dòng nào để in');return;}
+  // in lẻ 1 đơn → tờ A5 ngang, chữ to (>10 dòng thì tách thêm tờ)
   setPageDyn('a5');
-  $('printRoot').innerHTML=wrapPrintPages([def.page(rows,true)],'a5');
+  $('printRoot').innerHTML=wrapPrintPages(chunk10(rows).map(c=>def.page(c,true)),'a5');
   $('printRoot').className='layout-a5';
   setTimeout(()=>window.print(),80);
 }

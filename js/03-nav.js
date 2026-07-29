@@ -17,7 +17,6 @@ function go(v,opts){
   if(v==='setup')renderSetup();
   if(v==='mp')renderMp();
   if(v==='stats')renderStats();
-  if(v==='reg'){renderReg();if(opts.type){$('regType').value=opts.type;regTypeUI();}}
   if(v==='appr')renderAppr();
   if(v==='data')renderData();
 }

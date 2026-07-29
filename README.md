@@ -103,17 +103,35 @@ là **thấy ngay lịch cả tháng**, các thẻ số liệu đẩy xuống d�
 
 - **Lịch cá nhân** mặc định xem **Tháng** (đổi được sang Tuần), lấy ca từ *lịch thực tế*
   (`eff()` = lịch chuẩn + điều chỉnh đã duyệt).
-- **Chạm vào ngày bất kỳ** → sheet hiện ca hôm đó, **nhân sự trực trong ngày gom theo nhóm ca**
-  (tên rút gọn 2 chữ, ô của mình được tô đậm), đơn đang có, và 7 nút gửi đơn
-  (nghỉ phép · đổi ca · tăng ca · đổi mã ca · bổ sung công · đi trễ/về sớm · làm liên tục nhiều ngày) — ngày đã điền sẵn.
-- **Đổi ca**: danh sách đồng nghiệp tự xếp người **đang nghỉ (R)** lên đầu, rồi tới người cùng nhóm.
-- **Cảnh báo trùng đơn** trước khi gửi; **thông báo** khi đơn được duyệt / từ chối.
+- Chế độ Tháng chạy theo **kỳ công của công ty: 21 tháng trước → 20 tháng này**
+  (dùng `daysOfPeriod`/`periodFor`), không phải tháng dương lịch. Nút ◀ ▶ nhảy theo kỳ,
+  các ngày thuộc tháng đầu kỳ (≥21) có nền nhạt + viền đứt, ngày mùng 1 hiện thêm số tháng.
+- **Chạm vào ngày bất kỳ** → sheet hiện ca hôm đó, **nhân sự trong ngày xếp thành cột theo nhóm ca**
+  (O · D · N · OT · **R nghỉ ca**) — tên rút gọn 2 chữ kèm số nhóm, ô của mình tô đậm —
+  đơn đang có, và 7 nút gửi đơn (nghỉ phép · đổi ca · tăng ca · đổi mã ca · bổ sung công ·
+  đi trễ/về sớm · làm liên tục nhiều ngày) — ngày đã điền sẵn.
+- **Mỗi ngày 1 dòng** (đúng quy định biểu mẫu công ty): form đơn là một **danh sách dòng**,
+  mỗi dòng chọn **1 ngày** + mã ca (hoặc giờ vào/ra) riêng, bấm **＋ Thêm ngày** để khai
+  nhiều ngày rời rạc trong cùng một đơn (tối đa `DS_MAX_ROWS` = 10 dòng — bằng số dòng của
+  biểu mẫu in). Lưu ở `r.days=[{iso,code,timeIn,timeOut}]`; `r.from`/`r.to` là ngày đầu/cuối
+  để tương thích đơn cũ. Riêng **Làm liên tục nhiều ngày** vẫn chọn theo **khoảng ngày**.
+- **Đổi ca**: ô **tìm theo tên** (gõ không dấu vẫn khớp, `noAccent()`), người **đang nghỉ (R)**
+  ngày đó được xếp lên đầu. Có ô **Người đứng đơn** để **khai hộ** đồng nghiệp — đơn ghi
+  `r.byId` (người bấm gửi) khác `r.empId` (người đứng đơn); khi in, mỗi ngày sinh **2 dòng**
+  cho cả hai người để thấy rõ việc đổi qua đổi lại.
+- **Cảnh báo trùng đơn / trùng ngày / vượt phép năm** trước khi gửi; **thông báo** khi đơn được duyệt / từ chối.
 - Cảnh báo khi làm ≥ 7 ngày liên tục.
 - **Thẻ số liệu**: giờ công kỳ này · tăng ca đã duyệt + đang chờ · phép năm còn lại · số đơn đang chờ.
+- **Phép năm sửa được**: phần mềm đưa vào dùng giữa năm nên nhân viên tự khai **số phép còn lại**
+  tại một mốc ngày trong bảng *🏖 Phép năm* (`e.alLeftBase` + `e.alLeftAt`); từ mốc đó hệ thống
+  trừ dần các ngày AL. Chưa khai mốc thì vẫn tính theo quỹ `AL_QUOTA_DEFAULT`.
 
 Tham số chỉnh nhanh ở đầu `js/13-portal.js`:
 `AL_QUOTA_DEFAULT` (quỹ phép năm), `STREAK_WARN` (ngưỡng cảnh báo ngày làm liên tục),
-`CREW_ORDER` (thứ tự nhóm ca hiển thị trong sheet ngày).
+`DS_MAX_ROWS` (số dòng tối đa mỗi đơn), `CREW_ORDER` (thứ tự nhóm ca trong sheet ngày).
+
+> Tab **📝 Đăng ký** đã bỏ (07/2026) — mọi việc gửi đơn gom về trang chính; quản lý muốn
+> nhập hộ thì dùng chính năng **khai hộ** trong đơn đổi ca.
 
 ---
 

@@ -85,6 +85,11 @@ function activeEmps(){return S.employees.filter(e=>e.active!==false).slice().sor
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
 function newVc(){let id;do{id='vc'+Math.floor(10000000+Math.random()*89999999);}while(empById(id));return id;}
 function esc(s){return String(s??'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));}
+/* Bỏ dấu tiếng Việt để tìm kiếm theo tên: "Hoàng Trung" khớp "hoang trung" */
+function noAccent(s){
+  return String(s??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[\u0111]/g,'d').replace(/[\u0110]/g,'D').toLowerCase().trim();
+}
 function firstOfMonthIso(){const d=new Date();return isoOf(new Date(d.getFullYear(),d.getMonth(),1));}
 function lastOfMonthIso(){const d=new Date();return isoOf(new Date(d.getFullYear(),d.getMonth()+1,0));}
 function curMonthStr(){const d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1);}

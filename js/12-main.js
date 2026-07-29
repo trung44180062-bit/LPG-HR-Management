@@ -6,7 +6,7 @@
 function renderAll(){
   syncAccounts();                 // mã NV mới → tự thành tài khoản đăng nhập
   applyRoleUI();
-  fillMonthSelects();renderCal();renderSetup();renderReg();renderAppr();renderData();refreshBadge();
+  fillMonthSelects();renderCal();renderSetup();renderAppr();renderData();refreshBadge();
   renderGate();
   if(curView==='mp')renderMp();
   if(curView==='me')renderMe();

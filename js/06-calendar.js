@@ -265,7 +265,7 @@ function renderCalDayView(){
   const B=mpBuckets(iso);
   const lowD=B.D.length<S.settings.minD,lowN=B.N.length<S.settings.minN;
   const dw=new Date(iso+'T00:00:00').getDay();
-  const reqToday=Object.values(S.requests).filter(r=>r.status==='approved'&&iso>=r.from&&iso<=r.to);
+  const reqToday=Object.values(S.requests).filter(r=>r.status==='approved'&&reqHasDay(r,iso));
   const tagFor=id=>{const r=reqToday.find(x=>x.empId===id||x.withId===id);return r?` <span class="grp-tag">${(r.type||'').toUpperCase()}</span>`:'';};
   const grpText=arr=>{
     const g={};arr.forEach(e=>{const t=e.team||'(chưa phân nhóm)';(g[t]=g[t]||[]).push(e);});
