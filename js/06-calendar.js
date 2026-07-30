@@ -77,6 +77,19 @@ function renderMatrix(C){
   // Lấy mã: chuẩn = base; thực tế = eff (base+over) kèm cờ ovr (khác chuẩn)
   const getCode=C.real ? (id,iso)=>eff(id,iso) : (id,iso)=>({code:(S.base[id]&&S.base[id][iso])||'',ovr:false});
 
+  /* "Chỉ ô khác chuẩn": thu gọn bảng — chỉ giữ NGƯỜI và NGÀY có ít nhất
+     một ô khác lịch chuẩn, nhìn phát biết ngay ai đổi gì hôm nào. */
+  if(diffOnly){
+    const empHasDiff=e=>days.some(iso=>getCode(e.id,iso).ovr);
+    const empsDiff=emps.filter(empHasDiff);
+    const daysDiff=days.filter(iso=>empsDiff.some(e=>getCode(e.id,iso).ovr));
+    if(!empsDiff.length){
+      $(C.box).innerHTML='<p style="padding:20px" class="muted">Kỳ này chưa có ô nào khác lịch chuẩn.</p>';
+      return;
+    }
+    emps=empsDiff;days=daysDiff;
+  }
+
   // ---- month bands ----
   const bands=[];days.forEach(iso=>{const mk=iso.slice(0,7);const mo=+iso.slice(5,7);if(bands.length&&bands[bands.length-1].mk===mk)bands[bands.length-1].n++;else bands.push({mk,mo,n:1});});
 
@@ -194,6 +207,9 @@ function isoWeekNum(iso){
   return Math.ceil((((d-onejan)/86400000)+onejan.getDay()+1)/7);
 }
 function toggleCalGroup(key){calCollapsed[key]=!calCollapsed[key];renderCalWeekCards();}
+/* Ấn vào thanh tuần → ẩn / hiện cả tuần đó */
+let calWkHidden={};
+function toggleCalWeek(key){calWkHidden[key]=!calWkHidden[key];renderCalWeekCards();}
 function calCollapseAll(){
   const keys=teamList().map(t=>t||'__none');
   const allCollapsed=keys.length&&keys.every(k=>calCollapsed[k]);
@@ -216,18 +232,33 @@ function renderCalWeekCards(){
   const tIso=todayIso();
   let firstOpenIdx=-1;
   let h='';
+  let nWkSkipped=0;
   weeks.forEach((wk,wi)=>{
+    /* "Chỉ ô khác chuẩn": tuần không có ô nào khác lịch chuẩn thì bỏ hẳn */
+    const wkDiffOf=e=>wk.some(w=>w.inRange&&getCode(e.id,w.iso).ovr);
+    if(diffOnly&&!emps.some(wkDiffOf)){nWkSkipped++;return;}
     if(wk.some(w=>w.iso===tIso))firstOpenIdx=wi;
-    h+=`<div class="wk-card" id="wkc${wi}"><div class="wk-head">Tuần ${isoWeekNum(wk[0].iso)} · ${fmtVN(wk[0].iso)} – ${fmtVN(wk[6].iso)}</div>`;
+    const wkKey=wk[0].iso;
+    const hidden=!!calWkHidden[wkKey];
+    h+=`<div class="wk-card" id="wkc${wi}">
+      <div class="wk-head clickable${hidden?' closed':''}" onclick="toggleCalWeek('${wkKey}')" title="Chạm để ${hidden?'mở':'ẩn'} tuần này">
+        Tuần ${isoWeekNum(wk[0].iso)} · ${fmtVN(wk[0].iso)} – ${fmtVN(wk[6].iso)}
+        <span class="chevS">${hidden?'▸':'▾'}</span></div>`;
+    if(hidden){h+='</div>';return;}
     h+='<div class="wk-dow"><span></span>'+wk.map(w=>{const dw=new Date(w.iso+'T00:00:00').getDay();return `<span class="${w.iso===tIso?'today':''}">${dowOf(w.iso)} ${+w.iso.slice(8)}</span>`;}).join('')+'</div>';
     teams.forEach(tm=>{
-      const mem=byTeam[tm];
+      let mem=byTeam[tm];
       const key=tm||'__none';
+      /* Thu gọn: chỉ giữ người có ô khác chuẩn trong tuần này */
+      if(diffOnly){
+        mem=mem.filter(wkDiffOf);
+        if(!mem.length)return;
+      }
       if(!(key in calCollapsed)){
         const defOpen=mgr?true:mem.some(e=>e.id===meIdCur);
         calCollapsed[key]=!defOpen;
       }
-      const collapsed=calCollapsed[key];
+      const collapsed=diffOnly?false:calCollapsed[key];   // đang lọc khác chuẩn thì mở hết cho thấy ngay
       const sumTxt=wk.map(w=>{
         if(!w.inRange)return '';
         const cnt={};mem.forEach(e=>{const c=getCode(e.id,w.iso).code;if(c)cnt[c]=(cnt[c]||0)+1;});
@@ -247,7 +278,7 @@ function renderCalWeekCards(){
             const cls=['cellc'];
             if(w.iso===tIso)cls.push('wk-cell-today');
             if(r.ovr)cls.push('wk-cell-diff wk-cell-ovr');
-            if(diffOnly&&!r.ovr){h+=`<div class="${cls.join(' ')}"></div>`;return;}
+            if(diffOnly&&!r.ovr){h+=`<div class="${cls.join(' ')} dim">${r.code?`<span class="mini">${r.code}</span>`:''}</div>`;return;}
             h+=`<div class="${cls.join(' ')}" ${editable?`onclick="openCell('${e.id}','${w.iso}')"`:''}>${r.code?chip(r.code):''}</div>`;
           });
           h+='</div>';
@@ -257,6 +288,8 @@ function renderCalWeekCards(){
     });
     h+='</div>';
   });
+  if(diffOnly&&nWkSkipped&&!h)h='<p class="muted" style="padding:16px">Kỳ này chưa có ô nào khác lịch chuẩn.</p>';
+  else if(diffOnly&&nWkSkipped)h+=`<p class="muted sm2" style="padding:4px 8px">Đã ẩn ${nWkSkipped} tuần không có thay đổi so với lịch chuẩn.</p>`;
   box.innerHTML=h;
   if(firstOpenIdx>=0&&!box._scrolled){
     box._scrolled=true;

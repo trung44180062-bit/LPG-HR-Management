@@ -310,8 +310,8 @@ function renderAppr(){
       `<button class="abc sm${apprFilter.print===k?' on':''}" onclick="apprSetFilter('print','${k}')">${l}<i>${countWith('print',k)}</i></button>`).join('')}
     </div>
     <div class="ab-tools">
-      <input class="inp sm" placeholder="Tìm theo tên nhân viên…" value="${esc(apprFilter.q)}"
-             oninput="apprFilter.q=this.value;clearTimeout(window._abT);window._abT=setTimeout(renderAppr,250)">
+      <input class="inp sm" id="apprSearchBox" placeholder="Tìm theo tên nhân viên…" value="${esc(apprFilter.q)}"
+             oninput="apprFilter.q=this.value;clearTimeout(window._abT);window._abT=setTimeout(renderApprList,200)">
       <select class="inp sm" onchange="apprSetFilter('type',this.value)">
         <option value="__all">Mọi loại đơn</option>
         ${Object.keys(REQ_LABEL).map(k=>`<option value="${k}"${apprFilter.type===k?' selected':''}>${esc(REQ_LABEL[k])}</option>`).join('')}
@@ -330,14 +330,21 @@ function renderAppr(){
       <button class="btn warn sm admin-only" onclick="apprPurgeFiltered()">🗑️ Dọn dữ liệu đang lọc</button>
     </div>`;
 
+  renderApprList();
+  refreshPrintBadge();
+  if(typeof applyRoleUI==='function')applyRoleUI();
+}
+/* Chỉ vẽ lại DANH SÁCH đơn (không đụng thanh lọc) — để gõ tìm tên không mất
+   con trỏ và không nhảy focus sau mỗi ký tự. Cũng cập nhật số đếm ở các chip. */
+function renderApprList(){
+  const box=$('apprList');if(!box)return;
+  const all=Object.values(S.requests).sort((a,b)=>b.createdAt-a.createdAt);
   const list=all.filter(apprMatch);
-  $('apprList').innerHTML=list.length
+  box.innerHTML=list.length
     ? `<div class="ar-list">${list.slice(0,150).map(apprRow).join('')}</div>`
       +(list.length>150?`<p class="muted sm2" style="margin-top:8px">Đang hiện 150 đơn mới nhất trong ${list.length} đơn khớp bộ lọc.</p>`:'')
     : `<div class="card"><p class="muted">Không có đơn nào khớp bộ lọc.</p></div>`;
   apprPickCount();
-  refreshPrintBadge();
-  if(typeof applyRoleUI==='function')applyRoleUI();
 }
 
 /* Dọn toàn bộ đơn đang khớp bộ lọc — dùng để xoá bớt dữ liệu cũ theo kỳ / khoảng ngày,

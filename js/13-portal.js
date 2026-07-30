@@ -71,6 +71,11 @@ function unseenDecisions(id){
   const t=lastSeen(id);
   return myReqs(id).filter(r=>(r.decidedAt||0)>t);
 }
+/* Toàn bộ đơn đã có quyết định — mới nhất lên đầu (cho chuông thông báo) */
+function decidedList(id){
+  return myReqs(id).filter(r=>r.decidedAt)
+    .sort((a,b)=>(b.decidedAt||0)-(a.decidedAt||0));
+}
 /* Trùng đơn: đã có đơn pending/approved nào phủ lên các ngày đang khai chưa */
 function conflictReqs(id,isoList,type){
   const want=new Set(isoList);
@@ -263,13 +268,20 @@ function renderMe(force){
   const e=empById(id);
   const ym=schedMonthOf(pvAnchorIso());     // kỳ công chứa ngày đang xem
   const per=periodFor(ym);
-  const st=calcStats(id,daysOfPeriod(ym));
+  const allDays=daysOfPeriod(ym);
+  // Giờ công = tổng các ngày ĐÃ QUA (đã làm, tính cả hôm nay); ngày chưa tới không tính
+  const pastDays=allDays.filter(iso=>iso<=todayIso());
+  const st=calcStats(id,pastDays);
+  const stFull=calcStats(id,allDays);
   const ot=otSummary(id,ym);
   const initials=(e.name||id).trim().split(/\s+/).map(w=>w[0]).slice(-2).join('').toUpperCase();
   const streak=workStreak(id);
   const news=unseenDecisions(id);
   const pendingMine=myReqs(id).filter(r=>r.status==='pending').length;
-  const leftAL=alLeft(id);
+  // Nghỉ phép trong kỳ (số ngày, tính cả ngày phép đã duyệt sắp tới)
+  const nLeave=Object.entries(stFull.cnt)
+    .filter(([c])=>codeInfo(c).cat==='leave')
+    .reduce((a,[c,n])=>a+(alDayValue(c)||1)*n,0);
 
   body.innerHTML=`
   <div class="pv-top">
@@ -278,14 +290,10 @@ function renderMe(force){
       <div class="nm">${esc(shortName(e.name)||id)}</div>
       <div class="ps">${e.team?'Nhóm '+esc(e.team)+' · ':''}${esc(e.id)}</div>
     </div>
+    <button class="pv-icon pv-bell" onclick="openMyPanel('ntf')" title="Thông báo">🔔${news.length?`<span class="bell-bdg">${news.length>9?'9+':news.length}</span>`:''}</button>
     <button class="pv-icon" onclick="openMyPanel('acc')" title="Tài khoản">🔑</button>
     <button class="pv-icon" onclick="doLogout()" title="Đăng xuất">↪</button>
   </div>
-
-  ${news.length?`<div class="pv-alert info">
-     🔔 ${news.length} đơn vừa có kết quả:
-     ${news.slice(0,3).map(r=>`<b>${({approved:'✅ duyệt',rejected:'❌ từ chối'})[r.status]||''}</b> ${esc(REQ_LABEL[r.type]||r.type)} ${fmtVN(r.from)}`).join(' · ')}
-     <button class="btn sm" onclick="openMyPanel('req')">Xem</button></div>`:''}
 
   <div class="card pv-cal-card">
     <div class="pv-cal-head">
@@ -311,11 +319,11 @@ function renderMe(force){
   ${streak>=STREAK_WARN?`<div class="pv-alert warn">⚠️ Bạn đã làm <b>${streak} ngày liên tục</b>. Cân nhắc xin nghỉ bù.</div>`:''}
 
   <div class="pv-stats">
-    <button class="sbox" onclick="go('stats')"><div class="v">${rnd1(st.hWork)}<i>h</i></div><div class="k">Giờ công · ${esc(per.short)}</div></button>
+    <button class="sbox" onclick="repMode='stats';go('rep')"><div class="v">${rnd1(st.hWork)}<i>h</i></div><div class="k">Giờ công đã làm · ${esc(per.short)}</div></button>
     <button class="sbox ot" onclick="openMyPanel('ot')"><div class="v">${rnd1(ot.approved)}<i>h</i></div>
       <div class="k">Tăng ca đã duyệt${ot.pending?` <span class="pd">+${rnd1(ot.pending)}h chờ</span>`:''}</div></button>
-    <button class="sbox al" onclick="openMyPanel('al')"><div class="v">${rnd1(leftAL)}<i>ngày</i></div>
-      <div class="k">Phép năm còn lại${alHasBase(id)?'':' <span class="pd">cần khai</span>'}</div></button>
+    <button class="sbox al" onclick="openMyPanel('al')"><div class="v">${rnd1(nLeave)}<i>ngày</i></div>
+      <div class="k">Nghỉ phép · ${esc(per.short)}</div></button>
     <button class="sbox rq" onclick="openMyPanel('req')"><div class="v">${pendingMine}</div><div class="k">Đơn đang chờ duyệt</div></button>
   </div>`;
 
@@ -423,7 +431,9 @@ function dsForm(t){
 function dsCodesFor(t){
   if(t==='leave')return allCodes().filter(c=>c.cat==='leave');
   if(t==='ot')   return allCodes().filter(c=>c.cat==='ot');
-  return allCodes().filter(c=>c.cat==='work'||c.cat==='rest'||c.cat==='swap');
+  // Đổi mã ca: chỉ mã ca làm việc + nghỉ ca. KHÔNG có SD/SN/SO —
+  // đó là mã sinh ra khi DUYỆT đơn đổi ca, không phải mã tự chọn.
+  return allCodes().filter(c=>c.cat==='work'||c.cat==='rest');
 }
 function dsDefaultCode(t,iso){
   const id=dsOwnerId||meId();
@@ -939,10 +949,10 @@ function openMyPanel(tab){
   myPanelTab=tab||'ot';
   renderMyPanel();
   $('myPanelMask').classList.add('on');
-  if(myPanelTab==='req'){markSeen(meId());renderMe(true);}
+  if(myPanelTab==='req'||myPanelTab==='ntf'){markSeen(meId());renderMe(true);}
 }
 function closeMyPanel(){$('myPanelMask').classList.remove('on');}
-function myPanelGo(t){myPanelTab=t;renderMyPanel();if(t==='req'){markSeen(meId());renderMe(true);}}
+function myPanelGo(t){myPanelTab=t;renderMyPanel();if(t==='req'||t==='ntf'){markSeen(meId());renderMe(true);}}
 
 function renderMyPanel(){
   const id=meId();const box=$('myPanelBody');if(!id||!box)return;
@@ -953,9 +963,34 @@ function renderMyPanel(){
 
   if(myPanelTab==='ot')      h+=myPanelOt(id);
   else if(myPanelTab==='req')h+=myPanelReq(id);
+  else if(myPanelTab==='ntf')h+=myPanelNtf(id);
   else if(myPanelTab==='al') h+=myPanelAl(id);
   else                       h+=myPanelAcc(id);
   box.innerHTML=h;
+}
+
+/* ---- 🔔 Thông báo: đơn đã có quyết định, mới nhất lên đầu ---- */
+function myPanelNtf(id){
+  const seenAt=lastSeen(id);
+  const list=decidedList(id);
+  const item=r=>{
+    const fresh=(r.decidedAt||0)>seenAt;
+    const stTxt={approved:'✅ Đã duyệt',rejected:'❌ Bị từ chối'}[r.status]||r.status;
+    return `<div class="ntf-item ${r.status}${fresh?' fresh':''}" onclick="closeMyPanel();openDaySheet('${r.from}')">
+      <span class="ic">${REQ_ICON[r.type]||'📄'}</span>
+      <span class="tx"><b>${stTxt}</b> · ${esc(REQ_LABEL[r.type]||r.type)}
+        <i>${r.type==='multi'?fmtVN(r.from)+' → '+fmtVN(r.to)
+            :reqDays(r).map(d=>fmtVN(d.iso)).join(', ')}</i>
+        ${r.reason?`<i>Lý do: ${esc(r.reason)}</i>`:''}
+        <i class="tm">${fmtDateTime(r.decidedAt)}</i></span>
+      ${fresh?'<span class="st pending">MỚI</span>':''}
+    </div>`;
+  };
+  return `
+  <h3 style="margin:4px 0 10px">🔔 Thông báo (${list.length})</h3>
+  ${list.length?`<div class="ntf-list">${list.map(item).join('')}</div>`
+    :'<p class="muted">Chưa có đơn nào được duyệt hay từ chối.</p>'}
+  <p class="muted sm2" style="margin-top:8px">Đơn xếp theo thời điểm quyết định — mới nhất trên cùng. Chạm vào một dòng để mở ngày liên quan.</p>`;
 }
 
 /* ---- Tăng ca: đã duyệt / chờ duyệt / tổng giờ theo kỳ ---- */
@@ -971,13 +1006,15 @@ function myPanelOt(id){
   });
   const wait=Object.values(S.requests||{}).filter(r=>r.empId===id&&r.type==='ot'&&r.status==='pending');
   const rej =Object.values(S.requests||{}).filter(r=>r.empId===id&&r.type==='ot'&&r.status==='rejected').slice(0,5);
-  const hDone=done.reduce((a,x)=>a+x.h,0);
+  const tNow=todayIso();
+  const donePast=done.filter(x=>x.iso<=tNow), doneNext=done.filter(x=>x.iso>tNow);
+  const hPast=donePast.reduce((a,x)=>a+x.h,0), hNext=doneNext.reduce((a,x)=>a+x.h,0);
   let hWait=0;wait.forEach(r=>reqDays(r).forEach(d=>{hWait+=(d.hours||getHours(d.code||'OTD'));}));
 
-  // tổng cả năm
+  // tổng cả năm — chỉ tính ngày ĐÃ LÀM (không cộng trước ca tương lai)
   let hYear=0;const yr=String(new Date().getFullYear());
   ms.forEach(m=>daysOfPeriod(m).forEach(iso=>{
-    if(iso.slice(0,4)!==yr)return;
+    if(iso.slice(0,4)!==yr||iso>tNow)return;
     const c=eff(id,iso).code;
     if(c&&codeInfo(c).cat==='ot')hYear+=effHours(id,iso);
   }));
@@ -985,15 +1022,15 @@ function myPanelOt(id){
   return `
   <h3 style="margin:4px 0 10px">⚡ Tăng ca — ${esc(per.label)}</h3>
   <div class="pv-stats in-panel">
-    <div class="sbox"><div class="v">${rnd1(hDone)}<i>h</i></div><div class="k">Đã duyệt (kỳ này)</div></div>
+    <div class="sbox"><div class="v">${rnd1(hPast)}<i>h</i></div><div class="k">Đã làm (kỳ này)${hNext?` <span class="pd">+${rnd1(hNext)}h sắp tới</span>`:''}</div></div>
     <div class="sbox ot"><div class="v">${rnd1(hWait)}<i>h</i></div><div class="k">Chờ duyệt</div></div>
-    <div class="sbox al"><div class="v">${done.length}</div><div class="k">Ca tăng ca</div></div>
-    <div class="sbox rq"><div class="v">${rnd1(hYear)}<i>h</i></div><div class="k">Cả năm ${yr}</div></div>
+    <div class="sbox al"><div class="v">${done.length}</div><div class="k">Lần tăng ca đã duyệt (kỳ này)</div></div>
+    <div class="sbox rq"><div class="v">${rnd1(hYear)}<i>h</i></div><div class="k">Đã làm cả năm ${yr}</div></div>
   </div>
 
   <div class="ds-block"><h4>✅ Đã duyệt & vào lịch (${done.length})</h4>
     ${done.length?`<div class="ot-list">${done.map(x=>`<div class="ot-row">
-        <span class="d">${dowOf(x.iso)} ${fmtVNfull(x.iso)}</span>
+        <span class="d">${dowOf(x.iso)} ${fmtVNfull(x.iso)}${x.iso>tNow?' <i class="ovn">sắp tới</i>':''}</span>
         ${chip(x.code)}<span class="h">${rnd1(x.h)}h</span></div>`).join('')}</div>`
       :'<p class="muted">Kỳ này chưa có ca tăng ca nào được duyệt.</p>'}
   </div>
@@ -1017,10 +1054,14 @@ function myPanelOt(id){
 }
 
 /* ---- Đơn của tôi ---- */
+let myReqFilter='all';           // all | pending | approved | rejected
+function myReqSetFilter(f){myReqFilter=f;renderMyPanel();}
 function myPanelReq(id){
   const all=myReqs(id);
   const grp={pending:[],approved:[],rejected:[]};
-  all.forEach(r=>grp[r.status]&&grp[r.status].push(r));
+  all.forEach(r=>{if(grp[r.status])grp[r.status].push(r);});
+  // Tổng hiển thị = đúng tổng các nhóm bên dưới (không lệch số như trước)
+  const total=grp.pending.length+grp.approved.length+grp.rejected.length;
   const row=r=>`<div class="ds-req ${r.status}">
       <span class="ic">${REQ_ICON[r.type]||'📄'}</span>
       <span class="tx"><b>${esc(REQ_LABEL[r.type]||r.type)}</b>${r.code?' · '+esc(r.code):''}
@@ -1030,19 +1071,38 @@ function myPanelReq(id){
         ${r.withId?`<i>Đổi ca với ${esc((empById(r.withId)||{}).name||r.withId)}</i>`:''}
         ${r.byId&&r.byId!==r.empId?`<i>✍️ ${r.byId===id?'Bạn khai hộ '+esc((empById(r.empId)||{}).name||r.empId):'Khai hộ bởi '+esc((empById(r.byId)||{}).name||r.byId)}</i>`:''}
         ${r.note?`<i>${esc(r.note)}</i>`:''}${r.reason?`<i>Lý do: ${esc(r.reason)}</i>`:''}</span>
-      <span class="st ${r.status}">${{pending:'CHỜ',approved:'DUYỆT',rejected:'TỪ CHỐI'}[r.status]}</span>
-      ${canCancelReq(r,id)?`<button class="btn warn sm" onclick="cancelMyReq('${r.id}');renderMyPanel()">${r.status==='approved'?'Huỷ đơn đã duyệt':'Huỷ'}</button>`:''}
-      ${r.status==='approved'?`<button class="btn sec sm" onclick="printOne('${r.id}')">🖨️</button>`:''}
+      <span class="st ${r.status}">${{pending:'CHỜ',approved:'DUYỆT',rejected:'TỪ CHỐI'}[r.status]||esc(r.status)}</span>
+      <span class="act">
+        ${canCancelReq(r,id)?`<button class="btn warn sm" onclick="cancelMyReq('${r.id}');renderMyPanel()">${r.status==='approved'?'Huỷ đơn':'Huỷ'}</button>`:''}
+        ${r.status==='approved'?`<button class="btn sec sm" onclick="printOne('${r.id}')">🖨️</button>`:''}
+      </span>
     </div>`;
+  const chips=[
+    ['all','Tất cả',total],
+    ['pending','⏳ Chờ duyệt',grp.pending.length],
+    ['approved','✅ Đã duyệt',grp.approved.length],
+    ['rejected','❌ Từ chối',grp.rejected.length]
+  ];
+  if(!chips.some(([k])=>k===myReqFilter))myReqFilter='all';
+  const shown=myReqFilter==='all'
+    ? all.filter(r=>grp[r.status])
+    : (grp[myReqFilter]||[]);
+  const sec=(key,ttl,list)=>list.length?`<div class="ds-block"><h4>${ttl} (${list.length})</h4>${list.map(row).join('')}</div>`:'';
+  let body='';
+  if(myReqFilter==='all'){
+    body=sec('pending','⏳ Đang chờ duyệt',grp.pending)
+        +sec('approved','✅ Đã duyệt',grp.approved)
+        +sec('rejected','❌ Bị từ chối',grp.rejected);
+    if(!total)body='<p class="muted">Bạn chưa có đơn nào.</p>';
+  }else{
+    body=shown.length?`<div class="ds-block">${shown.map(row).join('')}</div>`
+      :'<p class="muted">Không có đơn nào ở mục này.</p>';
+  }
   return `
-  <h3 style="margin:4px 0 10px">📋 Đơn của tôi (${all.length})</h3>
-  <div class="ds-block"><h4>⏳ Đang chờ duyệt (${grp.pending.length})</h4>
-    ${grp.pending.length?grp.pending.map(row).join(''):'<p class="muted">Không có đơn nào đang chờ.</p>'}</div>
-  <div class="ds-block"><h4>✅ Đã duyệt (${grp.approved.length})</h4>
-    ${grp.approved.length?grp.approved.slice(0,15).map(row).join(''):'<p class="muted">Chưa có.</p>'}</div>
-  ${grp.rejected.length?`<div class="ds-block"><h4>❌ Bị từ chối (${grp.rejected.length})</h4>
-    ${grp.rejected.slice(0,10).map(row).join('')}</div>`:''}
-`;
+  <h3 style="margin:4px 0 10px">📋 Đơn của tôi (${total})</h3>
+  <div class="req-flt">${chips.map(([k,l,n])=>
+    `<button class="fchip${myReqFilter===k?' on':''}" onclick="myReqSetFilter('${k}')">${l}<i>${n}</i></button>`).join('')}</div>
+  ${body}`;
 }
 
 /* ---- Phép năm (cho phép tự khai số còn lại) ---- */

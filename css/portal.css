@@ -207,6 +207,55 @@ i.d-ok{background:#0E9F6E}
 .ds-req .tx{flex:1;min-width:0;line-height:1.5}
 .ds-req .tx i{display:block;font-style:normal;font-size:10.5px;color:#64748B;font-weight:600}
 .ds-req .st{flex:none}
+.ds-req .act{display:flex;gap:5px;flex:none;align-items:center}
+
+/* ---- 🔔 Chuông thông báo trên trang chính ---- */
+.pv-bell{position:relative}
+.bell-bdg{
+  position:absolute;top:-5px;right:-5px;min-width:17px;height:17px;padding:0 4px;
+  border-radius:20px;background:#DC2626;color:#fff;font-size:10px;font-weight:800;
+  display:inline-flex;align-items:center;justify-content:center;line-height:1;
+  border:2px solid #fff;box-sizing:content-box;
+}
+.ntf-list{display:flex;flex-direction:column;gap:6px}
+.ntf-item{
+  display:flex;align-items:flex-start;gap:8px;padding:9px 10px;border-radius:10px;
+  background:#F8FAFC;border:1px solid #E8EDF3;font-size:12px;cursor:pointer;
+}
+.ntf-item:hover{background:#EEF4F9}
+.ntf-item.approved{border-left:3px solid #0E9F6E}
+.ntf-item.rejected{border-left:3px solid #DC2626}
+.ntf-item.fresh{background:#FFFBEB;border-color:#FDE68A}
+.ntf-item .ic{font-size:15px;flex:none}
+.ntf-item .tx{flex:1;min-width:0;line-height:1.5}
+.ntf-item .tx i{display:block;font-style:normal;font-size:10.5px;color:#64748B;font-weight:600}
+.ntf-item .tx i.tm{color:#94A3B8;font-weight:500}
+.ntf-item .st{flex:none;margin-top:2px}
+
+/* ---- Nút lọc trạng thái "Đơn của tôi" ---- */
+.req-flt{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.req-flt .fchip{
+  display:inline-flex;align-items:center;gap:5px;padding:6px 11px;border-radius:20px;
+  border:1px solid #DCE5EE;background:#fff;font-size:11.5px;font-weight:700;color:#475569;
+  cursor:pointer;font-family:inherit;
+}
+.req-flt .fchip i{
+  font-style:normal;font-size:10px;font-weight:800;background:#EEF2F6;color:#334155;
+  border-radius:12px;padding:1px 6px;
+}
+.req-flt .fchip.on{background:#0B3B5C;border-color:#0B3B5C;color:#fff}
+.req-flt .fchip.on i{background:rgba(255,255,255,.22);color:#fff}
+
+/* ---- Đơn của tôi trên màn hình hẹp: xếp dọc, nút xuống hàng riêng ---- */
+@media (max-width:640px){
+  .ds-req{flex-wrap:wrap;row-gap:6px}
+  .ds-req .tx{flex:1 1 100%;order:1}
+  .ds-req .ic{order:0}
+  .ds-req .st{order:0;margin-left:auto}
+  .ds-req .act{order:2;width:100%;justify-content:flex-end}
+  .ds-req .act .btn{min-height:30px;padding:4px 12px}
+  .ds-req > .btn{order:2;margin-left:auto;min-height:30px;padding:4px 12px}
+}
 
 /* Nhân sự trong ngày — 4 nhóm ca xếp thành cột cho gọn (kể cả ca R) */
 .crew-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:7px}

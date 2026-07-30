@@ -276,6 +276,15 @@
   </div>
 
   <div class="card">
+    <h3>✉️ Gửi email báo cáo (qua Outlook trên máy)</h3>
+    <p class="muted" style="margin-bottom:8px">Nhập sẵn địa chỉ nhận báo cáo. Ở tab <b>📊 Báo cáo → Thống kê</b> bấm <b>Gửi email báo cáo</b>, phần mềm mở ứng dụng thư mặc định (Outlook) với nội dung tóm tắt soạn sẵn để bạn kiểm tra rồi gửi.</p>
+    <div class="grid2">
+      <div class="fg"><label class="fl">Người nhận (To) — cách nhau bằng dấu ;</label><input class="inp" id="setMailTo" placeholder="nhansu@congty.com; sep@congty.com" onchange="S.settings.reportEmailTo=this.value;save()"></div>
+      <div class="fg"><label class="fl">CC (không bắt buộc)</label><input class="inp" id="setMailCc" placeholder="quanly@congty.com" onchange="S.settings.reportEmailCc=this.value;save()"></div>
+    </div>
+  </div>
+
+  <div class="card">
     <h3>⚙️ Cài đặt</h3>
     <div class="grid2">
       <div class="fg"><label class="fl">Tối thiểu ca ngày (D)</label><input type="number" class="inp" id="setMinD" min="0"></div>
@@ -298,6 +307,11 @@
       <button class="btn sec" style="flex:1" onclick="closeCell()">Đóng</button>
     </div>
   </div>
+</div>
+
+<!-- email báo cáo modal -->
+<div class="mask" id="mailMask" onclick="if(event.target===this)closeMailReport()">
+  <div class="modal" id="mailBody"></div>
 </div>
 
 <!-- print bulk modal (Duyệt) -->
@@ -348,6 +362,7 @@
 <script src="js/10-account.js"></script>
 <script src="js/11-stats-data.js"></script>
 <script src="js/13-portal.js"></script>
+<script src="js/16-otlog-data.js"></script>
 <script src="js/15-report.js"></script>
 <script src="js/12-main.js"></script>
 

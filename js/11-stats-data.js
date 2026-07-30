@@ -215,6 +215,8 @@ function renderData(){
   $('setDeptDefault').value=S.settings.deptDefault||DEPT_DEFAULT_FALLBACK;
   $('setApprover1').value=S.settings.approver1||'';
   $('setApprover2').value=S.settings.approver2||'';
+  if($('setMailTo'))$('setMailTo').value=S.settings.reportEmailTo||'';
+  if($('setMailCc'))$('setMailCc').value=S.settings.reportEmailCc||'';
   const cfg=localStorage.getItem(LS+'_fb');if(cfg&&!$('fbCfg').value)$('fbCfg').value=cfg;
   renderHoursTbl();renderAccTbl();
 }
