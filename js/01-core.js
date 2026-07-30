@@ -34,14 +34,13 @@ const DEFAULT_CODES=[
  {c:'OTN',l:'Tăng ca đêm 20–08h',    col:'var(--cOT)', cat:'ot'},
  {c:'OTL',l:'Tăng ca giờ nghỉ trưa', col:'var(--cOT)', cat:'ot'},
  {c:'OT2',l:'Tăng ca 18–20h',        col:'var(--cOT)', cat:'ot'},
- {c:'OT3',l:'Tăng ca 17–20h',        col:'var(--cOT)', cat:'ot'},
- /* X (tăng ca nhập tàu) đã bỏ khỏi danh sách chọn khi khai đơn, nhưng giữ lại
-    ở đây để những ô lịch cũ đang dùng mã X vẫn hiện đúng tên và đúng số giờ. */
- {c:'X',  l:'Tăng ca nhập tàu (không dùng nữa)', col:'var(--cOT)', cat:'ot', legacy:true}
+ {c:'OT3',l:'Tăng ca 17–20h',        col:'var(--cOT)', cat:'ot'}
+ /* Mã X (tăng ca nhập tàu) đã bỏ HOÀN TOÀN — không còn khai, không còn hiển thị
+    trong danh sách chọn. Ô lịch cũ (nếu còn) sẽ hiện như mã lạ, không tính giờ OT. */
 ];
 // Giờ công mặc định theo mã ca (chỉnh / thêm ở tab Dữ liệu)
 const DEFAULT_HOURS={O:8,D:12,N:12,R:0,AL8:8,AL4:4,NP:0,OFF:0,SD:12,SN:12,SO:8,
-                     OTD:12,OTN:12,OTL:1,OT2:2,OT3:3,X:12};
+                     OTD:12,OTN:12,OTL:1,OT2:2,OT3:3};
 
 /* ============================================================
    MẪU TĂNG CA
@@ -76,13 +75,19 @@ let S={
   accounts:{},            // accounts[empId] = {hash, by, at}  (whitelist đăng nhập nhân viên)
   settings:{pin:DEFAULT_PIN,minD:3,minN:3,hours:{},customCodes:[],deptDefault:DEPT_DEFAULT_FALLBACK,approver1:APPROVER1_FALLBACK,approver2:APPROVER2_FALLBACK},
   printLog:{},            // printLog[batchId] = {ts, by, formType, reqIds:[...], rows, pages, reprint}
+  notifs:{},              // notifs[id] = {kind, to, from, status, createdAt, ...payload} — xác nhận đổi lịch / đổi ca
   meta:{schedFrom:'',schedTo:''},
   rev:0
 };
 /* mgr  = duyệt đơn & sửa lịch thực tế (appr / admin / kmgr)
    adm  = quản trị toàn quyền (admin / kmgr)
-   secr = được XEM số liệu cả tổ + in đơn (sec / appr / admin / kmgr) */
-let mgr=false, adm=false, secr=false, fb=null, fbRef=null, applyingRemote=false, curCell=null, curView='cal';
+   secr = được XEM số liệu cả tổ + in đơn (sec / appr / admin / kmgr)
+   noSelf = KHÔNG thuộc đối tượng chấm công (thư ký / quản lý người Hàn /
+            người đặt Kiểu ca = Không xếp lịch) → bỏ hẳn Trang chính cá nhân,
+            đăng nhập vào là vào thẳng Lịch thực tế. Xem homeView(). */
+let mgr=false, adm=false, secr=false, noSelf=false, fb=null, fbRef=null, applyingRemote=false, curCell=null, curView='cal';
+/* Màn hình đầu tiên sau khi đăng nhập */
+function homeView(){return noSelf?'real':'me';}
 /* v4 mobile cal state */
 let calMode='std', calMobileView='week', calDate=null, calCollapsed={};
 const isMobile=()=>window.matchMedia('(max-width:767px)').matches;

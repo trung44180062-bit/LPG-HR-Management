@@ -7,6 +7,8 @@ function go(v,opts){
   opts=opts||{};
   if(v==='sched'){go('cal',Object.assign({mode:'std'},opts));return;}
   if(v==='real'){go('cal',Object.assign({mode:'real'},opts));return;}
+  /* Người không thuộc đối tượng chấm công không có Trang chính cá nhân */
+  if(v==='me'&&noSelf){go('real');return;}
   curView=v;
   document.querySelectorAll('.tab,.bb').forEach(t=>t.classList.toggle('on',t.dataset.v===v));
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));

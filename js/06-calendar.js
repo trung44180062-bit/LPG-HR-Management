@@ -19,14 +19,14 @@ function teamColor(tm){
 const SCHEDBG={
   O:'#E3DBF5', D:'#BDD7EE', N:'#C6E0B4', R:'#FFFFFF',
   AL8:'#FBD9E4', AL4:'#FCE7EF', NP:'#FBD5D2', OFF:'#FDEBC8',
-  OTD:'#CFEFDF', OTN:'#CFEFDF', X:'#CFEFDF',
+  OTD:'#CFEFDF', OTN:'#CFEFDF',
   SD:'#E6DAFB', SN:'#E6DAFB', SO:'#E6DAFB',
   OTL:'#CFEFDF', OT2:'#CFEFDF', OT3:'#CFEFDF'
 };
 const SCHEDTXT={
   O:'#000000', D:'#1F3B57', N:'#2E4B22', R:'#C00000',
   AL8:'#98123F', AL4:'#98123F', NP:'#A31B14', OFF:'#8A5A00',
-  OTD:'#0B6244', OTN:'#0B6244', X:'#0B6244',
+  OTD:'#0B6244', OTN:'#0B6244',
   SD:'#4C1D95', SN:'#4C1D95', SO:'#4C1D95',
   OTL:'#0B6244', OT2:'#0B6244', OT3:'#0B6244'
 };
@@ -174,8 +174,16 @@ function closeCell(){$('cellMask').classList.remove('on');curCell=null;}
 function setCell(code){
   if(!curCell)return;
   const{empId,iso}=curCell;
+  const oldCode=eff(empId,iso).code;              // ca trước khi sửa (để nhân viên đối chiếu)
   if(code===null){if(S.over[empId])delete S.over[empId][iso];}
-  else{S.over[empId]=S.over[empId]||{};S.over[empId][iso]={code:code,by:'manager',at:Date.now()};}
+  else{S.over[empId]=S.over[empId]||{};S.over[empId][iso]={code:code,by:meId()||'manager',at:Date.now()};}
+  // Nếu quản lý/thư ký đổi lịch của NGƯỜI KHÁC sang mã khác → gửi thông báo xác nhận
+  if(code&&code!==oldCode&&empId!==meId()&&typeof newNotif==='function'){
+    // gộp vào thông báo đang chờ cho cùng người + ngày (tránh spam)
+    let ex=Object.values(S.notifs||{}).find(n=>n.kind==='schedChange'&&n.to===empId&&n.iso===iso&&n.status==='pending');
+    if(ex){ex.newCode=code;ex.from=meId()||'manager';ex.createdAt=Date.now();}
+    else newNotif({kind:'schedChange',to:empId,from:meId()||'manager',iso,oldCode:oldCode||'',newCode:code});
+  }
   save();closeCell();renderReal();toast('Đã cập nhật lịch thực tế');
 }
 

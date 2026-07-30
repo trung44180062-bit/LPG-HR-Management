@@ -157,7 +157,36 @@ function repManpower(){
               :head+'<div class="card"><p class="muted">Không có ngày nào khớp bộ lọc.</p></div>';
 }
 
-/* =================== 2. THỐNG KÊ =================== */
+/* =================== 2. THỐNG KÊ ===================
+   Bảng nhiều cột số rất khó dò bằng mắt, nên tô màu theo NGHĨA của cột:
+   - Ô đếm mã ca dùng đúng nền pastel của mã đó trong bảng lịch (SCHEDBG);
+   - Số 0 làm mờ hẳn để mắt bỏ qua, chỉ còn số có ý nghĩa nổi lên;
+   - 3 cột giờ: giờ công xanh lá, tăng ca cam, phép xanh dương;
+   - Cột Nhóm là chip màu riêng từng nhóm.
+   ==================================================== */
+/* Ô đếm mã ca: 0 → mờ; >0 → nền pastel đúng màu mã ca */
+function stCnt(code,n){
+  n=+n||0;
+  if(!n)return '<td class="z">0</td>';
+  const bg=(typeof SCHEDBG!=='undefined'&&SCHEDBG[code])||'#E2E8F0';
+  const tx=(typeof SCHEDTXT!=='undefined'&&SCHEDTXT[code])||'#334155';
+  return `<td class="cc" style="background:${bg};color:${tx}">${n}</td>`;
+}
+/* Ô giờ: 0 → mờ; >0 → giữ nền của lớp (hl / hl-ot / hl-lv) */
+function stHr(cls,v){
+  v=rnd1(+v||0);
+  return v?`<td class="${cls}">${v}</td>`:`<td class="${cls} z0">0</td>`;
+}
+/* Màu chip cho từng nhóm — cùng tên nhóm luôn ra cùng màu */
+const TEAM_TONE=[['#DBEAFE','#1D4ED8'],['#DCFCE7','#15803D'],['#FEF3C7','#B45309'],
+                 ['#FCE7F3','#BE185D'],['#E0E7FF','#4338CA'],['#CCFBF1','#0F766E']];
+function teamChip(tm){
+  const name=String(tm||'').trim();
+  if(!name)return '<span class="team-chip" style="background:#F1F5F9;color:#64748B">—</span>';
+  let s=0;for(let i=0;i<name.length;i++)s=(s*31+name.charCodeAt(i))>>>0;
+  const[bg,fg]=TEAM_TONE[s%TEAM_TONE.length];
+  return `<span class="team-chip" style="background:${bg};color:${fg}">${esc(name)}</span>`;
+}
 function repStatsAll(){
   const rows=statRows(repYm,repGroup);
   if(!rows.length)return '<div class="card"><p class="muted">Chưa có nhân sự / lịch trong kỳ này.</p></div>';
@@ -169,20 +198,32 @@ function repStatsAll(){
     <div class="stat-box"><div class="v">${sum(s=>s.hLeave)}</div><div class="k">TỔNG GIỜ PHÉP</div></div>
     <div class="stat-box"><div class="v">${rows.length}</div><div class="k">NHÂN SỰ</div></div>
   </div>`;
-  h+='<div class="card stbl"><table><thead><tr><th class="l">Nhóm</th><th class="l">Họ tên</th><th>D</th><th>N</th><th>O</th><th>R</th><th>AL8</th><th>AL4</th><th>NP</th><th>OFF</th><th>Ca OT</th><th class="hl">Giờ công</th><th class="hl">Giờ OT</th><th class="hl">Giờ phép</th></tr></thead><tbody>';
+  h+='<div class="card stbl stbl-col"><table><thead><tr><th class="l">Nhóm</th><th class="l">Họ tên</th>'
+    +'<th class="g-sh">D</th><th class="g-sh">N</th><th class="g-sh">O</th><th class="g-sh">R</th>'
+    +'<th class="g-lv">AL8</th><th class="g-lv">AL4</th><th class="g-lv">NP</th><th class="g-lv">OFF</th>'
+    +'<th class="g-ot">Ca OT</th>'
+    +'<th class="hl">Giờ công</th><th class="hl-ot">Giờ OT</th><th class="hl-lv">Giờ phép</th></tr></thead><tbody>';
   rows.forEach(({e,s})=>{
-    h+=`<tr><td class="l">${esc(e.team||'—')}</td>
+    h+=`<tr><td class="l">${teamChip(e.team)}</td>
       <td class="l"><b>${esc(e.name||e.id)}</b> <span class="muted" style="font-size:10px">${esc(e.pos||'')}</span></td>
-      <td>${cD(s)}</td><td>${cN(s)}</td><td>${cO(s)}</td><td>${s.cnt.R||0}</td>
-      <td>${s.cnt.AL8||0}</td><td>${s.cnt.AL4||0}</td><td>${s.cnt.NP||0}</td><td>${s.cnt.OFF||0}</td>
-      <td>${otShifts(s)}</td>
-      <td class="hl">${rnd1(s.hWork)}</td><td class="hl">${rnd1(s.hOT)}</td><td class="hl">${rnd1(s.hLeave)}</td></tr>`;
+      ${stCnt('D',cD(s))}${stCnt('N',cN(s))}${stCnt('O',cO(s))}${stCnt('R',s.cnt.R)}
+      ${stCnt('AL8',s.cnt.AL8)}${stCnt('AL4',s.cnt.AL4)}${stCnt('NP',s.cnt.NP)}${stCnt('OFF',s.cnt.OFF)}
+      ${stCnt('OTD',otShifts(s))}
+      ${stHr('hl',s.hWork)}${stHr('hl-ot',s.hOT)}${stHr('hl-lv',s.hLeave)}</tr>`;
   });
   h+='</tbody><tfoot><tr><td class="l" colspan="2">TỔNG CỘNG</td>';
   h+=`<td>${rows.reduce((a,r)=>a+cD(r.s),0)}</td><td>${rows.reduce((a,r)=>a+cN(r.s),0)}</td><td>${rows.reduce((a,r)=>a+cO(r.s),0)}</td>`;
   ['R','AL8','AL4','NP','OFF'].forEach(c=>{h+=`<td>${rows.reduce((a,r)=>a+(r.s.cnt[c]||0),0)}</td>`;});
   h+=`<td>${rows.reduce((a,r)=>a+otShifts(r.s),0)}</td>
-    <td class="hl">${sum(s=>s.hWork)}</td><td class="hl">${sum(s=>s.hOT)}</td><td class="hl">${sum(s=>s.hLeave)}</td></tr></tfoot></table></div>`;
+    <td class="hl">${sum(s=>s.hWork)}</td><td class="hl-ot">${sum(s=>s.hOT)}</td><td class="hl-lv">${sum(s=>s.hLeave)}</td></tr></tfoot></table></div>`;
+  h+=`<div class="stbl-key"><span class="lbl">Chú giải màu:</span>
+    ${['D','N','O','R'].map(c=>`<span class="k-it" style="background:${SCHEDBG[c]};color:${SCHEDTXT[c]}">${c}</span>`).join('')}
+    <span class="k-sep"></span>
+    ${['AL8','AL4','NP','OFF'].map(c=>`<span class="k-it" style="background:${SCHEDBG[c]};color:${SCHEDTXT[c]}">${c}</span>`).join('')}
+    <span class="k-sep"></span>
+    <span class="k-it" style="background:${SCHEDBG.OTD};color:${SCHEDTXT.OTD}">OT</span>
+    <span class="k-sep"></span>
+    <span class="k-it hl">Giờ công</span><span class="k-it hl-ot">Giờ OT</span><span class="k-it hl-lv">Giờ phép</span></div>`;
   h+=`<p class="muted sm2" style="margin-top:8px">Tính theo lịch thực tế (chuẩn + điều chỉnh + đơn đã duyệt). Số giờ mỗi mã ca khai ở tab Dữ liệu.</p>`;
   return h;
 }
@@ -201,11 +242,11 @@ function repStatsMe(){
       <div class="stat-box"><div class="v">${rnd1(left)}</div><div class="k">PHÉP NĂM CÒN LẠI</div></div>
     </div>
     <div class="card"><h3 class="rep-h3">${esc(e.name||id)} · ${esc(periodFor(repYm).label)}</h3>
-      <div class="stbl"><table><thead><tr><th>Ca ngày D</th><th>Ca đêm N</th><th>Văn phòng O</th><th>Nghỉ ca R</th>
-        <th>AL8</th><th>AL4</th><th>NP</th><th>OFF</th><th>Ca OT</th></tr></thead>
-        <tbody><tr><td>${cD}</td><td>${cN}</td><td>${cO}</td><td>${s.cnt.R||0}</td>
-        <td>${s.cnt.AL8||0}</td><td>${s.cnt.AL4||0}</td><td>${s.cnt.NP||0}</td><td>${s.cnt.OFF||0}</td>
-        <td>${otShifts(s)}</td></tr></tbody></table></div>
+      <div class="stbl stbl-col"><table><thead><tr><th class="g-sh">Ca ngày D</th><th class="g-sh">Ca đêm N</th><th class="g-sh">Văn phòng O</th><th class="g-sh">Nghỉ ca R</th>
+        <th class="g-lv">AL8</th><th class="g-lv">AL4</th><th class="g-lv">NP</th><th class="g-lv">OFF</th><th class="g-ot">Ca OT</th></tr></thead>
+        <tbody><tr>${stCnt('D',cD)}${stCnt('N',cN)}${stCnt('O',cO)}${stCnt('R',s.cnt.R)}
+        ${stCnt('AL8',s.cnt.AL8)}${stCnt('AL4',s.cnt.AL4)}${stCnt('NP',s.cnt.NP)}${stCnt('OFF',s.cnt.OFF)}
+        ${stCnt('OTD',otShifts(s))}</tr></tbody></table></div>
       ${ot.pending?`<p class="muted sm2" style="margin-top:8px">Còn ${rnd1(ot.pending)}h tăng ca đang chờ duyệt.</p>`:''}
     </div>
     <p class="muted sm2">Bạn chỉ xem được số liệu của mình. Số liệu cả tổ do quản lý xem.</p>`;
@@ -598,29 +639,133 @@ function chartTrend(id){
    (window.OTLOG_DATA). Lọc theo kỳ công + tìm tên, có tổng giờ.
    Nhân viên thường chỉ xem dòng của chính mình.
    ============================================================ */
-let otlogPeriod='__all';        // '__all' | 'YYYY-MM' (kỳ công)
+/* Kỳ công đang được "tải" để tổng hợp. MẶC ĐỊNH chỉ kỳ hiện tại —
+   không nạp toàn bộ cho nhẹ; có nút tải thêm từng kỳ hoặc toàn bộ. */
+let otlogSel=null;              // mảng các kỳ 'YYYY-MM' đang xem
 let otlogQuery='';
-function otlogSet(k,v){if(k==='period')otlogPeriod=v;renderReport();}
+/* Chuẩn hoá tên để so khớp (bỏ dấu, viết thường) */
+function otNorm(s){return noAccent(String(s||'')).replace(/\s+/g,' ').trim();}
+
+/* Các kỳ có trong dữ liệu Excel đã nhập */
+function otlogImportedPeriods(){
+  const set=new Set();
+  (window.OTLOG_DATA||[]).forEach(r=>set.add(schedMonthOf(r.d)));
+  return set;
+}
+/* Tất cả kỳ có thể xem = kỳ từ Excel ∪ kỳ có trong phần mềm (lịch/đơn) */
+function otlogAllPeriods(){
+  const set=otlogImportedPeriods();
+  monthsAvailable().forEach(m=>set.add(m));
+  return [...set].sort();
+}
+function otlogInit(){
+  if(otlogSel)return;
+  const cur=curSchedMonth();
+  otlogSel=otlogAllPeriods().includes(cur)?[cur]:otlogAllPeriods().slice(-1);
+}
+function otlogTogglePeriod(m){
+  otlogInit();
+  const i=otlogSel.indexOf(m);
+  if(i<0)otlogSel.push(m);else if(otlogSel.length>1)otlogSel.splice(i,1);
+  otlogRefresh();
+}
+function otlogLoadAll(){otlogSel=otlogAllPeriods();otlogRefresh();}
+function otlogLoadCurrent(){const c=curSchedMonth();otlogSel=[otlogAllPeriods().includes(c)?c:otlogAllPeriods().slice(-1)[0]];otlogRefresh();}
+
+/* ---------- Chọn kỳ công: dropdown có ô gõ để tìm ----------
+   Trước đây liệt kê hết các kỳ thành một rừng chip chiếm nửa màn hình.
+   Nay gói vào một nút xổ xuống: gõ để lọc, tích nhiều kỳ, bấm ra ngoài là đóng. */
+let otlogPerQ='';
+function otlogDDOpen(){const p=$('otlogDDPan');return !!p&&p.style.display!=='none';}
+function otlogDDToggle(force){
+  const p=$('otlogDDPan');if(!p)return;
+  const open=(force===undefined)?!otlogDDOpen():!!force;
+  p.style.display=open?'':'none';
+  const b=$('otlogDDBtn');if(b)b.classList.toggle('on',open);
+  if(open){const q=$('otlogPerQ');if(q)setTimeout(()=>q.focus(),0);}
+}
+function otlogPerFilter(v){otlogPerQ=v||'';otlogRenderPerList();}
+function otlogPerListHtml(){
+  otlogInit();
+  const imported=otlogImportedPeriods();
+  const q=otNorm(otlogPerQ);
+  const list=otlogAllPeriods().slice().reverse()
+    .filter(m=>!q||otNorm(periodFor(m).label).includes(q)||m.includes(q));
+  if(!list.length)return `<p class="muted sm2" style="padding:8px 10px">${t('Không có kỳ nào khớp.')}</p>`;
+  return list.map(m=>`<label class="dd-it${otlogSel.includes(m)?' on':''}">
+      <input type="checkbox" ${otlogSel.includes(m)?'checked':''} onchange="otlogTogglePeriod('${m}')">
+      <span>${esc(periodFor(m).label)}</span>
+      ${imported.has(m)?'':`<i class="dd-dot" title="${t('Kỳ tổng hợp từ phần mềm (chưa có trong Excel)')}">•</i>`}
+    </label>`).join('');
+}
+function otlogDDLabel(){
+  otlogInit();
+  const first=periodFor(otlogSel.slice().sort().slice(-1)[0]||curSchedMonth()).label;
+  const more=otlogSel.length-1;
+  return `${esc(first)}${more>0?` <b class="dd-n">+${more}</b>`:''} <i class="dd-ar">▾</i>`;
+}
+function otlogRenderPerList(){const b=$('otlogPerList');if(b)b.innerHTML=otlogPerListHtml();}
+/* Cập nhật tại chỗ để dropdown không bị đóng khi tích chọn */
+function otlogRefresh(){
+  const b=$('otlogDDBtn');if(b)b.innerHTML=otlogDDLabel();
+  otlogRenderPerList();
+  const box=$('otlogBox');if(box)box.innerHTML=otlogTableHtml();
+  if(typeof i18nSchedule==='function')i18nSchedule();
+}
+/* Bấm ra ngoài thì đóng dropdown.
+   Lưu ý: tích một kỳ sẽ vẽ lại danh sách, ô tích vừa bấm bị gỡ khỏi DOM nên
+   dd.contains() trả về false — phải bỏ qua những phần tử đã rời khỏi trang,
+   nếu không dropdown tự đóng ngay khi vừa tích. */
+document.addEventListener('click',e=>{
+  const dd=$('otlogDD');
+  if(!dd||!otlogDDOpen())return;
+  const tg=e.target;
+  if(!tg||(tg.isConnected===false))return;
+  if(!dd.contains(tg))otlogDDToggle(false);
+});
 function otlogFilterName(v){
   otlogQuery=v||'';
   const box=$('otlogBox');if(box)box.innerHTML=otlogTableHtml();
 }
-/* Chuẩn hoá tên để so khớp (bỏ dấu, viết thường) */
-function otNorm(s){return noAccent(String(s||'')).replace(/\s+/g,' ').trim();}
-/* Các kỳ công có trong dữ liệu OT log */
-function otlogPeriods(){
-  const set=new Set();
-  (window.OTLOG_DATA||[]).forEach(r=>set.add(schedMonthOf(r.d)));
-  return [...set].sort();
+
+/* Dòng tăng ca của MỘT kỳ: ưu tiên dữ liệu Excel đã nhập; kỳ nào Excel chưa có
+   thì TỔNG HỢP TỪ PHẦN MỀM (đơn tăng ca đã duyệt + ô lịch thực tế mã OT). */
+function otlogRowsForPeriod(m){
+  const imported=(window.OTLOG_DATA||[]).filter(r=>schedMonthOf(r.d)===m);
+  if(imported.length)return imported.map(r=>Object.assign({src:'excel'},r));
+  // Suy từ phần mềm
+  const days=daysOfPeriod(m), out=[], seen=new Set();
+  Object.values(S.requests||{}).forEach(r=>{
+    if(r.type!=='ot'||r.status!=='approved')return;
+    reqDays(r).forEach(d=>{
+      if(!days.includes(d.iso))return;
+      const e=empById(r.empId)||{};
+      out.push({src:'app',d:d.iso,n:e.name||r.empId,s:d.timeIn||'',e:d.timeOut||'',
+        h:d.hours||otHours(d.iso,d.timeIn,d.isoEnd,d.timeOut)||getHours(d.code||'OTD'),
+        r:r.note||'',st:'app'});
+      seen.add(r.empId+'|'+d.iso);
+    });
+  });
+  // Ô lịch thực tế mang mã OT nhưng không gắn đơn (quản lý gán tay)
+  days.forEach(iso=>{
+    schedEmps().forEach(e=>{
+      const rr=eff(e.id,iso);
+      if(!rr.code||codeInfo(rr.code).cat!=='ot')return;
+      if(seen.has(e.id+'|'+iso))return;
+      out.push({src:'app',d:iso,n:e.name||e.id,s:'',e:'',h:effHours(e.id,iso),r:'',st:'app'});
+    });
+  });
+  return out;
 }
 function otlogRows(){
-  let rows=(window.OTLOG_DATA||[]).slice();
+  otlogInit();
+  let rows=[];
+  otlogSel.forEach(m=>{rows=rows.concat(otlogRowsForPeriod(m));});
   if(!repSeeAll()){
     const me=empById(meId());
     const key=me?otNorm(me.name):'';
     rows=rows.filter(r=>key&&otNorm(r.n)===key);
   }
-  if(otlogPeriod!=='__all')rows=rows.filter(r=>schedMonthOf(r.d)===otlogPeriod);
   const q=otNorm(otlogQuery);
   if(q)rows=rows.filter(r=>otNorm(r.n).includes(q)||otNorm(r.r).includes(q));
   rows.sort((a,b)=>a.d<b.d?1:a.d>b.d?-1:0);   // mới nhất trước
@@ -628,50 +773,60 @@ function otlogRows(){
 }
 function otlogTableHtml(){
   const rows=otlogRows();
-  if(!rows.length)return `<div class="card"><p class="muted">Không có dòng tăng ca nào khớp.</p></div>`;
+  if(!rows.length)return `<div class="card"><p class="muted">${t('Không có dòng tăng ca nào khớp.')}</p></div>`;
   const totH=rows.reduce((a,r)=>a+(+r.h||0),0);
   const byName={};rows.forEach(r=>{byName[r.n]=(byName[r.n]||0)+(+r.h||0);});
   const nNames=Object.keys(byName).length;
   const top=Object.entries(byName).sort((a,b)=>b[1]-a[1]).slice(0,3)
     .map(([n,h])=>`${esc(shortName(n))} ${rnd1(h)}h`).join(' · ');
   let h=`<div class="card rep-head">
-    <b>${rows.length} lượt tăng ca</b>
-    <span class="st approved">Σ ${rnd1(totH)} giờ</span>
-    <span class="muted sm2">${nNames} người${top?' · nhiều nhất: '+top:''}</span></div>
+    <b>${rows.length} ${t('lượt tăng ca')}</b>
+    <span class="st approved">Σ ${rnd1(totH)} ${t('giờ')}</span>
+    <span class="muted sm2">${nNames} ${t('người')}${top?' · '+t('nhiều nhất')+': '+top:''}</span></div>
   <div class="card stbl otlog-tbl"><table><thead><tr>
-    <th class="l">Ngày</th><th class="l">Họ tên</th><th>Bắt đầu</th><th>Kết thúc</th><th>Giờ</th><th class="l">Lý do</th><th>Trạng thái</th>
+    <th class="l">${t('Ngày')}</th><th class="l">${t('Họ tên')}</th><th>${t('Bắt đầu')}</th><th>${t('Kết thúc')}</th><th>${t('Giờ')}</th><th class="l">${t('Lý do')}</th><th>${t('Nguồn')}</th>
   </tr></thead><tbody>`;
-  rows.slice(0,400).forEach(r=>{
+  rows.slice(0,500).forEach(r=>{
+    const srcTag=r.src==='excel'
+      ?'<span class="st approved">Excel</span>'
+      :'<span class="st pending">'+t('Phần mềm')+'</span>';
     h+=`<tr>
       <td class="l">${esc(fmtVN(r.d))}</td>
       <td class="l"><b>${esc(shortName(r.n)||r.n)}</b></td>
       <td>${esc(r.s||'')}</td><td>${esc(r.e||'')}</td>
       <td class="hl">${rnd1(+r.h||0)}</td>
       <td class="l" style="font-size:11px">${esc(r.r||'')}</td>
-      <td>${r.st==='done'?'<span class="st approved">완료 / Duyệt</span>':esc(r.st||'')}</td>
+      <td>${srcTag}</td>
     </tr>`;
   });
   h+=`</tbody></table></div>`;
-  if(rows.length>400)h+=`<p class="muted sm2" style="margin-top:6px">Đang hiện 400 dòng mới nhất trong ${rows.length} dòng khớp.</p>`;
+  if(rows.length>500)h+=`<p class="muted sm2" style="margin-top:6px">${t('Đang hiện 500 dòng mới nhất trong')} ${rows.length} ${t('dòng khớp.')}</p>`;
   return h;
 }
 function repOtLog(){
-  if(!window.OTLOG_DATA||!window.OTLOG_DATA.length)
-    return '<div class="card"><p class="muted">Chưa có dữ liệu nhật ký tăng ca.</p></div>';
-  const ps=otlogPeriods();
-  if(otlogPeriod!=='__all'&&!ps.includes(otlogPeriod))otlogPeriod='__all';
+  otlogInit();
+  const all=otlogAllPeriods();
+  const imported=otlogImportedPeriods();
+  const allOn=otlogSel.length>=all.length;
   return `<div class="card repp">
-    <h3 class="rep-h3">🗂 Nhật ký tăng ca ${repSeeAll()?'(toàn bộ)':'của tôi'} — nhập từ file Excel quản lý</h3>
-    <div class="rep-ctl" style="margin-bottom:8px">
-      <label class="fl2">Kỳ công</label>
-      <select class="inp sm" style="font-weight:700" onchange="otlogSet('period',this.value)">
-        <option value="__all"${otlogPeriod==='__all'?' selected':''}>Tất cả kỳ</option>
-        ${ps.map(m=>`<option value="${m}"${m===otlogPeriod?' selected':''}>${periodFor(m).label}</option>`).join('')}
-      </select>
-      ${repSeeAll()?`<input class="inp sm" style="min-width:180px" placeholder="Tìm tên / lý do…"
+    <h3 class="rep-h3">🗂 ${t('Nhật ký tăng ca')} ${repSeeAll()?t('(toàn bộ)'):t('của tôi')}</h3>
+    <p class="muted sm2" style="margin-bottom:8px">${t('Kỳ có sẵn từ Excel hiện dữ liệu gốc; kỳ mới tổng hợp thẳng từ đơn tăng ca đã duyệt trong phần mềm. Mặc định chỉ tải kỳ hiện tại cho nhẹ — bấm chọn thêm kỳ hoặc tải toàn bộ.')}</p>
+    <div class="repp-row wrap"><span class="lbl">${t('Kỳ công')}:</span>
+      <div class="dd" id="otlogDD">
+        <button type="button" class="dd-btn" id="otlogDDBtn" onclick="otlogDDToggle()">${otlogDDLabel()}</button>
+        <div class="dd-pan" id="otlogDDPan" style="display:none">
+          <input class="inp sm dd-q" id="otlogPerQ" placeholder="${t('Gõ để tìm kỳ…')}" value="${esc(otlogPerQ)}" oninput="otlogPerFilter(this.value)">
+          <div class="dd-list" id="otlogPerList">${otlogPerListHtml()}</div>
+          <div class="dd-foot">
+            <button type="button" class="btn sec sm" onclick="otlogLoadCurrent()">${t('Chỉ kỳ hiện tại')}</button>
+            <button type="button" class="btn ${allOn?'sec':''} sm" onclick="otlogLoadAll()">${allOn?'✓ ':''}${t('Tải toàn bộ')} (${all.length} ${t('kỳ')})</button>
+          </div>
+        </div>
+      </div>
+      ${repSeeAll()?`<input class="inp sm" style="min-width:180px;margin-left:auto" placeholder="${t('Tìm tên / lý do…')}"
         value="${esc(otlogQuery)}" oninput="otlogFilterName(this.value)">`:''}
     </div>
-    <p class="muted sm2">Dữ liệu lịch sử tháng 12/2025 → 07/2026 lấy từ bảng <b>LPG Terminal_Cavern 근무관리 일지</b>. Chỉ để tra cứu, không ảnh hưởng lịch hiện hành.</p>
+    <p class="muted sm2" style="margin-top:4px">${t('Dấu • là kỳ tổng hợp từ phần mềm (chưa có trong Excel).')}</p>
   </div>
   <div id="otlogBox">${otlogTableHtml()}</div>`;
 }

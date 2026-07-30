@@ -19,10 +19,11 @@ syncAccounts();
 renderAll();
 initFb();
 
-/* Trang chính của nhân viên là màn hình đầu tiên ngay sau khi đăng nhập */
+/* Màn hình đầu tiên sau khi đăng nhập: nhân viên → Trang chính;
+   thư ký / quản lý người Hàn (không thuộc diện chấm công) → Lịch thực tế */
 renderGate();
-go('me');
-renderMe(true);
+go(homeView());
+if(!noSelf)renderMe(true);
 
 /* Ngôn ngữ: Quản lý người Hàn (quyền kmgr) mặc định vào là tiếng Anh,
    ai đã tự bấm nút EN/VI thì theo lựa chọn đã lưu. Xem js/14-i18n.js. */

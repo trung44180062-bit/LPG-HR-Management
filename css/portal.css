@@ -209,6 +209,24 @@ i.d-ok{background:#0E9F6E}
 .ds-req .st{flex:none}
 .ds-req .act{display:flex;gap:5px;flex:none;align-items:center}
 
+/* ---- Banner việc cần xác nhận trên trang chính ---- */
+.pv-confirm{border:1px solid #FCD9B6;background:#FFF7ED;border-radius:12px;padding:10px 12px;margin-bottom:13px}
+.pv-confirm-h{font-weight:800;color:#B45309;font-size:12.5px;margin-bottom:8px}
+.pv-cf-item{background:#fff;border:1px solid #FCE4C7;border-radius:10px;padding:9px 10px;margin-bottom:7px}
+.pv-cf-item:last-child{margin-bottom:0}
+.pv-cf-item .tx{font-size:12px;line-height:1.5}
+.pv-cf-item .tx i{display:block;font-style:normal;font-size:10.5px;color:#94A3B8;margin-top:2px}
+.pv-cf-item .tx .ar{color:#94A3B8;font-weight:700}
+.pv-cf-item .acts{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.pv-cf-item .acts .btn{flex:1;min-width:130px}
+.ntf-item .ntf-acts{display:flex;gap:6px;margin-top:7px;flex-wrap:wrap}
+.ntf-item .ntf-acts .btn{flex:1;min-width:120px}
+/* Cờ xác nhận đổi ca ở màn Duyệt */
+.cfw{font-size:10px;font-weight:800;border-radius:99px;padding:2px 8px;margin-left:4px}
+.cfw.pending{background:#FEF3C7;color:#B45309}
+.cfw.confirmed{background:#DCFCE7;color:#15803D}
+.cfw.declined{background:#FEE2E2;color:#B91C1C}
+
 /* ---- 🔔 Chuông thông báo trên trang chính ---- */
 .pv-bell{position:relative}
 .bell-bdg{
@@ -231,6 +249,14 @@ i.d-ok{background:#0E9F6E}
 .ntf-item .tx i{display:block;font-style:normal;font-size:10.5px;color:#64748B;font-weight:600}
 .ntf-item .tx i.tm{color:#94A3B8;font-weight:500}
 .ntf-item .st{flex:none;margin-top:2px}
+
+/* ---- Chọn cần in / không in trong form đơn ---- */
+.print-seg{display:flex;gap:6px;flex-wrap:wrap}
+.print-seg button{flex:1;min-width:150px;padding:8px 10px;border-radius:9px;border:1px solid #DCE5EE;
+  background:#fff;font-size:12px;font-weight:700;color:#475569;cursor:pointer;font-family:inherit}
+.print-seg button.on{background:#0B3B5C;border-color:#0B3B5C;color:#fff}
+.pb-row.noprint{opacity:.85}
+.pb-grp.noprint .pb-grp-h{color:#B45309}
 
 /* ---- Nút lọc trạng thái "Đơn của tôi" ---- */
 .req-flt{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}

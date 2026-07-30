@@ -62,6 +62,19 @@ function i18nLookup(k){
     if(head.length<4||!/\d/.test(tail))continue;
     if(m[head]!==undefined)return m[head]+' '+tail;
   }
+  /* Nhãn có TIỀN TỐ BIỂU TƯỢNG: "🗂 Nhật ký tăng ca", "✓ 📊 Giờ công theo người".
+     Trước đây phải khai riêng từng khoá kèm emoji nên rất dễ sót — nay cắt phần
+     đầu không phải chữ/số ra, dịch phần chữ rồi ghép lại. */
+  try{
+    const em=k.match(/^([^\p{L}\p{N}]+)(.+)$/u);
+    if(em){
+      const rest=em[2].trim();
+      if(rest&&rest!==k){
+        let v=(m[rest]!==undefined)?m[rest]:i18nRegex(rest);
+        if(v!=null)return em[1]+v;
+      }
+    }
+  }catch(e){}
   return null;
 }
 /* Bí danh cho những hàm đã dùng biến cục bộ tên `t` (loại đơn) — cùng chức năng */
@@ -914,7 +927,169 @@ const I18N_EN={
 'Người làm đơn':'Written by',
 'Xác nhận bởi Người bảo lãnh':'Confirmed by guarantor',
 '· chưa có dữ liệu nhân sự':'· no staff data yet',
-'nhân viên':'employees'
+'nhân viên':'employees',
+
+/* ---------- Nhật ký tăng ca (OT log) ---------- */
+'Nhật ký tăng ca':'Overtime log',
+'🗂 Nhật ký tăng ca (toàn bộ)':'🗂 Overtime log (all)',
+'🗂 Nhật ký tăng ca của tôi':'🗂 My overtime log',
+'(toàn bộ)':'(all)',
+'Kỳ có sẵn từ Excel hiện dữ liệu gốc; kỳ mới tổng hợp thẳng từ đơn tăng ca đã duyệt trong phần mềm. Mặc định chỉ tải kỳ hiện tại cho nhẹ — bấm chọn thêm kỳ hoặc tải toàn bộ.':'Periods already in Excel show the original data; newer periods are aggregated straight from approved overtime requests in the app. Only the current period loads by default for speed — pick more periods or load everything.',
+'Kỳ công':'Period',
+'Chỉ kỳ hiện tại':'Current period only',
+'Tải toàn bộ':'Load all',
+'kỳ':'periods',
+'Tìm tên / lý do…':'Search name / reason…',
+'Dấu • là kỳ tổng hợp từ phần mềm (chưa có trong Excel).':'A • marks a period aggregated from the app (not yet in Excel).',
+'Không có dòng tăng ca nào khớp.':'No overtime rows match.',
+'lượt tăng ca':'overtime entries',
+'giờ':'hours',
+'người':'people',
+'nhiều nhất':'most',
+'Ngày':'Date',
+'Họ tên':'Full name',
+'Bắt đầu':'Start',
+'Kết thúc':'End',
+'Giờ':'Hours',
+'Lý do':'Reason',
+'Nguồn':'Source',
+'Phần mềm':'Software',
+'Đang hiện 500 dòng mới nhất trong':'Showing the latest 500 rows of',
+'dòng khớp.':'matching rows.',
+'Chưa có dữ liệu nhật ký tăng ca.':'No overtime log data yet.',
+
+/* ---------- Email báo cáo ---------- */
+'✉️ Gửi email báo cáo':'✉️ Email report',
+'Gửi email báo cáo':'Email report',
+'Nhập ít nhất một địa chỉ người nhận':'Enter at least one recipient',
+'Đang mở ứng dụng thư trên máy…':'Opening the mail app…',
+'Người nhận (To) — cách nhau bằng dấu ;':'Recipients (To) — separate with ;',
+'CC (không bắt buộc)':'CC (optional)',
+'Tiêu đề':'Subject',
+'Nội dung':'Body',
+'✉️ Mở Outlook & gửi':'✉️ Open Outlook & send',
+'Bấm Gửi sẽ mở ứng dụng thư mặc định trên máy (Outlook) với nội dung đã soạn sẵn — bạn kiểm tra rồi bấm gửi trong Outlook. Địa chỉ nhận được lưu lại cho lần sau.':'Sending opens your default mail app (Outlook) with the message pre-filled — review it and send from Outlook. Recipients are saved for next time.',
+
+/* ---------- In đơn: cần in / không in ---------- */
+'🖨️ Cần in — đưa vào hàng chờ in':'🖨️ Needs printing — add to queue',
+'🚫 Không cần in':'🚫 No print needed',
+'Không cần in':'No print needed',
+'không in':'no print',
+'Không in':'No print',
+'Đã đánh dấu không cần in':'Marked as no-print',
+'Đã đưa vào danh sách chờ in':'Added to the print queue',
+'🚫 Đánh dấu không cần in':'🚫 Mark as no-print',
+'🖨️ Đưa vào ds in':'🖨️ Add to print queue',
+'↩ Cần in':'↩ Needs print',
+'Đơn này sẽ không xuất hiện trong danh sách chờ in. Có thể đổi lại sau ở màn Duyệt.':'This request will not appear in the print queue. You can change it later in Approvals.',
+'Đơn sau khi duyệt sẽ nằm trong danh sách chờ in để nhân sự in ra ký.':'Once approved, this request stays in the print queue for HR to print and sign.',
+
+/* ---------- Biểu đồ hợp nhất ---------- */
+'📌 Tổng hợp cá nhân / nhóm theo tháng · quý · năm':'📌 Individual / group summary by month · quarter · year',
+'📌 Tổng hợp của tôi theo tháng · quý · năm':'📌 My summary by month · quarter · year',
+'Tháng':'Month',
+'Quý':'Quarter',
+'Năm':'Year',
+'Nhóm:':'Group:',
+'Cá nhân:':'Individual:',
+'Biểu đồ:':'Charts:',
+'Đã chọn:':'Selected:',
+'✕ Bỏ chọn hết':'✕ Clear all',
+'Gõ tên để tìm… (không dấu cũng được)':'Type a name to search… (accents optional)',
+'Không tìm thấy ai khớp.':'No matching person.',
+'Không tích gì = xem cả tổ. Tích nhóm và / hoặc từng người để gộp số liệu đúng phạm vi cần xem.':'Nothing ticked = whole team. Tick groups and/or individuals to aggregate exactly the scope you need.',
+'📊 Giờ công theo người':'📊 Work hours by person',
+'🍩 Cơ cấu ca':'🍩 Shift mix',
+'⚡ Tăng ca theo nhóm':'⚡ Overtime by group',
+'📈 Diễn biến theo kỳ':'📈 Trend by period',
+'Chưa chọn biểu đồ nào — tích ít nhất một loại ở trên.':'No chart selected — tick at least one above.',
+'Chưa có dữ liệu lịch cho lựa chọn này.':'No schedule data for this selection.',
+'Diễn biến theo kỳ công':'Trend by pay period',
+'Ca OT':'OT shifts',
+
+/* ---------- Thông báo / xác nhận ---------- */
+'🔔 Thông báo':'🔔 Notifications',
+'Cần bạn xác nhận':'Needs your confirmation',
+'✓ Xác nhận & làm đơn':'✓ Confirm & file request',
+'✕ Huỷ thay đổi':'✕ Undo change',
+'✕ Huỷ':'✕ Undo',
+'✓ Đồng ý đổi ca':'✓ Accept swap',
+'✓ Đồng ý':'✓ Accept',
+'✕ Từ chối':'✕ Decline',
+'✓ Đã điền sẵn đơn — kiểm tra rồi bấm Gửi':'Request pre-filled — review then Submit',
+'Đã điền sẵn đơn — kiểm tra rồi bấm Gửi':'Request pre-filled — review then Submit',
+'Huỷ thay đổi lịch này? Ô lịch sẽ trả về trạng thái trước đó và người sửa sẽ được báo.':'Undo this schedule change? The cell reverts to its previous state and the editor is notified.',
+'Đã huỷ thay đổi và báo lại người sửa':'Change undone and the editor notified',
+'Từ chối đổi ca này? Đơn vẫn còn nhưng quản trị sẽ thấy bạn đã từ chối.':'Decline this swap? The request stays but admins will see you declined.',
+'Đã xác nhận đổi ca':'Swap confirmed',
+'Đã từ chối đổi ca':'Swap declined',
+'📣 Thông báo':'📣 Notices',
+'Kết quả đơn':'Request results',
+'Việc cần xác nhận nằm trên cùng. Đơn kết quả xếp theo thời điểm quyết định — mới nhất trước.':'Items needing confirmation are on top. Decided requests are sorted newest first.',
+'đã HUỶ thay đổi lịch bạn tạo':'undid the schedule change you made',
+'đã XÁC NHẬN đổi ca với bạn':'confirmed the shift swap with you',
+'đã TỪ CHỐI đổi ca với bạn':'declined the shift swap with you',
+'chờ':'waiting for',
+'xác nhận':'to confirm',
+'đã xác nhận':'confirmed',
+'từ chối':'declined',
+'Xác nhận đổi ca':'Confirm swap',
+'Xác nhận tăng ca':'Confirm overtime',
+'Làm liên tục':'Continuous work',
+'khoảng 24h':'about 24h',
+'bổ sung công':'work supplement',
+
+/* ---------- Gửi email báo cáo (settings) ---------- */
+'Gửi email báo cáo (qua Outlook trên máy)':'Email report (via desktop Outlook)',
+
+/* ---------- Bổ sung 2026-07-30: nhãn biểu đồ, bộ lọc kỳ, bảng thống kê ---------- */
+'Cơ cấu ca':'Shift mix',
+'Tăng ca theo nhóm':'Overtime by team',
+'Diễn biến theo kỳ':'Trend by period',
+'Biểu đồ':'Charts',
+'(chưa phân)':'(unassigned)',
+'Nhóm (chưa phân)':'Team (unassigned)',
+'Chọn kỳ công':'Select periods',
+'Gõ để tìm kỳ…':'Type to find a period…',
+'Không có kỳ nào khớp.':'No matching period.',
+'Tất cả kỳ':'All periods',
+'kỳ đang xem':'periods selected',
+'Kỳ tổng hợp từ phần mềm (chưa có trong Excel)':'Period aggregated from the app (not yet in Excel)',
+'Chú giải màu':'Colour key',
+'Chú giải màu:':'Colour key:',
+'Phép / nghỉ':'Leave / off',
+
+/* ---------- Chữ Việt còn sót trong giao diện EN (rà soát 2026-07-30) ---------- */
+'Kỳ này chưa có ô nào khác lịch chuẩn.':'No cell differs from the standard roster in this period.',
+'Xác nhận để gửi đơn tương ứng, hoặc huỷ để trả lịch về cũ.':'Confirm to file the matching request, or decline to restore the previous roster.',
+'Xác nhận nếu bạn đồng ý đổi ca.':'Confirm if you agree to the shift swap.',
+'Chưa có đơn nào được duyệt hay từ chối.':'No request has been approved or rejected yet.',
+'Lần tăng ca đã duyệt (kỳ này)':'Approved overtime sessions (this period)',
+'Bạn chưa có đơn nào.':'You have no requests yet.',
+'Không có đơn nào ở mục này.':'No request in this group.',
+'Đăng nhập để xem.':'Log in to view.',
+'Chưa có nhóm.':'No team yet.',
+'chờ in':'to print',
+'sắp tới':'upcoming',
+'MỚI':'NEW',
+'Công':'Work',
+'Phép':'Leave',
+'Σ Làm':'Σ Worked',
+'Đã duyệt':'Approved',
+'Thông báo':'Notifications',
+'của tôi':'(mine)',
+'Chưa có kỳ nào':'No period yet',
+'Chuyển sang cần in':'Move back to the print list',
+'Xoá khỏi danh sách':'Remove from the list',
+'Đưa về mật khẩu = mã số':'Reset password to the ID number',
+'Mật khẩu đang là mã số — nhắc nhân viên đổi':'Password is still the ID number — ask them to change it',
+'Nhân viên vào giữa kỳ: chỉ điền lịch từ ngày này trở đi':'Joined mid-period: only fill the roster from this date onwards',
+'In đơn đã duyệt':'Print approved requests',
+/* Câu bị thẻ <b> cắt làm 4 mảnh — phải dịch từng mảnh (tab Dữ liệu, mục email) */
+'Nhập sẵn địa chỉ nhận báo cáo. Ở tab':'Preset the report recipients. On the',
+'Báo cáo → Thống kê':'Report → Statistics',
+'bấm':'tab, press',
+', phần mềm mở ứng dụng thư mặc định (Outlook) với nội dung tóm tắt soạn sẵn để bạn kiểm tra rồi gửi.':', the app opens your default mail client (Outlook) with a ready-made summary for you to review and send.'
 };
 
 /* ============================================================
@@ -923,6 +1098,11 @@ const I18N_EN={
    Áp dụng sau khi tra từ điển không thấy.
    ============================================================ */
 const I18N_RE=[
+  [/^GIỜ CÔNG · (.+)$/,         'WORK HOURS · $1'],
+  [/^Giờ công theo người · (.+)$/,'Work hours by person · $1'],
+  [/^Cơ cấu ca · (.+)$/,        'Shift mix · $1'],
+  [/^Giờ tăng ca theo nhóm · (.+)$/,'Overtime hours by team · $1'],
+  [/^(\d+) kỳ đang xem$/,       '$1 periods selected'],
   [/^Nhóm (.+)$/,               'Team $1'],
   [/^\(Nhóm (.+)\)$/,           '(Team $1)'],
   [/^(👥 )?Nhân sự ngày (.+)$/, '$1Staff on $2'],

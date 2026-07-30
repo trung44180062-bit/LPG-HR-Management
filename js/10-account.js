@@ -133,10 +133,16 @@ function permOf(id){
 }
 /* Đọc lại quyền của người đang đăng nhập → cập nhật các cờ toàn cục */
 function applyPerm(){
-  const p=permOf(meId());
+  const me=meId();
+  const p=permOf(me);
   adm =(p==='admin'||p==='kmgr');
   mgr =(p==='admin'||p==='kmgr'||p==='appr');
   secr=(p==='sec')||mgr;                        // được xem số liệu cả tổ
+  /* Thư ký & quản lý người Hàn không nằm trong đối tượng chấm công → bỏ
+     Trang chính cá nhân, vào thẳng Lịch thực tế. Ai đặt Kiểu ca = Không
+     xếp lịch cũng vậy. */
+  const e=me?empById(me):null;
+  noSelf=!!me && (p==='sec'||p==='kmgr'|| (e&&e.shiftType==='none'));
   if(typeof applyLangForUser==='function')applyLangForUser();
   return p;
 }
@@ -271,7 +277,7 @@ async function doLogin(){
   $('loginPw').value='';$('loginId').value='';
   gateMsg('');
   markSeen(id);
-  renderGate();applyRoleUI();refreshBadge();go('me');
+  renderGate();applyRoleUI();refreshBadge();go(homeView());
   applyLangForUser();
   toast(t('Xin chào')+' '+(e.name||id)+' 👋');
 }
@@ -284,7 +290,7 @@ function gateMsg(html){
 }
 function doLogout(){
   localStorage.removeItem(SESS);
-  mgr=false;adm=false;secr=false;
+  mgr=false;adm=false;secr=false;noSelf=false;
   renderGate();applyRoleUI();renderMe();toast(t('Đã đăng xuất'));
 }
 /* Kiểm tra mật khẩu mới có đủ an toàn không */

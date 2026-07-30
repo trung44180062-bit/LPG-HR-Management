@@ -235,6 +235,30 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
 .stbl tbody tr:nth-child(even) td{background:#FAFCFE}
 .stbl tbody tr:nth-child(even) td.hl{background:#EBFAF1}
 
+/* ---- Bảng thống kê có màu (2026-07-30) ----
+   Ô đếm mã ca lấy đúng nền pastel của bảng lịch (đặt inline trong stCnt),
+   ở đây chỉ lo phần khung: số 0 mờ đi, 3 cột giờ mỗi cột một tông màu,
+   nhóm cột có vạch ngăn để mắt không nhảy cột. */
+.stbl td.cc{font-weight:800;letter-spacing:.2px}
+.stbl td.z,.stbl td.z0{color:#CBD5E1;font-weight:600}
+.stbl .hl-ot{background:#FFF7ED;font-weight:800;color:#9A3412}
+.stbl .hl-lv{background:#EFF6FF;font-weight:800;color:#1E40AF}
+.stbl tbody tr:nth-child(even) td.hl-ot{background:#FDEFE0}
+.stbl tbody tr:nth-child(even) td.hl-lv{background:#E7F0FE}
+.stbl th.hl{background:#DCFCE7;color:#065F46}
+.stbl th.hl-ot{background:#FFEDD5;color:#9A3412}
+.stbl th.hl-lv{background:#DBEAFE;color:#1E40AF}
+.stbl th.g-sh{background:#E8EEF6}
+.stbl th.g-lv{background:#FBEDF2}
+.stbl th.g-ot{background:#E4F5EC}
+.stbl-col td:nth-child(2),.stbl-col th:nth-child(2){border-right:2px solid #E2E8F0}
+.stbl-col tbody tr:hover td{outline:1px solid #93C5FD;outline-offset:-1px}
+.team-chip{display:inline-block;padding:1px 9px;border-radius:99px;font-size:10.5px;font-weight:800;letter-spacing:.2px}
+.stbl-key{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:8px;font-size:11px}
+.stbl-key .lbl{color:var(--mut);font-weight:700;margin-right:2px}
+.stbl-key .k-it{display:inline-block;padding:2px 9px;border-radius:7px;font-weight:800;font-size:10.5px;border:1px solid rgba(0,0,0,.06)}
+.stbl-key .k-sep{width:1px;height:14px;background:var(--line);margin:0 5px}
+
 /* ===== v4: mobile-first nav (bottom bar + sheet + desktop top tabs) ===== */
 .hdr .icobtn{border:none;background:rgba(255,255,255,.14);color:#fff;border-radius:9px;width:34px;height:34px;font-size:16px;flex-shrink:0}
 @media(max-width:767px){.hdr .icobtn{display:none}}
@@ -447,6 +471,29 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
 .fchip.on{background:#0B3B5C;border-color:#0B3B5C;color:#fff}
 .fchip.on i{background:rgba(255,255,255,.22);color:#fff}
 
+/* ---- Dropdown chọn nhiều mục có ô gõ để tìm (bộ lọc kỳ công) ---- */
+.dd{position:relative;display:inline-block}
+.dd-btn{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:9px;
+  border:1px solid #DCE5EE;background:#fff;font-size:12px;font-weight:800;color:#1E293B;
+  cursor:pointer;font-family:inherit;max-width:280px}
+.dd-btn:hover{border-color:#94A3B8}
+.dd-btn.on{border-color:#0B3B5C;box-shadow:0 0 0 3px rgba(11,59,92,.10)}
+.dd-btn .dd-n{background:#0B3B5C;color:#fff;border-radius:12px;padding:1px 7px;font-size:10px}
+.dd-btn .dd-ar{font-style:normal;color:#64748B;font-size:10px;margin-left:auto}
+.dd-pan{position:absolute;z-index:80;top:calc(100% + 5px);left:0;width:290px;max-width:88vw;
+  background:#fff;border:1px solid #DCE5EE;border-radius:11px;box-shadow:0 10px 28px rgba(15,35,60,.16);
+  padding:8px;display:flex;flex-direction:column;gap:6px}
+.dd-q{width:100%}
+.dd-list{max-height:250px;overflow:auto;display:flex;flex-direction:column;gap:2px}
+.dd-it{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:7px;
+  font-size:12px;font-weight:600;color:#334155;cursor:pointer}
+.dd-it:hover{background:#F1F5F9}
+.dd-it.on{background:#EFF6FF;color:#0B3B5C;font-weight:800}
+.dd-it input{width:15px;height:15px;flex:none;accent-color:#0B3B5C}
+.dd-it span{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dd-dot{font-style:normal;color:#D97706;font-weight:900}
+.dd-foot{display:flex;gap:6px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:7px}
+
 /* ---- Biểu đồ SVG ---- */
 .ch-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
 .ch-scroll svg{display:block}
@@ -485,4 +532,5 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
 .ar-txt .prt{font-size:10.5px;font-weight:700;border-radius:99px;padding:2px 8px}
 .ar-txt .prt.yes{background:#E7EFF6;color:#0B3B5C}
 .ar-txt .prt.no{background:#F1F5F9;color:#94A3B8}
+.ar-txt .prt.none{background:#FEF3C7;color:#B45309}
 .abc.sm{padding:4px 10px;font-size:11.5px}

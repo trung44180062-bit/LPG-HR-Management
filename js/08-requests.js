@@ -90,6 +90,8 @@ function cancelReq(rid){
   const r=S.requests[rid];if(!r)return null;
   const reverted=(r.status==='approved')?revertReqSchedule(rid):0;
   delete S.requests[rid];
+  // Dọn thông báo xác nhận đổi ca gắn với đơn này để không còn treo ở người B
+  if(S.notifs)for(const k in S.notifs){if(S.notifs[k].reqId===rid)delete S.notifs[k];}
   return{reverted};
 }
 /* Giữ tên cũ cho các chỗ đang gọi — nay cùng nghĩa với cancelReq */
@@ -225,7 +227,8 @@ function reqInRange(r,f,tt){
 function apprMatch(r){
   if(apprFilter.status!=='__all'&&r.status!==apprFilter.status)return false;
   if(apprFilter.print==='yes'&&!r.printedAt)return false;
-  if(apprFilter.print==='no'&&r.printedAt)return false;
+  if(apprFilter.print==='no'&&(r.printedAt||r.noPrint))return false;   // chưa in = chưa in & vẫn cần in
+  if(apprFilter.print==='none'&&!r.noPrint)return false;               // không cần in
   if(apprFilter.type!=='__all'&&r.type!==apprFilter.type)return false;
   const rg=apprRange();
   if(rg&&!reqInRange(r,rg[0],rg[1]))return false;
@@ -248,6 +251,12 @@ function apprRow(r){
   const sub=[when];
   if(w)sub.push(t('với')+' '+shortName(w.name||r.withId));
   if(r.byId&&r.byId!==r.empId)sub.push(t('khai hộ'));
+  // Cờ xác nhận đổi ca của người B
+  const cfBadge=(r.type==='swap'&&r.confirmW)
+    ?`<span class="cfw ${r.confirmW}">${{pending:'⏳ '+t('chờ')+' '+shortName((w&&w.name)||r.withId)+' '+t('xác nhận'),
+        confirmed:'✓ '+shortName((w&&w.name)||r.withId)+' '+t('đã xác nhận'),
+        declined:'✕ '+shortName((w&&w.name)||r.withId)+' '+t('từ chối')}[r.confirmW]||''}</span>`
+    :'';
   return `<div class="ar ${r.status}${open?' open':''}${r.printedAt?' printed':''}">
     <div class="ar-h">
       <label class="ar-ck"><input type="checkbox" class="rqChk" value="${r.id}" onchange="apprPickCount()"></label>
@@ -256,7 +265,7 @@ function apprRow(r){
         <span class="l1"><b>${esc(e?e.name:r.empId)}</b>
           <i class="typ">${esc(REQ_LABEL[r.type]||r.type)}</i>
           <span class="st ${r.status}">${REQ_ST_LABEL[r.status]||r.status}</span>
-          <span class="prt ${r.printedAt?'yes':'no'}">${r.printedAt?'🖨️ '+t('đã in'):'○ '+t('chưa in')}</span></span>
+          <span class="prt ${r.printedAt?'yes':(r.noPrint?'none':'no')}">${r.printedAt?'🖨️ '+t('đã in'):(r.noPrint?'🚫 '+t('không in'):'○ '+t('chưa in'))}</span>${cfBadge}</span>
         <span class="l2">${esc(sub.join(' · '))}</span>
       </button>
       <span class="ar-act">
@@ -278,12 +287,21 @@ function apprRow(r){
       </div>
       <div class="ar-more-act">
         <button class="btn sec sm pc-only" onclick="printOne('${r.id}')">🖨️ In</button>
+        <button class="btn sec sm" onclick="apprToggleNoPrint('${r.id}')">${r.noPrint?'🖨️ Đưa vào ds in':'🚫 Đánh dấu không cần in'}</button>
         <button class="btn warn sm" onclick="cancelOneReq('${r.id}')">🚫 Huỷ đơn</button>
       </div>
     </div>
   </div>`;
 }
 function reqCard(r,withActs,pick){return apprRow(r);}
+/* Quản lý bật/tắt "không cần in" cho một đơn ở màn Duyệt */
+function apprToggleNoPrint(id){
+  const r=S.requests[id];if(!r)return;
+  r.noPrint=!r.noPrint;save();
+  renderApprList();
+  if(typeof refreshPrintBadge==='function')refreshPrintBadge();
+  toast(r.noPrint?t('Đã đánh dấu không cần in'):t('Đã đưa vào danh sách chờ in'));
+}
 
 /* =================== DUYỆT =================== */
 function renderAppr(){
@@ -299,7 +317,7 @@ function renderAppr(){
     const n=all.filter(apprMatch).length;apprFilter[k]=save;return n;
   };
   const stChips=[['pending','⏳ Chờ duyệt'],['approved','✅ Đã duyệt'],['rejected','❌ Từ chối'],['__all','Tất cả']];
-  const prChips=[['__all','Mọi đơn'],['no','○ Chưa in'],['yes','🖨️ Đã in']];
+  const prChips=[['__all','Mọi đơn'],['no','○ Chưa in'],['none','🚫 Không in'],['yes','🖨️ Đã in']];
   const ms=monthsAvailable();
 
   $('apprBar').innerHTML=`

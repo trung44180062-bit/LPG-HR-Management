@@ -20,6 +20,7 @@ function load(){
   S.settings.approver2=S.settings.approver2||APPROVER2_FALLBACK;
   S.accounts=S.accounts||{};
   S.printLog=S.printLog||{};
+  S.notifs=S.notifs||{};
 }
 function initFb(){
   const cfgRaw=localStorage.getItem(LS+'_fb');
@@ -43,7 +44,7 @@ function initFb(){
           S.settings.hours=S.settings.hours||{};S.settings.customCodes=S.settings.customCodes||[];
           S.settings.deptDefault=S.settings.deptDefault||DEPT_DEFAULT_FALLBACK;
           S.settings.approver1=S.settings.approver1||APPROVER1_FALLBACK;S.settings.approver2=S.settings.approver2||APPROVER2_FALLBACK;
-          S.printLog=S.printLog||{};
+          S.printLog=S.printLog||{};S.notifs=S.notifs||{};
           localStorage.setItem(LS,JSON.stringify(S));
           renderAll();applyingRemote=false;
         }else if(d===null && S.employees.length){fbRef.set(S);}

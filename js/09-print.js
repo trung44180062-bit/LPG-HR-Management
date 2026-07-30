@@ -406,8 +406,8 @@ function pbAllInRange(){
     return true;
   }).sort((a,b)=>a.from.localeCompare(b.from));
 }
-function pendingPrintQueue(){return pbAllInRange().filter(r=>!r.printedAt);}
-function pendingPrintCountAll(){return Object.values(S.requests).filter(r=>r.status==='approved'&&!r.printedAt).length;}
+function pendingPrintQueue(){return pbAllInRange().filter(r=>!r.printedAt&&!r.noPrint);}
+function pendingPrintCountAll(){return Object.values(S.requests).filter(r=>r.status==='approved'&&!r.printedAt&&!r.noPrint).length;}
 
 function openPrintBulk(){
   if(isMobile()){toast(t('Điện thoại không in được — dùng máy tính để in đơn'));return;}
@@ -430,19 +430,21 @@ function renderPrintBulkList(keep){
     const e=empById(r.empId),w=r.withId?empById(r.withId):null;
     return noAccent([e&&e.name,r.empId,w&&w.name].filter(Boolean).join(' ')).includes(nq);
   };
-  const notYet=list.filter(r=>!r.printedAt&&match(r));
+  const notYet=list.filter(r=>!r.printedAt&&!r.noPrint&&match(r));
+  const noNeed=list.filter(r=>!r.printedAt&&r.noPrint&&match(r));
   const done  =list.filter(r=>r.printedAt&&match(r));
 
   const row=(r,def)=>{
     const e=empById(r.empId);
     const checked=(prev[r.id]!==undefined)?prev[r.id]:def;
     const days=r.type==='multi'?0:reqDays(r).length;
-    return `<label class="pb-row${r.printedAt?' done':''}">
+    return `<label class="pb-row${r.printedAt?' done':''}${r.noPrint?' noprint':''}">
       <input type="checkbox" class="pbChk" value="${r.id}" ${checked?'checked':''}>
       <span class="ic">${REQ_ICON[r.type]||'📄'}</span>
       <span class="tx"><b>${esc(e?e.name:r.empId)}</b>
         <i>${esc(REQ_LABEL[r.type]||r.type)} · ${fmtVN(r.from)}${r.to!==r.from?'–'+fmtVN(r.to):''}${days>1?' · '+days+' '+t('ngày'):''}</i></span>
-      ${r.printedAt?`<span class="pb-when">🖨️ ${fmtDateTime(r.printedAt)}${r.printCount>1?' ×'+r.printCount:''}</span>`:''}
+      ${r.printedAt?`<span class="pb-when">🖨️ ${fmtDateTime(r.printedAt)}${r.printCount>1?' ×'+r.printCount:''}</span>`
+        :r.noPrint?`<button type="button" class="btn sec sm" onclick="pbToggleNoPrint('${r.id}',event)" title="Chuyển sang cần in">↩ Cần in</button>`:''}
     </label>`;
   };
   const group=(title,arr,def,cls)=>`<div class="pb-grp ${cls}">
@@ -455,6 +457,7 @@ function renderPrintBulkList(keep){
 
   $('pbList').innerHTML =
       group(t('Chưa in'),notYet,true,'notyet')
+    + (noNeed.length?group(t('Không cần in'),noNeed,false,'noprint'):'')
     + group(t('Đã in rồi'),done,false,'done');
   document.querySelectorAll('.pbChk').forEach(c=>c.onchange=updatePbCountHint);
   updatePbCountHint();
@@ -463,6 +466,14 @@ function renderPrintBulkList(keep){
 function pbCheckGroup(cls,on){
   document.querySelectorAll('.pb-grp.'+cls+' .pbChk').forEach(c=>{c.checked=!!on;});
   updatePbCountHint();
+}
+/* Đổi đơn "không cần in" → "cần in" ngay trong danh sách in */
+function pbToggleNoPrint(id,ev){
+  if(ev){ev.preventDefault();ev.stopPropagation();}
+  const r=S.requests[id];if(!r)return;
+  r.noPrint=!r.noPrint;save();
+  renderPrintBulkList(true);
+  if(typeof renderAppr==='function'&&curView==='appr')renderApprList();
 }
 function pbSelectedRequests(){return[...document.querySelectorAll('.pbChk:checked')].map(c=>S.requests[c.value]).filter(Boolean);}
 function updatePbCountHint(){
@@ -514,5 +525,5 @@ function doPrintBulk(){
 }
 function refreshPrintBadge(){
   const n=pendingPrintCountAll();
-  [$('printBdgSheet'),$('printBdgAppr')].forEach(b=>{if(!b)return;b.style.display=n?'':'none';b.textContent=n;});
+  [$('printBdgSheet'),$('printBdgAppr'),$('printBdgCal')].forEach(b=>{if(!b)return;b.style.display=n?'':'none';b.textContent=n;});
 }

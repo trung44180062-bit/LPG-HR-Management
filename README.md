@@ -220,11 +220,49 @@ Quyền khai ở cột **Quyền** trong tab 🛠️ Nhóm & Lịch, lưu ở `e
 | `sec` | **Thư ký** | Xem hết lịch & báo cáo, in đơn, khai hộ đơn — **không** duyệt, **không** sửa cấu hình |
 | `kmgr` | **Quản lý người Hàn (EN)** | Quyền y hệt `admin`, khác duy nhất: **đăng nhập vào là giao diện tiếng Anh** |
 
-Cờ toàn cục: `adm` (admin/kmgr) · `mgr` (appr/admin/kmgr) · `secr` (sec + mgr — được xem số liệu cả tổ).
+Cờ toàn cục: `adm` (admin/kmgr) · `mgr` (appr/admin/kmgr) · `secr` (sec + mgr — được xem số liệu cả tổ)
+· `noSelf` (**sec / kmgr / ai đặt `shiftType='none'`** — không thuộc đối tượng chấm công).
 
 **Người không nằm trong lịch ca** (thư ký, quản lý cấp trên) đặt **Kiểu ca = Không xếp lịch**
 (`shiftType='none'`): vẫn có tài khoản và thao tác phần mềm, nhưng `schedEmps()` loại họ khỏi
 bảng lịch, định mức nhân lực, thống kê và biểu đồ.
+
+### Bỏ Trang chính với người không chấm công (`noSelf`)
+
+Thư ký (`sec`) và quản lý người Hàn (`kmgr`) không có ca nên **Trang chính cá nhân bị bỏ hẳn**:
+
+- `homeView()` (01-core) trả `'real'` thay vì `'me'` → đăng nhập xong vào thẳng **Lịch · Thực tế**;
+  dùng ở `doLogin` và lúc boot (12-main).
+- `go('me')` tự chuyển hướng sang `go('real')`; `renderMe()` thoát sớm và xoá rỗng `#meBody`.
+- `applyRoleUI()` xử lý thêm hai class: **`.self-only`** (Trang chính, Gửi đơn, Tăng ca của tôi,
+  Đơn của tôi) ẩn khi `noSelf`; **`.noself-only`** (nút 🔑 Tài khoản và ↪ Đăng xuất trên header)
+  chỉ hiện khi `noSelf`, vì hai nút này vốn nằm trong Trang chính.
+- Sheet "Tăng ca / Đơn của tôi / Phép năm / Tài khoản" chỉ còn tab **Tài khoản**.
+
+### Chọn kỳ công bằng dropdown (Nhật ký tăng ca)
+
+Danh sách kỳ trước đây trải thành một rừng chip. Nay gói trong `.dd` (`#otlogDD`):
+nút xổ xuống hiện kỳ mới nhất đang chọn + `+N`, panel có **ô gõ để tìm kỳ**
+(`otlogPerFilter`), danh sách tích chọn nhiều kỳ, và hai nút *Chỉ kỳ hiện tại* /
+*Tải toàn bộ* ở chân panel. Tích chọn gọi `otlogRefresh()` — chỉ vẽ lại nhãn nút,
+danh sách và bảng nên **panel không bị đóng**. Bấm ra ngoài mới đóng; bộ nghe click
+bỏ qua phần tử đã rời DOM (`isConnected===false`), nếu không dropdown tự đóng ngay
+khi vừa tích.
+
+### Màu trong bảng Thống kê
+
+`stCnt(code,n)` tô ô đếm mã ca bằng đúng nền pastel của bảng lịch (`SCHEDBG`/`SCHEDTXT`),
+số **0 thì làm mờ** (`td.z`) để mắt chỉ nhìn số có ý nghĩa. Ba cột giờ mỗi cột một tông:
+`hl` xanh lá (giờ công) · `hl-ot` cam (tăng ca) · `hl-lv` xanh dương (phép), tiêu đề cột
+cùng tông. Cột Nhóm là chip màu `teamChip()` (băm tên nhóm → màu cố định). Dưới bảng có
+dải **Chú giải màu**.
+
+### In đơn ngay trên tab Lịch
+
+Nút **🖨️ In đơn** (`#calPrintBtn`, badge `#printBdgCal`) nằm cuối thanh `.cal-bar` — mọi quyền
+đều bấm được để chủ động in, không phải vòng qua menu ☰ Thêm hay tab Duyệt. Vẫn mang class
+`pc-only` nên điện thoại không thấy. `refreshPrintBadge()` cập nhật cả ba badge
+(`printBdgSheet` / `printBdgAppr` / `printBdgCal`).
 
 Toàn bộ việc quản lý người dùng — mã NV, họ tên, nhóm, kiểu ca, **quyền**, **mật khẩu**,
 thêm/xoá người — nay gom về **một bảng duy nhất**: *👤 Tài khoản đăng nhập và phân quyền*
@@ -309,8 +347,29 @@ và `fillScheduleForOne()` chỉ điền cho riêng người đó, không đụn
 - Thứ trong tuần, định dạng ngày giờ và nhãn kỳ công (`Kỳ T7/2026` ↔ `Period M7/2026`)
   đổi theo `isEN()`.
 
+- **Nhãn có tiền tố biểu tượng tự dịch** (2026-07-30): `i18nLookup()` cắt phần đầu không phải
+  chữ/số ra, dịch phần chữ rồi ghép lại — `🗂 Nhật ký tăng ca`, `✓ 📊 Giờ công theo người`
+  chỉ cần khoá `Nhật ký tăng ca` / `Giờ công theo người`. Trước đây phải khai riêng từng
+  khoá kèm emoji nên rất hay sót chữ Việt trong bản EN.
+
 **Thêm chuỗi mới**: mở `js/14-i18n.js`, thêm một dòng `'chuỗi tiếng Việt':'English string',`
 vào đúng nhóm. Khoá phải khớp đúng đoạn văn bản hiển thị (một nút văn bản, không kèm thẻ HTML).
+
+**Rà chữ Việt còn sót**: chạy đoạn Node dưới đây — nó nạp từ điển rồi soi mọi đoạn văn bản
+trong `js/*.js` và `index.html` mà `i18nLookup()` trả `null` (bỏ qua `09-print.js` vì biểu
+mẫu in cố ý song ngữ):
+
+```bash
+node -e "const fs=require('fs'),vm=require('vm');
+const ctx=vm.createContext({LS:'x',console,localStorage:{getItem:()=>null},document:{documentElement:{setAttribute(){}}}});
+vm.runInContext('var \$=function(){return null};',ctx);
+vm.runInContext(fs.readFileSync('js/14-i18n.js','utf8'),ctx);vm.runInContext('LANG=\"en\"',ctx);
+const VI=/[ăâđêôơưáàảãạéèẻẽẹíìóòọúùýỳ]/;
+for(const f of fs.readdirSync('js').filter(f=>/^[01]/.test(f)&&f.endsWith('.js')&&!/14-i18n|16-otlog|09-print/.test(f))){
+  const s=fs.readFileSync('js/'+f,'utf8').replace(/\/\*[\s\S]*?\*\//g,' ');
+  for(const m of s.matchAll(/>([^<>{}\`\$]{2,80})</g)){const v=m[1].replace(/\s+/g,' ').trim();
+    if(v&&VI.test(v)&&ctx.i18nLookup(ctx.i18nKey(v))==null)console.log(f,'|',v);}}"
+```
 
 ---
 

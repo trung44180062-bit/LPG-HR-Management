@@ -72,11 +72,14 @@
   <button class="icobtn lang-btn" id="langBtn" data-noi18n title="Switch to English" onclick="toggleLang()">EN</button>
   <button class="icobtn admin-only" title="Nhóm &amp; Lịch" onclick="go('setup')">🛠️</button>
   <button class="icobtn admin-only" title="Dữ liệu" onclick="go('data')">⚙️</button>
+  <!-- Thư ký / quản lý người Hàn không có Trang chính nên đưa 2 nút này lên header -->
+  <button class="icobtn noself-only" title="Tài khoản" onclick="openMyPanel('acc')" style="display:none">🔑</button>
+  <button class="icobtn noself-only" title="Đăng xuất" onclick="doLogout()" style="display:none">↪</button>
 </header>
 
 <!-- Desktop (≥768px): thanh tab ngang rút gọn -->
 <nav class="topbar" id="tabs">
-  <button class="tab on" data-v="me" onclick="go('me')"><span class="ic">🏠</span>Trang chính</button>
+  <button class="tab on self-only" data-v="me" onclick="go('me')"><span class="ic">🏠</span>Trang chính</button>
   <button class="tab" data-v="cal" onclick="go('cal')"><span class="ic">📅</span>Lịch</button>
   <button class="tab mgr-only" data-v="appr" onclick="go('appr')" style="position:relative"><span class="ic">✅</span>Duyệt<span class="bdg" id="pendBdg" style="display:none">0</span></button>
   <button class="tab" data-v="rep" onclick="go('rep')"><span class="ic">📊</span>Báo cáo</button>
@@ -84,7 +87,7 @@
 
 <!-- Mobile (<768px): bottom bar 5 mục cố định đáy -->
 <nav class="bottombar" id="bottombar">
-  <button class="bb on" data-v="me" onclick="go('me')"><span class="ic">🏠</span>Trang chính</button>
+  <button class="bb on self-only" data-v="me" onclick="go('me')"><span class="ic">🏠</span>Trang chính</button>
   <button class="bb" data-v="cal" onclick="go('cal')"><span class="ic">📅</span>Lịch</button>
   <button class="bb" data-v="rep" onclick="go('rep')"><span class="ic">📊</span>Báo cáo</button>
   <button class="bb mgr-only" data-v="appr" onclick="go('appr')"><span class="ic">✅</span>Duyệt<span class="bdg" id="pendBdgM" style="display:none">0</span></button>
@@ -94,10 +97,10 @@
 <div class="sheetmask" id="moreMask" onclick="if(event.target===this)closeMoreSheet()">
   <div class="sheet">
     <div class="bar"></div>
-    <button class="si" onclick="closeMoreSheet();go('me');openDaySheet(todayIso())"><span class="ic">📝</span>Gửi đơn</button>
+    <button class="si self-only" onclick="closeMoreSheet();go('me');openDaySheet(todayIso())"><span class="ic">📝</span>Gửi đơn</button>
     <button class="si" onclick="closeMoreSheet();go('rep')"><span class="ic">📊</span>Báo cáo</button>
-    <button class="si" onclick="closeMoreSheet();openMyPanel('ot')"><span class="ic">⚡</span>Tăng ca của tôi</button>
-    <button class="si" onclick="closeMoreSheet();openMyPanel('req')"><span class="ic">📋</span>Đơn của tôi</button>
+    <button class="si self-only" onclick="closeMoreSheet();openMyPanel('ot')"><span class="ic">⚡</span>Tăng ca của tôi</button>
+    <button class="si self-only" onclick="closeMoreSheet();openMyPanel('req')"><span class="ic">📋</span>Đơn của tôi</button>
     <button class="si" onclick="closeMoreSheet();openMyPanel('acc')"><span class="ic">🔑</span>Tài khoản</button>
     <button class="si admin-only" onclick="closeMoreSheet();go('setup')"><span class="ic">🛠️</span>Nhóm &amp; Lịch</button>
     <button class="si admin-only" onclick="closeMoreSheet();go('data')"><span class="ic">⚙️</span>Dữ liệu</button>
@@ -164,6 +167,7 @@
     <button class="btn sec sm cal-mobile-only" id="calCollapseAllBtn" onclick="calCollapseAll()">Thu/Mở</button>
     <button class="btn sec sm cal-mobile-only" onclick="toggleCalMobileView()" id="calViewToggle">👁 Theo ngày</button>
     <button class="btn sec sm" onclick="openLegendSheet()" title="Chú giải mã ca">❔ Chú giải</button>
+    <button class="btn sm pc-only" id="calPrintBtn" style="position:relative" onclick="openPrintBulk()" title="In đơn đã duyệt">🖨️ In đơn<span class="bdg" id="printBdgCal" style="display:none;position:static;margin-left:6px">0</span></button>
   </div>
 
   <div class="sched-wrap cal-desktop"><div class="mtx-scroll" id="mtxBox"></div></div>

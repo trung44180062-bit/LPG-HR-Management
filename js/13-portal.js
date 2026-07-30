@@ -26,6 +26,7 @@ let dsGuarId='';             // người bảo lãnh (đơn bổ sung công)
 let dsNoteVal='';            // ghi chú (giữ trong state để không mất khi vẽ lại)
 let dsReasonCode='forgot_card', dsReasonOther='';   // đơn bổ sung công
 let dsLateType='come_late';                         // đơn đi trễ / về sớm
+let dsNoPrint=false;                                // true = đơn không cần in (chỉ lưu, không vào hàng chờ in)
 let dsMultiFrom='', dsMultiTo='', dsMultiIn='08:00', dsMultiOut='17:00';
 
 /* =================== TIỆN ÍCH =================== */
@@ -48,6 +49,13 @@ function applyRoleUI(){
   applyPerm();
   document.querySelectorAll('.mgr-only').forEach(el=>{el.style.display=mgr?'':'none';});
   document.querySelectorAll('.admin-only').forEach(el=>{el.style.display=adm?'':'none';});
+  /* .self-only = mục chỉ có nghĩa với người đang được chấm công
+     (Trang chính, Gửi đơn, Tăng ca của tôi, Đơn của tôi) */
+  document.querySelectorAll('.self-only').forEach(el=>{el.style.display=noSelf?'none':'';});
+  document.querySelectorAll('.noself-only').forEach(el=>{el.style.display=noSelf?'':'none';});
+  /* Đang đứng ở Trang chính mà người dùng không thuộc diện chấm công → đẩy
+     sang Lịch thực tế (VD quản trị đổi quyền của chính mình lúc đang mở) */
+  if(noSelf&&curView==='me'&&typeof go==='function')go('real');
 }
 
 /* Tên rút gọn 2 chữ cuối: "Nguyễn Hoàng Trung" → "Hoàng Trung" */
@@ -76,6 +84,136 @@ function decidedList(id){
   return myReqs(id).filter(r=>r.decidedAt)
     .sort((a,b)=>(b.decidedAt||0)-(a.decidedAt||0));
 }
+
+/* ============================================================
+   THÔNG BÁO & XÁC NHẬN (S.notifs)
+   - schedChange: quản lý/thư ký đổi lịch thực tế của nhân viên → nhân viên
+     xác nhận (nhảy qua form đơn điền sẵn) hoặc huỷ (trả lịch + báo người sửa).
+   - swapConfirm: A làm đơn đổi ca với B → B xác nhận; chưa xác nhận thì đơn
+     duyệt hiện cảnh báo cho quản trị.
+   - info: thông báo một chiều (VD nhân viên đã huỷ thay đổi của bạn).
+   ============================================================ */
+function newNotif(o){
+  const id=uid();
+  S.notifs[id]=Object.assign({id,status:'pending',createdAt:Date.now()},o);
+  return id;
+}
+/* Việc chờ nhân viên xác nhận */
+function pendingConfirms(id){
+  return Object.values(S.notifs||{})
+    .filter(n=>n.to===id&&n.status==='pending'&&(n.kind==='schedChange'||n.kind==='swapConfirm'))
+    .sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+}
+/* Toàn bộ thông báo gửi tới id (cho tab Thông báo) */
+function myNotifs(id){
+  return Object.values(S.notifs||{})
+    .filter(n=>n.to===id)
+    .sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+}
+function notifUnseenCount(id){
+  return pendingConfirms(id).length
+    + unseenDecisions(id).length
+    + myNotifs(id).filter(n=>n.kind==='info'&&!n.seen).length;
+}
+
+/* ---- Suy ra loại đơn + số dòng từ một thay đổi lịch ----
+   Quy tắc (theo yêu cầu): SD/SN/SO → đổi mã ca; OT* → tăng ca;
+   đang có ca làm mà bị thêm OT ở BUỔI KHÁC (≈ làm 24h) → bổ sung công 2 dòng. */
+function inferReqFromChange(empId,iso,oldCode,newCode){
+  const oldCat=codeInfo(oldCode).cat, newCat=codeInfo(newCode).cat;
+  const oldBase=baseShiftOf(oldCode), newBase=baseShiftOf(newCode);
+  // Mã đổi ca SD/SN/SO → đơn Đổi mã ca sang ca tương ứng
+  if(newCat==='swap'){
+    const to={SD:'D',SN:'N',SO:'O'}[newCode]||newCode;
+    return{type:'change',rows:[{iso,code:to}],
+      note:t2('Xác nhận đổi ca')+' '+(oldCode||'—')+' → '+to};
+  }
+  // Mã tăng ca
+  if(newCat==='ot'){
+    // Đang làm ca (D/N/O) mà OT ở buổi KHÁC → làm liên tục ≈24h → BỔ SUNG CÔNG 2 dòng
+    if(oldCat==='work'&&oldBase&&newBase&&newBase!==oldBase){
+      const t1=SHIFT_HOURS[oldBase]||['08:00','20:00'];
+      const t2h=SHIFT_HOURS[newBase]||['20:00','08:00'];
+      return{type:'wt',rows:[
+        {iso,timeIn:t1[0],timeOut:t1[1]},
+        {iso,timeIn:t2h[0],timeOut:t2h[1]}
+      ],note:t2('Làm liên tục')+' '+oldBase+'+'+newBase+' ('+t2('khoảng 24h')+') — '+t2('bổ sung công')};
+    }
+    // Tăng ca thường: 1 dòng theo mẫu của mã
+    const preset=['OTL','OT2','OT3','OTD','OTN'].includes(newCode)?newCode:'';
+    const p=otPreset(preset);
+    return{type:'ot',rows:[{iso,preset,code:newCode,
+      timeIn:p.from||'',timeOut:p.to||'',isoEnd:p.overnight?addDaysIso(iso,1):''}],
+      note:t2('Xác nhận tăng ca')+' '+newCode};
+  }
+  // Đổi sang ca làm khác → Đổi mã ca
+  return{type:'change',rows:[{iso,code:newCode}],
+    note:t2('Xác nhận đổi ca')+' '+(oldCode||'—')+' → '+(newCode||'—')};
+}
+/* Mở form đơn đã điền sẵn theo suy luận */
+function openPrefilledReq(iso,inf){
+  if(!meId()){toast(t('Phiên đăng nhập đã hết'));renderGate();return;}
+  pvSheetDate=iso;
+  renderDaySheet();
+  $('daySheetMask').classList.add('on');
+  dsForm(inf.type);                 // đặt pvSheetForm + state mặc định
+  dsOwnerId=meId();
+  if(inf.note)dsNoteVal=inf.note;
+  dsRows=inf.rows.map(r=>Object.assign(dsNewRow(inf.type,r.iso||iso),r));
+  dsRenderForm();
+}
+
+/* Nhân viên XÁC NHẬN thay đổi lịch → mở đơn điền sẵn để gửi */
+function confirmSchedChange(nid){
+  const n=S.notifs[nid];if(!n||n.to!==meId())return;
+  n.status='confirmed';n.decidedAt=Date.now();save();
+  closeMyPanel();go('me');
+  const inf=inferReqFromChange(n.to,n.iso,n.oldCode,n.newCode);
+  openPrefilledReq(n.iso,inf);
+  toast(t('Đã điền sẵn đơn — kiểm tra rồi bấm Gửi'));
+}
+/* Nhân viên HUỶ thay đổi → trả ô lịch về cũ + báo người đã sửa */
+function declineSchedChange(nid){
+  const n=S.notifs[nid];if(!n||n.to!==meId())return;
+  if(!confirm(t('Huỷ thay đổi lịch này? Ô lịch sẽ trả về trạng thái trước đó và người sửa sẽ được báo.')))return;
+  // gỡ ô over nếu vẫn đang là mã mới do người kia gán
+  const ov=S.over[n.to]&&S.over[n.to][n.iso];
+  if(ov&&ov.code===n.newCode)delete S.over[n.to][n.iso];
+  n.status='cancelled';n.decidedAt=Date.now();
+  newNotif({kind:'info',to:n.from,from:n.to,
+    text:t2('đã HUỶ thay đổi lịch bạn tạo')+': '+fmtVN(n.iso)+' '+(n.oldCode||'—')+' → '+(n.newCode||'—')});
+  save();renderMyPanel();renderMe(true);
+  if(typeof renderCal==='function'&&curView==='cal')renderCal();
+  toast(t('Đã huỷ thay đổi và báo lại người sửa'));
+}
+/* B XÁC NHẬN / TỪ CHỐI đơn đổi ca của A */
+function confirmSwap(nid){
+  const n=S.notifs[nid];if(!n||n.to!==meId())return;
+  const r=S.requests[n.reqId];
+  n.status='confirmed';n.decidedAt=Date.now();
+  if(r){r.confirmW='confirmed';
+    newNotif({kind:'info',to:r.byId||r.empId,from:meId(),
+      text:t2('đã XÁC NHẬN đổi ca với bạn')+': '+fmtVN(r.from)});}
+  save();renderMyPanel();renderMe(true);
+  if(typeof renderApprList==='function'&&mgr)renderApprList();
+  toast(t('Đã xác nhận đổi ca'));
+}
+function declineSwap(nid){
+  const n=S.notifs[nid];if(!n||n.to!==meId())return;
+  if(!confirm(t('Từ chối đổi ca này? Đơn vẫn còn nhưng quản trị sẽ thấy bạn đã từ chối.')))return;
+  const r=S.requests[n.reqId];
+  n.status='cancelled';n.decidedAt=Date.now();
+  if(r){r.confirmW='declined';
+    newNotif({kind:'info',to:r.byId||r.empId,from:meId(),
+      text:t2('đã TỪ CHỐI đổi ca với bạn')+': '+fmtVN(r.from)});}
+  save();renderMyPanel();renderMe(true);
+  if(typeof renderApprList==='function'&&mgr)renderApprList();
+  toast(t('Đã từ chối đổi ca'));
+}
+function markNotifSeen(id){
+  Object.values(S.notifs||{}).forEach(n=>{if(n.to===id&&n.kind==='info'&&!n.seen)n.seen=Date.now();});
+  save();
+}
 /* Trùng đơn: đã có đơn pending/approved nào phủ lên các ngày đang khai chưa */
 function conflictReqs(id,isoList,type){
   const want=new Set(isoList);
@@ -92,7 +230,7 @@ function conflictReqs(id,isoList,type){
    lịch chuẩn thì đánh dấu và hiện luôn "chuẩn → thực tế" để người sắp làm đơn
    biết ngay hôm đó ai nghỉ, ai đã đổi ca. */
 const CREW_SHOW=c=>{const k=codeInfo(c).cat;return k==='work'||k==='swap'||k==='ot'||k==='rest'||k==='leave';};
-const CREW_ORDER=['O','D','N','OTD','OTN','X','R','LEAVE'];
+const CREW_ORDER=['O','D','N','OTD','OTN','R','LEAVE'];
 /* Nhóm hiển thị của một mã ca */
 function crewGroupOf(c){
   const cat=codeInfo(c).cat;
@@ -262,6 +400,8 @@ function renderMe(force){
   login.style.display=id?'none':'';
   body.style.display=id?'':'none';
   if(!id)return;
+  // Thư ký / quản lý người Hàn không có trang chính cá nhân
+  if(noSelf){body.style.display='none';body.innerHTML='';return;}
   // đang gõ trong sheet thì không vẽ lại (tránh mất chữ khi Firebase đẩy dữ liệu về)
   if(!force&&document.activeElement&&/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))return;
 
@@ -277,6 +417,8 @@ function renderMe(force){
   const initials=(e.name||id).trim().split(/\s+/).map(w=>w[0]).slice(-2).join('').toUpperCase();
   const streak=workStreak(id);
   const news=unseenDecisions(id);
+  const confirms=pendingConfirms(id);
+  const bellN=notifUnseenCount(id);
   const pendingMine=myReqs(id).filter(r=>r.status==='pending').length;
   // Nghỉ phép trong kỳ (số ngày, tính cả ngày phép đã duyệt sắp tới)
   const nLeave=Object.entries(stFull.cnt)
@@ -290,10 +432,28 @@ function renderMe(force){
       <div class="nm">${esc(shortName(e.name)||id)}</div>
       <div class="ps">${e.team?'Nhóm '+esc(e.team)+' · ':''}${esc(e.id)}</div>
     </div>
-    <button class="pv-icon pv-bell" onclick="openMyPanel('ntf')" title="Thông báo">🔔${news.length?`<span class="bell-bdg">${news.length>9?'9+':news.length}</span>`:''}</button>
+    <button class="pv-icon pv-bell" onclick="openMyPanel('ntf')" title="Thông báo">🔔${bellN?`<span class="bell-bdg">${bellN>9?'9+':bellN}</span>`:''}</button>
     <button class="pv-icon" onclick="openMyPanel('acc')" title="Tài khoản">🔑</button>
     <button class="pv-icon" onclick="doLogout()" title="Đăng xuất">↪</button>
   </div>
+
+  ${confirms.length?`<div class="pv-confirm">
+    <div class="pv-confirm-h">⚠️ ${confirms.length} việc cần bạn xác nhận</div>
+    ${confirms.map(n=>n.kind==='schedChange'
+      ?`<div class="pv-cf-item">
+         <div class="tx"><b>Lịch ${fmtVN(n.iso)} ${dowOf(n.iso)}</b> vừa được ${esc(shortName((empById(n.from)||{}).name||n.from))} đổi
+           ${chip(n.oldCode||'—')} <span class="ar">→</span> ${chip(n.newCode||'—')}.
+           <i>Xác nhận để gửi đơn tương ứng, hoặc huỷ để trả lịch về cũ.</i></div>
+         <div class="acts"><button class="btn ok sm" onclick="confirmSchedChange('${n.id}')">✓ Xác nhận & làm đơn</button>
+           <button class="btn warn sm" onclick="declineSchedChange('${n.id}')">✕ Huỷ thay đổi</button></div>
+       </div>`
+      :`<div class="pv-cf-item">
+         <div class="tx"><b>Đổi ca ${fmtVN(n.iso||(S.requests[n.reqId]||{}).from)}</b> — ${esc(shortName((empById(n.from)||{}).name||n.from))} muốn đổi ca với bạn.
+           <i>Xác nhận nếu bạn đồng ý đổi ca.</i></div>
+         <div class="acts"><button class="btn ok sm" onclick="confirmSwap('${n.id}')">✓ Đồng ý đổi ca</button>
+           <button class="btn warn sm" onclick="declineSwap('${n.id}')">✕ Từ chối</button></div>
+       </div>`).join('')}
+  </div>`:''}
 
   <div class="card pv-cal-card">
     <div class="pv-cal-head">
@@ -420,7 +580,7 @@ function dsForm(t){
   if(pvSheetForm===t){pvSheetForm=null;renderDaySheet();return;}
   pvSheetForm=t;
   const me=meId();
-  dsOwnerId=me;dsWithId='';dsGuarId='';dsNoteVal='';
+  dsOwnerId=me;dsWithId='';dsGuarId='';dsNoteVal='';dsNoPrint=false;
   dsReasonCode='forgot_card';dsReasonOther='';dsLateType='come_late';
   dsMultiFrom=pvSheetDate;dsMultiTo=pvSheetDate;dsMultiIn='08:00';dsMultiOut='17:00';
   dsRows=isRangeForm(t)?[]:[dsNewRow(t,pvSheetDate)];
@@ -781,7 +941,21 @@ function dsFormHtml(t){
 function dsNoteHtml(){
   return `<div class="fg"><label class="fl">Lý do / ghi chú</label>
     <textarea class="inp" rows="2" placeholder="VD: việc gia đình, khám bệnh..."
-      oninput="dsNoteVal=this.value">${esc(dsNoteVal)}</textarea></div>`;
+      oninput="dsNoteVal=this.value">${esc(dsNoteVal)}</textarea></div>
+    ${dsPrintToggleHtml()}`;
+}
+/* Chọn đưa đơn vào hàng chờ in hay không cần in.
+   Không in = đơn vẫn được lưu & duyệt bình thường, chỉ không hiện trong danh sách in. */
+function dsPrintToggleHtml(){
+  return `<div class="fg"><label class="fl">In đơn</label>
+    <div class="seg print-seg">
+      <button type="button" class="${dsNoPrint?'':'on'}" onclick="dsNoPrint=false;dsRenderForm()">🖨️ Cần in — đưa vào hàng chờ in</button>
+      <button type="button" class="${dsNoPrint?'on':''}" onclick="dsNoPrint=true;dsRenderForm()">🚫 Không cần in</button>
+    </div>
+    <p class="muted" style="margin-top:4px">${dsNoPrint
+      ?'Đơn này sẽ <b>không</b> xuất hiện trong danh sách chờ in. Có thể đổi lại sau ở màn Duyệt.'
+      :'Đơn sau khi duyệt sẽ nằm trong danh sách <b>chờ in</b> để nhân sự in ra ký.'}</p>
+  </div>`;
 }
 function dsWtReasonUI(){const o=$('dsWtOther');if(o)o.style.display=dsReasonCode==='other'?'':'none';}
 
@@ -843,7 +1017,8 @@ function dsSubmit(t){
   if(!empById(empId)){toast('Người đứng đơn không hợp lệ');return;}
 
   const r={id:uid(),empId,type:t,byId:me,
-    note:(dsNoteVal||'').trim(),status:'pending',source:'app',createdAt:Date.now()};
+    note:(dsNoteVal||'').trim(),status:'pending',source:'app',createdAt:Date.now(),
+    noPrint:!!dsNoPrint};
 
   if(isRangeForm(t)){
     if(!dsMultiFrom){toast('Chọn ngày bắt đầu');return;}
@@ -910,6 +1085,13 @@ function dsSubmit(t){
     if(t==='swap')r.beforeW[d.iso]=eff(r.withId,d.iso).code||'';
   });
 
+  // Đơn đổi ca: gửi thông báo cho người B để xác nhận. Chưa xác nhận thì đơn
+  // vẫn vào hàng duyệt nhưng gắn cờ confirmW='pending' để quản trị nắm.
+  if(t==='swap'&&r.withId&&r.withId!==me){
+    r.confirmW='pending';
+    newNotif({kind:'swapConfirm',to:r.withId,from:me,reqId:r.id,iso:r.from});
+  }
+
   S.requests[r.id]=r;
   save();
   pvSheetForm=null;
@@ -946,7 +1128,7 @@ function cancelMyReq(rid){
 let myPanelTab='ot';
 function openMyPanel(tab){
   if(!meId()){toast('Đăng nhập để xem');renderGate();return;}
-  myPanelTab=tab||'ot';
+  myPanelTab=noSelf?'acc':(tab||'ot');   // thư ký / sếp Hàn chỉ có mục Tài khoản
   renderMyPanel();
   $('myPanelMask').classList.add('on');
   if(myPanelTab==='req'||myPanelTab==='ntf'){markSeen(meId());renderMe(true);}
@@ -956,7 +1138,8 @@ function myPanelGo(t){myPanelTab=t;renderMyPanel();if(t==='req'||t==='ntf'){mark
 
 function renderMyPanel(){
   const id=meId();const box=$('myPanelBody');if(!id||!box)return;
-  const tabs=[['ot','⚡ Tăng ca'],['req','📋 Đơn của tôi'],['al','🏖 Phép năm'],['acc','🔑 Tài khoản']];
+  const tabs=noSelf?[['acc','🔑 Tài khoản']]
+                   :[['ot','⚡ Tăng ca'],['req','📋 Đơn của tôi'],['al','🏖 Phép năm'],['acc','🔑 Tài khoản']];
   let h=`<div class="mp-tabs">${tabs.map(([k,l])=>
     `<button class="${myPanelTab===k?'on':''}" onclick="myPanelGo('${k}')">${l}</button>`).join('')}
     <button class="ds-x" onclick="closeMyPanel()">✕</button></div>`;
@@ -969,10 +1152,33 @@ function renderMyPanel(){
   box.innerHTML=h;
 }
 
-/* ---- 🔔 Thông báo: đơn đã có quyết định, mới nhất lên đầu ---- */
+/* ---- 🔔 Thông báo: việc cần xác nhận + thông báo + đơn đã quyết định ---- */
 function myPanelNtf(id){
   const seenAt=lastSeen(id);
   const list=decidedList(id);
+  const confirms=pendingConfirms(id);
+  const infos=myNotifs(id).filter(n=>n.kind==='info');
+  const cfBlock=confirms.length?`<div class="ds-block"><h4>⚠️ Cần bạn xác nhận (${confirms.length})</h4>
+    ${confirms.map(n=>n.kind==='schedChange'
+      ?`<div class="ntf-item schedChange fresh">
+         <span class="ic">🗓️</span>
+         <span class="tx"><b>Đổi lịch ${fmtVN(n.iso)}</b> bởi ${esc(shortName((empById(n.from)||{}).name||n.from))}
+           <i>${chip(n.oldCode||'—')} → ${chip(n.newCode||'—')}</i>
+           <span class="ntf-acts"><button class="btn ok sm" onclick="confirmSchedChange('${n.id}')">✓ Xác nhận & làm đơn</button>
+             <button class="btn warn sm" onclick="declineSchedChange('${n.id}')">✕ Huỷ</button></span></span>
+       </div>`
+      :`<div class="ntf-item swapConfirm fresh">
+         <span class="ic">🔄</span>
+         <span class="tx"><b>Đổi ca với ${esc(shortName((empById(n.from)||{}).name||n.from))}</b>
+           <i>Ngày ${fmtVN(n.iso||(S.requests[n.reqId]||{}).from)}</i>
+           <span class="ntf-acts"><button class="btn ok sm" onclick="confirmSwap('${n.id}')">✓ Đồng ý</button>
+             <button class="btn warn sm" onclick="declineSwap('${n.id}')">✕ Từ chối</button></span></span>
+       </div>`).join('')}</div>`:'';
+  const infoBlock=infos.length?`<div class="ds-block"><h4>📣 Thông báo (${infos.length})</h4>
+    ${infos.slice(0,15).map(n=>`<div class="ntf-item info${n.seen?'':' fresh'}">
+       <span class="ic">📣</span>
+       <span class="tx">${esc(shortName((empById(n.from)||{}).name||n.from))} ${esc(n.text||'')}
+         <i class="tm">${fmtDateTime(n.createdAt)}</i></span></div>`).join('')}</div>`:'';
   const item=r=>{
     const fresh=(r.decidedAt||0)>seenAt;
     const stTxt={approved:'✅ Đã duyệt',rejected:'❌ Bị từ chối'}[r.status]||r.status;
@@ -986,11 +1192,15 @@ function myPanelNtf(id){
       ${fresh?'<span class="st pending">MỚI</span>':''}
     </div>`;
   };
+  // mở tab này coi như đã xem các thông báo một chiều
+  setTimeout(()=>markNotifSeen(id),0);
   return `
-  <h3 style="margin:4px 0 10px">🔔 Thông báo (${list.length})</h3>
+  <h3 style="margin:4px 0 10px">🔔 Thông báo</h3>
+  ${cfBlock}${infoBlock}
+  <div class="ds-block"><h4>📋 Kết quả đơn (${list.length})</h4>
   ${list.length?`<div class="ntf-list">${list.map(item).join('')}</div>`
-    :'<p class="muted">Chưa có đơn nào được duyệt hay từ chối.</p>'}
-  <p class="muted sm2" style="margin-top:8px">Đơn xếp theo thời điểm quyết định — mới nhất trên cùng. Chạm vào một dòng để mở ngày liên quan.</p>`;
+    :'<p class="muted">Chưa có đơn nào được duyệt hay từ chối.</p>'}</div>
+  <p class="muted sm2" style="margin-top:8px">Việc cần xác nhận nằm trên cùng. Đơn kết quả xếp theo thời điểm quyết định — mới nhất trước.</p>`;
 }
 
 /* ---- Tăng ca: đã duyệt / chờ duyệt / tổng giờ theo kỳ ---- */
