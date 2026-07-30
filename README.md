@@ -257,10 +257,17 @@ người đặt lại mật khẩu / thêm / xoá người.
 | Tự điền giờ | người khai nhập | `OTD` |
 
 - Chọn mẫu → `dsSetPreset()` tự điền giờ; mẫu ca đêm tự đặt *Đến ngày* = hôm sau.
+- **Một ngày có thể tăng ca nhiều lần** — VD ngày 13 có 12:00–13:00 và 18:00–20:00 là hai dòng.
+  Nên nút *Thêm lần tăng ca* **giữ nguyên ngày** (khác nghỉ phép: nhảy sang ngày kế tiếp),
+  `dsSubmit()` **không gộp** các dòng trùng ngày, và form không cảnh báo "trùng ngày".
+  Khi duyệt, `decide()` **cộng giờ các lần trong cùng ngày** rồi ghi vào ô lịch một lần
+  (mã ca lấy theo lần dài nhất cho dễ nhìn).
 - **Tăng ca vắt qua nửa đêm**: điền *Đến ngày*; để trống nghĩa là trong cùng ngày. Nếu giờ ra ≤ giờ vào
   mà bỏ trống ngày kết thúc thì `otHours()` tự hiểu là qua nửa đêm.
 - Số giờ tính từ hai mốc thật (`otHours`) và lưu ở `d.hours`, không lấy số giờ cứng của mã ca —
-  nên OT 14:00→19:30 ra đúng **5,5h**. Thống kê, bảng *Tăng ca của tôi* và biểu mẫu in đều dùng số này.
+  nên OT 14:00→19:30 ra đúng **5,5h**. Khi duyệt, số giờ thật được ghi kèm vào ô lịch
+  (`S.over[id][iso].hours`) và **`effHours()`** ưu tiên số này; `calcStats`, `otSummary`,
+  bảng *Tăng ca của tôi* và biểu mẫu in đều dùng nó, nên thống kê khớp đúng với giờ đã khai.
 - Mã **X (tăng ca nhập tàu)** đã **bỏ khỏi danh sách chọn**, nhưng vẫn giữ trong bảng mã ca
   (`legacy:true`) để những ô lịch cũ đang dùng X vẫn hiện đúng tên và đúng số giờ.
 

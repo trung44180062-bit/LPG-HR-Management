@@ -239,7 +239,7 @@ function otSummary(id,ym){
   let approved=0,pending=0;
   days.forEach(iso=>{
     const c=eff(id,iso).code;
-    if(c&&codeInfo(c).cat==='ot')approved+=getHours(c);
+    if(c&&codeInfo(c).cat==='ot')approved+=effHours(id,iso);
   });
   Object.values(S.requests||{}).forEach(r=>{
     if(r.empId!==id||r.type!=='ot'||r.status!=='pending')return;
@@ -463,9 +463,12 @@ function dsSetPreset(i,v){
 function dsRowOtHours(r){return otHours(r.iso,r.timeIn,r.isoEnd,r.timeOut);}
 function dsAddRow(){
   const t=pvSheetForm;if(!t)return;
-  if(dsRows.length>=DS_MAX_ROWS){toast('Một đơn tối đa '+DS_MAX_ROWS+' ngày — gửi thêm đơn mới');return;}
+  if(dsRows.length>=DS_MAX_ROWS){toast(t2('Một đơn tối đa')+' '+DS_MAX_ROWS+' '+t2('dòng — gửi thêm đơn mới'));return;}
   const last=dsRows[dsRows.length-1];
-  const iso=last?addDaysIso(last.iso,1):pvSheetDate;
+  /* Tăng ca: một ngày có thể có nhiều lần OT (VD 12:00–13:00 và 18:00–20:00)
+     nên dòng mới GIỮ NGUYÊN ngày. Các loại đơn khác mỗi ngày một dòng nên
+     nhảy sang ngày kế tiếp cho tiện khai liên tiếp. */
+  const iso=last?(t==='ot'?last.iso:addDaysIso(last.iso,1)):pvSheetDate;
   dsRows.push(dsNewRow(t,iso));
   dsRenderForm();
 }
@@ -785,8 +788,10 @@ function dsFormUI(){
   }
 
   const isos=dsRows.map(r=>r.iso).filter(Boolean);
-  const dup=isos.filter((x,i)=>isos.indexOf(x)!==i);
-  if(dup.length)h+=`<div class="pv-alert warn sm">⚠️ Có ngày bị khai trùng: ${[...new Set(dup)].map(fmtVN).join(', ')}.</div>`;
+  if(t!=='ot'){   // tăng ca cùng ngày nhiều lần là bình thường, không cảnh báo
+    const dup=isos.filter((x,i)=>isos.indexOf(x)!==i);
+    if(dup.length)h+=`<div class="pv-alert warn sm">⚠️ Có ngày bị khai trùng: ${[...new Set(dup)].map(fmtVN).join(', ')}.</div>`;
+  }
 
   if(t==='swap'&&!dsWithId)h+=`<div class="pv-alert warn sm">⚠️ Chưa chọn người đổi ca.</div>`;
   if(t==='swap'&&dsWithId===own)h+=`<div class="pv-alert warn sm">⚠️ Không thể đổi ca với chính mình.</div>`;
@@ -837,11 +842,12 @@ function dsSubmit(t){
     r.from=dsMultiFrom;r.to=to;r.code='';r.withId='';
     r.timeIn=dsMultiIn||'08:00';r.timeOut=dsMultiOut||'17:00';
   }else{
-    // gom dòng, bỏ trống & trùng, sắp theo ngày
+    /* Gom dòng, sắp theo ngày. Đơn tăng ca giữ NGUYÊN mọi dòng vì một ngày có
+       thể tăng ca nhiều lần; các loại khác thì mỗi ngày chỉ một dòng. */
     const seen=new Set(),days=[];
     dsRows.slice().sort((a,b)=>a.iso<b.iso?-1:1).forEach(row=>{
-      if(!row.iso||seen.has(row.iso))return;
-      seen.add(row.iso);
+      if(!row.iso)return;
+      if(t!=='ot'){ if(seen.has(row.iso))return; seen.add(row.iso); }
       const d={iso:row.iso};
       if(t==='leave'||t==='change')d.code=row.code||dsDefaultCode(t,row.iso);
       if(t==='ot'){
@@ -961,7 +967,7 @@ function myPanelOt(id){
   const done=[];
   days.forEach(iso=>{
     const c=eff(id,iso).code;
-    if(c&&codeInfo(c).cat==='ot')done.push({iso,code:c,h:getHours(c)});
+    if(c&&codeInfo(c).cat==='ot')done.push({iso,code:c,h:effHours(id,iso)});
   });
   const wait=Object.values(S.requests||{}).filter(r=>r.empId===id&&r.type==='ot'&&r.status==='pending');
   const rej =Object.values(S.requests||{}).filter(r=>r.empId===id&&r.type==='ot'&&r.status==='rejected').slice(0,5);
@@ -973,7 +979,7 @@ function myPanelOt(id){
   ms.forEach(m=>daysOfPeriod(m).forEach(iso=>{
     if(iso.slice(0,4)!==yr)return;
     const c=eff(id,iso).code;
-    if(c&&codeInfo(c).cat==='ot')hYear+=getHours(c);
+    if(c&&codeInfo(c).cat==='ot')hYear+=effHours(id,iso);
   }));
 
   return `

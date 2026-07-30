@@ -649,6 +649,7 @@ const I18N_EN={
 
 /* ---------- Bổ sung ---------- */
 'VD 7.5':'e.g. 7.5',
+'dòng — gửi thêm đơn mới':'rows — please submit another request',
 
 /* ---------- Tăng ca linh động ---------- */
 'Các lần tăng ca — mỗi lần một dòng':'Overtime entries — one row each',

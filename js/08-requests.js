@@ -448,6 +448,22 @@ function decide(id,ok,bulk){
     }
   }else if(r.type==='wt'||r.type==='late'||r.type==='multi'){
     // Đơn giấy tờ thuần — KHÔNG ghi đè lịch ca (không tạo override)
+  }else if(r.type==='ot'){
+    /* Một ngày có thể tăng ca nhiều lần → CỘNG giờ của các lần trong cùng ngày,
+       mã ca lấy theo lần dài nhất để ô lịch hiện cho dễ nhìn. */
+    const byDay={};
+    reqDays(r).forEach(d=>{
+      if(!d.code)return;
+      const h=d.hours||otHours(d.iso,d.timeIn,d.isoEnd,d.timeOut)||getHours(d.code);
+      const g=byDay[d.iso]||(byDay[d.iso]={hours:0,code:d.code,best:0});
+      g.hours+=h;
+      if(h>g.best){g.best=h;g.code=d.code;}
+    });
+    S.over[r.empId]=S.over[r.empId]||{};
+    for(const iso in byDay){
+      S.over[r.empId][iso]={code:byDay[iso].code,hours:Math.round(byDay[iso].hours*10)/10,
+                            reqId:id,by:'approve',at:Date.now()};
+    }
   }else{
     for(const d of reqDays(r)){
       if(!d.code)continue;

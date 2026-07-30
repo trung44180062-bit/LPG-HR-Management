@@ -113,6 +113,16 @@ function getHours(c){
 }
 function chip(c,big){const i=codeInfo(c);return `<span class="cc${big?' big':''}" style="background:${i.col}">${c}</span>`;}
 function eff(empId,iso){const o=S.over[empId]&&S.over[empId][iso];if(o&&o.code)return{code:o.code,ovr:true,o};const b=S.base[empId]&&S.base[empId][iso];return b?{code:b,ovr:false}:{code:'',ovr:false};}
+/* Số giờ thực của một ô lịch.
+   Đơn tăng ca khai giờ tự do (VD 14:00–19:30 = 5.5h) nên khi duyệt, số giờ thật
+   được ghi kèm vào ô lịch (o.hours). Có thì dùng, không có thì lấy giờ mặc định
+   của mã ca. Nhờ vậy thống kê khớp đúng với giờ nhân viên đã khai. */
+function effHours(empId,iso){
+  const r=eff(empId,iso);
+  if(!r.code)return 0;
+  if(r.o&&typeof r.o.hours==='number'&&r.o.hours>0)return r.o.hours;
+  return getHours(r.code);
+}
 function empById(id){return S.employees.find(e=>e.id===id);}
 const ROLE_ORD={eng:0,oper:1,other:2};
 /* Người CÓ nằm trong lịch ca. Thư ký / quản lý cấp trên đặt Kiểu ca =

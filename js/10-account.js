@@ -316,7 +316,7 @@ function calcStats(id,days){
   days.forEach(iso=>{
     const c=eff(id,iso).code;if(!c)return;
     cnt[c]=(cnt[c]||0)+1;
-    const cat=codeInfo(c).cat,h=getHours(c);
+    const cat=codeInfo(c).cat,h=effHours(id,iso);
     if(cat==='work'||cat==='swap')hWork+=h;
     else if(cat==='ot')hOT+=h;
     else if(cat==='leave')hLeave+=h;
