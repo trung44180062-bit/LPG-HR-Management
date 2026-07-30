@@ -8,9 +8,8 @@ function renderAll(){
   applyRoleUI();
   fillMonthSelects();renderCal();renderSetup();renderAppr();renderData();refreshBadge();
   renderGate();
-  if(curView==='mp')renderMp();
   if(curView==='me')renderMe();
-  if(curView==='stats')renderStats();
+  if(curView==='rep')renderReport();
 }
 
 load();

@@ -30,12 +30,44 @@ const DEFAULT_CODES=[
  {c:'SD', l:'Đổi sang ca D', col:'var(--cSW)', cat:'swap'},
  {c:'SN', l:'Đổi sang ca N', col:'var(--cSW)', cat:'swap'},
  {c:'SO', l:'Đổi sang ca O', col:'var(--cSW)', cat:'swap'},
- {c:'OTD',l:'Tăng ca ngày',  col:'var(--cOT)', cat:'ot'},
- {c:'OTN',l:'Tăng ca đêm',   col:'var(--cOT)', cat:'ot'},
- {c:'X',  l:'Tăng ca nhập tàu', col:'var(--cOT)', cat:'ot'}
+ {c:'OTD',l:'Tăng ca ngày 08–20h',   col:'var(--cOT)', cat:'ot'},
+ {c:'OTN',l:'Tăng ca đêm 20–08h',    col:'var(--cOT)', cat:'ot'},
+ {c:'OTL',l:'Tăng ca giờ nghỉ trưa', col:'var(--cOT)', cat:'ot'},
+ {c:'OT2',l:'Tăng ca 18–20h',        col:'var(--cOT)', cat:'ot'},
+ {c:'OT3',l:'Tăng ca 17–20h',        col:'var(--cOT)', cat:'ot'},
+ /* X (tăng ca nhập tàu) đã bỏ khỏi danh sách chọn khi khai đơn, nhưng giữ lại
+    ở đây để những ô lịch cũ đang dùng mã X vẫn hiện đúng tên và đúng số giờ. */
+ {c:'X',  l:'Tăng ca nhập tàu (không dùng nữa)', col:'var(--cOT)', cat:'ot', legacy:true}
 ];
 // Giờ công mặc định theo mã ca (chỉnh / thêm ở tab Dữ liệu)
-const DEFAULT_HOURS={O:8,D:12,N:12,R:0,AL8:8,AL4:4,NP:0,OFF:0,SD:12,SN:12,SO:8,OTD:12,OTN:12,X:12};
+const DEFAULT_HOURS={O:8,D:12,N:12,R:0,AL8:8,AL4:4,NP:0,OFF:0,SD:12,SN:12,SO:8,
+                     OTD:12,OTN:12,OTL:1,OT2:2,OT3:3,X:12};
+
+/* ============================================================
+   MẪU TĂNG CA
+   Chọn mẫu → tự điền giờ bắt đầu / kết thúc. Chọn "Tự điền giờ" thì
+   người khai tự nhập. Mẫu ca đêm vắt qua nửa đêm nên ngày kết thúc
+   mặc định là hôm sau.
+   ============================================================ */
+const OT_PRESETS=[
+  {v:'OTL', code:'OTL', label:'Nghỉ trưa 12:00–13:00', from:'12:00', to:'13:00'},
+  {v:'OT2', code:'OT2', label:'Sau giờ HC 18:00–20:00', from:'18:00', to:'20:00'},
+  {v:'OT3', code:'OT3', label:'Sau giờ HC 17:00–20:00', from:'17:00', to:'20:00'},
+  {v:'OTD', code:'OTD', label:'Ca ngày 08:00–20:00',    from:'08:00', to:'20:00'},
+  {v:'OTN', code:'OTN', label:'Ca đêm 20:00–08:00 (qua đêm)', from:'20:00', to:'08:00', overnight:true},
+  {v:'',    code:'OTD', label:'Tự điền giờ',            from:'',      to:''}
+];
+function otPreset(v){return OT_PRESETS.find(p=>p.v===v)||OT_PRESETS[OT_PRESETS.length-1];}
+/* Số giờ tăng ca thật, tính từ mốc bắt đầu tới mốc kết thúc.
+   Bỏ trống ngày kết thúc mà giờ ra ≤ giờ vào → hiểu là vắt qua nửa đêm. */
+function otHours(iso,tFrom,isoEnd,tTo){
+  if(!iso||!tFrom||!tTo)return 0;
+  const a=new Date(iso+'T'+tFrom+':00');
+  let b=new Date((isoEnd||iso)+'T'+tTo+':00');
+  if(b<=a)b=new Date(b.getTime()+86400000);
+  const h=(b-a)/3600000;
+  return (h>0&&h<=72)?Math.round(h*10)/10:0;
+}
 let S={
   employees:[],           // {id,name,pos,role,team,empType,shiftType,a1,a2,order,active}
   base:{},                // base[empId][iso] = code   (bảng chuẩn, do generator điền)
@@ -47,9 +79,10 @@ let S={
   meta:{schedFrom:'',schedTo:''},
   rev:0
 };
-/* mgr = được duyệt đơn & sửa lịch (quyền 'appr' hoặc 'admin')
-   adm = quản trị toàn quyền (quyền 'admin') — suy ra từ cột Quyền trong danh sách nhân viên */
-let mgr=false, adm=false, fb=null, fbRef=null, applyingRemote=false, curCell=null, curView='cal';
+/* mgr  = duyệt đơn & sửa lịch thực tế (appr / admin / kmgr)
+   adm  = quản trị toàn quyền (admin / kmgr)
+   secr = được XEM số liệu cả tổ + in đơn (sec / appr / admin / kmgr) */
+let mgr=false, adm=false, secr=false, fb=null, fbRef=null, applyingRemote=false, curCell=null, curView='cal';
 /* v4 mobile cal state */
 let calMode='std', calMobileView='week', calDate=null, calCollapsed={};
 const isMobile=()=>window.matchMedia('(max-width:767px)').matches;
@@ -82,6 +115,16 @@ function chip(c,big){const i=codeInfo(c);return `<span class="cc${big?' big':''}
 function eff(empId,iso){const o=S.over[empId]&&S.over[empId][iso];if(o&&o.code)return{code:o.code,ovr:true,o};const b=S.base[empId]&&S.base[empId][iso];return b?{code:b,ovr:false}:{code:'',ovr:false};}
 function empById(id){return S.employees.find(e=>e.id===id);}
 const ROLE_ORD={eng:0,oper:1,other:2};
+/* Người CÓ nằm trong lịch ca. Thư ký / quản lý cấp trên đặt Kiểu ca =
+   "Không xếp lịch" (shiftType='none') — vẫn có tài khoản, vẫn thao tác phần
+   mềm, nhưng không hiện trong bảng lịch, không tính vào định mức nhân lực. */
+function inSchedule(e){return !!e&&e.shiftType!=='none';}
+/* Nhãn nhóm viết gọn: nhóm "Office" chỉ hiện "O" cho đỡ chiếm chỗ */
+function teamShort(tm){
+  const s=String(tm||'').trim();
+  return /^office$/i.test(s)?'O':s;
+}
+function schedEmps(){return activeEmps().filter(inSchedule);}
 function activeEmps(){return S.employees.filter(e=>e.active!==false).slice().sort((a,b)=>{
   const t=(a.team||'~~').localeCompare(b.team||'~~');if(t)return t;
   const r=(ROLE_ORD[a.role]??3)-(ROLE_ORD[b.role]??3);if(r)return r;

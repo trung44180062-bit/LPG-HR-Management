@@ -47,10 +47,16 @@ LPGT-CongCa-Web/
 │   ├── 07-manpower.js      # Nhân lực theo ngày
 │   ├── 08-requests.js      # Đăng ký + Duyệt đơn
 │   ├── 09-print.js         # Dựng biểu mẫu, in lẻ / hàng loạt, nhật ký in
-│   ├── 10-account.js       # SHA-256, tài khoản tự động, cổng đăng nhập
+│   ├── 10-account.js       # PBKDF2, tài khoản, phân quyền, cổng đăng nhập
 │   ├── 11-stats-data.js    # Thống kê, khai báo giờ, export XLSX, cài đặt
 │   ├── 13-portal.js        # Trang chính nhân viên (lịch tuần/tháng, sheet theo ngày)
+│   ├── 14-i18n.js          # Song ngữ Việt/Anh — nạp NGAY SAU 01-core.js
+│   ├── 15-report.js        # Tab Báo cáo: Nhân lực · Thống kê · Biểu đồ (SVG thuần)
 │   └── 12-main.js          # Boot — luôn nạp CUỐI CÙNG
+├── BAO-MAT.md              # Đánh giá bảo mật + việc cần làm
+├── firebase-rules.json     # Luật truy cập, dán vào Firebase Console
+├── mau-in-A5-xem-thu.html  # Xem thử 6 biểu mẫu in trên khung giấy A5
+├── xem-thu-giao-dien.html  # Xem thử màn Duyệt & Báo cáo với dữ liệu mẫu
 ├── .gitignore
 └── README.md
 ```
@@ -78,21 +84,9 @@ và điền mã NV + họ tên, app tự tạo tài khoản. Không cần cấp 
 
 ### Phân quyền
 
-Không còn chế độ Quản lý mở bằng PIN. Quyền khai báo ở cột **Quyền** trong bảng
-danh sách nhân viên (tab *🛠️ Nhóm & Lịch*), lưu ở trường `e.perm`:
-
-| `perm` | Thấy được |
-|---|---|
-| `staff` (mặc định) | Trang chính, Lịch, Nhân lực, Thống kê, gửi đơn |
-| `appr` | + tab **Duyệt**, sửa lịch thực tế, In đơn |
-| `admin` | + tab **Nhóm & Lịch**, **Dữ liệu**, cấp/reset mật khẩu, đổi quyền người khác |
-
-`ROOT_ADMIN` (`vc44180062` — Hoàng Trung) luôn là quản trị và không thể bị hạ quyền,
-để luôn có người cấp quyền cho những người còn lại.
-
-Trong code: `applyPerm()` (js/10-account.js) đọc quyền của người đang đăng nhập và đặt
-hai cờ toàn cục — `mgr` (duyệt đơn trở lên) và `adm` (quản trị). `applyRoleUI()` ẩn/hiện
-các phần tử mang class `.mgr-only` và `.admin-only` theo hai cờ này.
+Xem chi tiết ở mục **Phân quyền & ngôn ngữ** phía dưới. Tóm tắt: quyền khai ở bảng
+*👤 Tài khoản đăng nhập và phân quyền* (tab ⚙️ Dữ liệu), lưu ở `e.perm` —
+`staff` · `sec` (Thư ký) · `appr` · `admin` · `kmgr`.
 
 ---
 
@@ -106,15 +100,23 @@ là **thấy ngay lịch cả tháng**, các thẻ số liệu đẩy xuống d�
 - Chế độ Tháng chạy theo **kỳ công của công ty: 21 tháng trước → 20 tháng này**
   (dùng `daysOfPeriod`/`periodFor`), không phải tháng dương lịch. Nút ◀ ▶ nhảy theo kỳ,
   các ngày thuộc tháng đầu kỳ (≥21) có nền nhạt + viền đứt, ngày mùng 1 hiện thêm số tháng.
-- **Chạm vào ngày bất kỳ** → sheet hiện ca hôm đó, **nhân sự trong ngày xếp thành cột theo nhóm ca**
-  (O · D · N · OT · **R nghỉ ca**) — tên rút gọn 2 chữ kèm số nhóm, ô của mình tô đậm —
-  đơn đang có, và 7 nút gửi đơn (nghỉ phép · đổi ca · tăng ca · đổi mã ca · bổ sung công ·
+- **Chạm vào ngày bất kỳ** → sheet hiện ca hôm đó, **nhân sự trong ngày xếp thành cột theo NHÓM CA THỰC TẾ**
+  — ai đổi ca đã nằm sẵn ở nhóm mình thật sự đi làm hôm đó; chip viền cam có badge `⇄X` ghi ca chuẩn cũ.
+  Nhãn nhóm `Office` viết gọn thành `O` (`teamShort()`). Các cột: O · D · N · OT ·
+  **R nghỉ ca** · **AL nghỉ phép** — tên rút gọn 2 chữ kèm nhãn nhóm, ô của mình tô đậm.
+  Bên dưới là đơn đang có và 7 nút gửi đơn (nghỉ phép · đổi ca · tăng ca · đổi mã ca · bổ sung công ·
   đi trễ/về sớm · làm liên tục nhiều ngày) — ngày đã điền sẵn.
 - **Mỗi ngày 1 dòng** (đúng quy định biểu mẫu công ty): form đơn là một **danh sách dòng**,
   mỗi dòng chọn **1 ngày** + mã ca (hoặc giờ vào/ra) riêng, bấm **＋ Thêm ngày** để khai
   nhiều ngày rời rạc trong cùng một đơn (tối đa `DS_MAX_ROWS` = 10 dòng — bằng số dòng của
   biểu mẫu in). Lưu ở `r.days=[{iso,code,timeIn,timeOut}]`; `r.from`/`r.to` là ngày đầu/cuối
   để tương thích đơn cũ. Riêng **Làm liên tục nhiều ngày** vẫn chọn theo **khoảng ngày**.
+- **Đổi ca chỉ giữa hai người đang có ca thật**: `SWAPPABLE()` chỉ nhận mã ca thuộc nhóm
+  *work* / *rest* / *swap* — tức **O · D · N · R** (và mã tự khai cùng loại). Người đang
+  **nghỉ phép** (AL8/AL4/NP/OFF) hoặc đang **tăng ca** (OTD/OTN/X) thì không đổi ca được:
+  nghỉ phép rồi thì lấy ca đâu ra mà đổi. Kiểm ở ba chỗ — danh sách chọn người (xám, bấm
+  không được, có ghi lý do), cảnh báo trực tiếp trong form, và chặn hẳn lúc bấm gửi
+  (`swapBlockReason` / `swapBlockList`). Đơn nhiều ngày thì kiểm **từng ngày** cho cả hai người.
 - **Đổi ca**: ô **tìm theo tên** (gõ không dấu vẫn khớp, `noAccent()`), người **đang nghỉ (R)**
   ngày đó được xếp lên đầu. Có ô **Người đứng đơn** để **khai hộ** đồng nghiệp — đơn ghi
   `r.byId` (người bấm gửi) khác `r.empId` (người đứng đơn); khi in, mỗi ngày sinh **2 dòng**
@@ -135,6 +137,77 @@ Tham số chỉnh nhanh ở đầu `js/13-portal.js`:
 
 ---
 
+## Tab Báo cáo (gộp Nhân lực + Thống kê) — `js/15-report.js`
+
+Trước đây là hai tab riêng và tab **Nhân lực bị lỗi trắng trang**: trong `renderMp()` cũ có
+`const f=$('mpFrom').value, t=$('mpTo').value` — biến `t` che mất hàm dịch `t()`, gọi
+`t('Hôm nay')` là ném lỗi ngay. Bản mới không dùng biến tên `t` nữa.
+
+Một tab **📊 Báo cáo** với 3 chế độ chọn bằng nút gạt:
+
+| Chế độ | Nội dung |
+|---|---|
+| 👥 Nhân lực | Biểu đồ cột chồng D/N/O/R theo ngày + đường định mức tối thiểu, rồi danh sách theo ngày (bấm mở tên) |
+| 📊 Thống kê | 4 thẻ tổng + bảng số liệu cả tổ, nút Xuất Excel |
+| 📈 Biểu đồ | Giờ công theo người · Cơ cấu ca (vành khuyên) · Giờ tăng ca theo nhóm |
+
+Biểu đồ giờ công là **một thanh nối tiếp cho mỗi người** (`chartStackedH`): giờ công · giờ tăng ca ·
+giờ phép xếp liền nhau trong cùng thanh, tổng ghi ở cuối — gọn hơn nhiều so với tách ba thanh.
+Hai biểu đồ *Nhân lực theo ngày* đã bỏ vì trùng thông tin với bảng nhân lực.
+
+**Phân quyền xem** (`repSeeAll()` = `mgr`):
+
+- **Quản trị · Quản lý người Hàn · Duyệt đơn** → xem toàn bộ nhân sự.
+- **Nhân viên thường** → chỉ thấy *📊 Số liệu của tôi* và *📈 Biểu đồ của tôi*; chế độ
+  Nhân lực bị ẩn hẳn và tên người khác không xuất hiện ở đâu.
+
+Biểu đồ vẽ bằng **SVG thuần** (`chartStacked` / `chartGroupedH` / `chartDonut`) — không
+thêm thư viện ngoài, nên mở offline vẫn chạy và in ra giấy vẫn nét. Tooltip dịch ngay lúc
+dựng chuỗi vì bộ quét DOM không khớp được chuỗi có chèn số.
+
+---
+
+## Đơn huỷ — xoá hẳn, không lưu
+
+Huỷ đơn giờ **xoá hẳn** khỏi hệ thống, không giữ bản ghi *đã huỷ*: mỗi đơn nằm lại là thêm dữ
+liệu phải đồng bộ, mà gói **Firebase Spark tính băng thông**. Nếu đơn đã duyệt thì
+`revertReqSchedule()` gỡ đúng những ô lịch do nó tạo ra trước khi xoá (đổi ca hoàn tác cho cả
+hai người). Trạng thái chỉ còn: `pending` · `approved` · `rejected`.
+
+---
+
+## Tab Duyệt — danh sách gọn
+
+Bản cũ mỗi đơn là một thẻ to kèm 5 nút nên rất rối. Bản mới:
+
+- **Một đơn = một dòng**: ô tích · biểu tượng loại đơn · tên · loại · trạng thái · nút ✓ ✕.
+  Bấm vào dòng mới bung chi tiết từng ngày, thông tin gửi/duyệt/huỷ và các nút phụ
+  (In · Huỷ đơn · Xoá hẳn).
+- **Hai hàng chip lọc có số đếm**: trạng thái (Chờ duyệt · Đã duyệt · Từ chối · Tất cả) và
+  tình trạng in (Mọi đơn · ○ Chưa in · 🖨️ Đã in). Số đếm tính theo các bộ lọc còn lại nên luôn khớp.
+- **Lọc theo thời gian**: chọn kỳ công, hoặc *Khoảng ngày tự chọn…* rồi điền Từ / Đến.
+- **🗑️ Dọn dữ liệu đang lọc** (quản trị): xoá hẳn mọi đơn đang khớp bộ lọc — dùng để dọn dữ
+  liệu cũ theo kỳ hoặc theo khoảng ngày, giữ dung lượng Firebase ở mức thấp. Hộp xác nhận nói rõ
+  khoảng ngày, số đơn còn chờ duyệt và cảnh báo hoàn tác lịch.
+- Mỗi dòng có chip **đã in / chưa in**, chi tiết bung ra ghi cả thời điểm in và số lần in.
+- **Thanh thao tác hàng loạt** chỉ hiện khi có đơn được chọn, dính trên đầu màn hình:
+  Duyệt · Từ chối · In · Xoá đơn · Chọn hết · Bỏ chọn. `decide(id,ok,bulk)` nhận cờ
+  `bulk` để không lưu và vẽ lại sau từng đơn.
+
+---
+
+## Tab Lịch — dồn về một hàng
+
+Toàn bộ điều khiển nằm trên **một hàng duy nhất**: ◀ kỳ ▶ · Chuẩn/Thực tế · phạm vi ngày ·
+nhóm · "Chỉ ô khác chuẩn" · **❔ Chú giải** (mở sheet, không còn chiếm chỗ cố định).
+Đã bỏ khối tiêu đề *"Cavern Process · LỊCH CHUẨN (tham chiếu)"*, dải chú giải inline và
+đoạn hướng dẫn dài phía dưới — phần trống nhường hết cho bảng lịch
+(`.mtx-scroll` cao thêm ~50px).
+
+Mở `xem-thu-giao-dien.html` bằng trình duyệt để xem thử ba màn hình này với dữ liệu mẫu.
+
+---
+
 ## Phân quyền & ngôn ngữ
 
 Quyền khai ở cột **Quyền** trong tab 🛠️ Nhóm & Lịch, lưu ở `e.perm`:
@@ -144,9 +217,73 @@ Quyền khai ở cột **Quyền** trong tab 🛠️ Nhóm & Lịch, lưu ở `e
 | `staff` | Nhân viên | Xem lịch của mình, gửi đơn |
 | `appr` | Duyệt đơn | Thêm: duyệt/từ chối đơn, sửa lịch thực tế, in đơn |
 | `admin` | Quản trị | Thêm: Nhóm & Lịch, Dữ liệu, cấp/reset mật khẩu |
+| `sec` | **Thư ký** | Xem hết lịch & báo cáo, in đơn, khai hộ đơn — **không** duyệt, **không** sửa cấu hình |
 | `kmgr` | **Quản lý người Hàn (EN)** | Quyền y hệt `admin`, khác duy nhất: **đăng nhập vào là giao diện tiếng Anh** |
 
-`ROOT_ADMIN` (Hoàng Trung) luôn là quản trị, không hạ quyền được.
+Cờ toàn cục: `adm` (admin/kmgr) · `mgr` (appr/admin/kmgr) · `secr` (sec + mgr — được xem số liệu cả tổ).
+
+**Người không nằm trong lịch ca** (thư ký, quản lý cấp trên) đặt **Kiểu ca = Không xếp lịch**
+(`shiftType='none'`): vẫn có tài khoản và thao tác phần mềm, nhưng `schedEmps()` loại họ khỏi
+bảng lịch, định mức nhân lực, thống kê và biểu đồ.
+
+Toàn bộ việc quản lý người dùng — mã NV, họ tên, nhóm, kiểu ca, **quyền**, **mật khẩu**,
+thêm/xoá người — nay gom về **một bảng duy nhất**: *👤 Tài khoản đăng nhập và phân quyền*
+trong tab ⚙️ Dữ liệu. Tab *Nhóm & Lịch* chỉ còn lo xếp ca.
+
+`ROOT_ADMIN` (Hoàng Trung, `vc44180062`) luôn là quản trị, không ai hạ quyền được, và là
+người đặt lại mật khẩu / thêm / xoá người.
+
+### Mật khẩu — xem `BAO-MAT.md`
+
+- Chưa đặt mật khẩu riêng → **không lưu chuỗi băm nào**, chỉ ghi cờ `{init:true}`; mật khẩu tạm
+  thời là chính mã số.
+- Đã đặt → **PBKDF2-SHA256 150 000 vòng, muối ngẫu nhiên 16 byte riêng từng người** (WebCrypto).
+- Bản băm `sha256` cũ vẫn đăng nhập được và **tự nâng cấp** sang PBKDF2 ngay lần đăng nhập kế tiếp.
+- Mật khẩu tối thiểu 6 ký tự, chặn trùng mã NV và các chuỗi dễ đoán.
+- **Không xem lại được mật khẩu** (băm một chiều) — chỉ *Đặt lại* hoặc *Về mặc định*.
+- Nhớ dán `firebase-rules.json` vào Firebase Console; đó mới là hàng rào thật.
+
+### Khai tăng ca linh động
+
+Đơn tăng ca không còn chỉ chọn một mã ca cứng. Mỗi dòng khai được **mốc bắt đầu → mốc kết thúc**:
+
+| Mẫu | Giờ | Mã lưu |
+|---|---|---|
+| Nghỉ trưa | 12:00–13:00 | `OTL` |
+| Sau giờ HC | 18:00–20:00 | `OT2` |
+| Sau giờ HC | 17:00–20:00 | `OT3` |
+| Ca ngày | 08:00–20:00 | `OTD` |
+| Ca đêm (qua đêm) | 20:00–08:00 | `OTN` |
+| Tự điền giờ | người khai nhập | `OTD` |
+
+- Chọn mẫu → `dsSetPreset()` tự điền giờ; mẫu ca đêm tự đặt *Đến ngày* = hôm sau.
+- **Tăng ca vắt qua nửa đêm**: điền *Đến ngày*; để trống nghĩa là trong cùng ngày. Nếu giờ ra ≤ giờ vào
+  mà bỏ trống ngày kết thúc thì `otHours()` tự hiểu là qua nửa đêm.
+- Số giờ tính từ hai mốc thật (`otHours`) và lưu ở `d.hours`, không lấy số giờ cứng của mã ca —
+  nên OT 14:00→19:30 ra đúng **5,5h**. Thống kê, bảng *Tăng ca của tôi* và biểu mẫu in đều dùng số này.
+- Mã **X (tăng ca nhập tàu)** đã **bỏ khỏi danh sách chọn**, nhưng vẫn giữ trong bảng mã ca
+  (`legacy:true`) để những ô lịch cũ đang dùng X vẫn hiện đúng tên và đúng số giờ.
+
+### Màu mã ca trong bảng lịch
+
+Trước đây mã phép / tăng ca dùng **chữ trắng trên nền đậm**, mà cột "hôm nay" có nền vàng nhạt
+kèm `!important` ghi đè nền → chữ trắng trên vàng nhạt, không đọc được (đúng lỗi AL8 khó nhìn).
+Nay mọi mã đều **nền pastel + chữ tối đậm** (`SCHEDBG` / `SCHEDTXT` trong `06-calendar.js`),
+đọc được trong mọi trường hợp.
+
+### Kiểu ca
+
+| Giá trị | Nghĩa |
+|---|---|
+| `type1` | Ca 8 ngày — O O D D N N R R |
+| `type2` | Ca 6 ngày — D D N N R R |
+| `admin` | Hành chính T2–T6 (nghỉ T7, CN) |
+| `office6` | **Hành chính T2–T7** — chỉ nghỉ CN, operator mới nhận việc đi ca này để học việc |
+| `none` | Không xếp lịch |
+
+**Người vào làm giữa kỳ**: điền *Ngày vào làm* (`e.joinAt`) ở dòng của họ trong tab Nhóm & Lịch,
+rồi bấm **🆕 Lịch cho người mới vào giữa kỳ**. `genForEmp()` tự cắt bỏ các ngày trước `joinAt`,
+và `fillScheduleForOne()` chỉ điền cho riêng người đó, không đụng lịch người khác.
 
 ### Giao diện Việt / Anh (`js/14-i18n.js`)
 
@@ -167,6 +304,90 @@ Quyền khai ở cột **Quyền** trong tab 🛠️ Nhóm & Lịch, lưu ở `e
 
 **Thêm chuỗi mới**: mở `js/14-i18n.js`, thêm một dòng `'chuỗi tiếng Việt':'English string',`
 vào đúng nhóm. Khoá phải khớp đúng đoạn văn bản hiển thị (một nút văn bản, không kèm thẻ HTML).
+
+---
+
+## Huỷ / xoá đơn
+
+Thêm trạng thái thứ tư: `cancelled` (**ĐÃ HUỶ**), bên cạnh `pending` / `approved` / `rejected`.
+
+- **Huỷ đơn đã duyệt thì lịch tự hoàn tác.** Khi duyệt, mỗi ô lịch ghi kèm `reqId`;
+  `revertReqSchedule(rid)` gỡ đúng những ô mang mã đơn đó → lịch trả về ca chuẩn.
+  Đơn đổi ca hoàn tác cho **cả hai người**.
+- **Không xoá hẳn theo mặc định** — đơn chuyển sang `cancelled`, vẫn nằm trong *Lịch sử*
+  kèm `cancelledAt` / `cancelledBy` / `cancelReason` để còn tra lại.
+- **Quản trị xoá hẳn** bằng `purgeReq()` (nút 🗑️ Xoá hẳn, có `admin-only`), cũng hoàn tác lịch trước khi xoá.
+- **Xoá nhiều người một lúc**: màn *Duyệt* có ô tích trên từng đơn (`.rqChk`) +
+  các nút *Chọn tất cả · Bỏ chọn · Huỷ đơn đã chọn · Xoá hẳn đã chọn*. Hộp xác nhận
+  nói rõ có bao nhiêu đơn đã duyệt (sẽ hoàn tác lịch) và bao nhiêu đơn **đã in nộp nhân sự**.
+- **Nhân viên tự huỷ đơn của mình**, kể cả đơn đã duyệt — trừ đơn đã in (`r.printedAt`)
+  thì phải nhờ quản lý, xem `canCancelReq(r,who)`.
+- Đơn đã huỷ không tính vào cảnh báo trùng đơn, không vào hàng chờ in, và hiện mờ
+  (`.req.dead`) trong danh sách.
+
+---
+
+## Biểu mẫu in — bám theo file gốc của công ty
+
+Nguồn: `2023_HSVC - Timekeeping Form (New) VBA`. Sáu sheet biểu mẫu (`Leave`, `Overtime`,
+`Change shift`, `WT Confirmation`, `Leave Early`, `Work multiple days`) đều dùng **cùng một
+khuôn**, và `js/09-print.js` dựng lại đúng khuôn đó:
+
+| Thông số | Giá trị lấy từ Excel |
+|---|---|
+| Khổ giấy | **A5 ngang** (paperSize 11, landscape) — 210 × 148 mm |
+| Lề | 0.1 inch ≈ 2,5 mm |
+| Font | Times New Roman |
+| Tiêu đề | 16pt đậm (VN) + 16pt đậm nghiêng (EN), canh giữa |
+| Bảng | 11pt, viền `thin`, **10 dòng dữ liệu** (STT 1→10 kể cả dòng trống) |
+| Chú giải | 8pt — loại phép (Leave, Leave Early) / loại ca (Change shift) |
+| Chữ ký | 3 ô có viền xếp chồng: nhãn → chỗ ký trống → *Ghi rõ họ tên* |
+
+Điểm quan trọng: cột thời gian **tách riêng Giờ và Ngày** (`Từ: Giờ | Ngày`, `Đến: Giờ | Ngày`),
+không gộp một ô như bản cũ. Độ rộng cột trong `W_LEAVE`, `W_OT`, `W_SHIFT`, `W_WT`,
+`W_LATE`, `W_MULTI` lấy nguyên độ rộng cột của Excel rồi quy ra phần trăm.
+
+- Đơn *Bổ sung công* có ô **Lý do** gộp 10 dòng, in danh sách ☐/☑ đúng như bản gốc,
+  và khối chữ ký có thêm cột **Xác nhận bởi Người bảo lãnh**.
+
+### Lý do in trên đơn — mặc định tiếng Anh
+
+Người ký cuối là **Trưởng Bộ Phận người Hàn**, nên mọi lý do do phần mềm tự điền đều
+viết bằng tiếng Anh. Nếu nhân viên có tự ghi lý do thì **lấy đúng chữ của nhân viên**,
+thay cho lý do mặc định (`printReason()` trong `js/09-print.js`).
+
+| Loại đơn | Lý do phần mềm tự điền |
+|---|---|
+| Nghỉ phép · Đổi mã ca · Đi trễ/Về sớm · Đổi ca (người đứng đơn) | `Personal matter` |
+| Tăng ca · Làm liên tục nhiều ngày | `Operational requirement` |
+| Đổi ca — **người nhận ca giúp** | `Cover for <tên người nhờ>` |
+
+Cách này bám theo chính bản Excel gốc: người xin đổi ghi *Personal matter*, người nhận ca
+ghi *Cover Mr. …*. Loại đơn Đi trễ/Về sớm cũng in `Come late` / `Leave early`.
+
+**Mã loại phép** quy đổi theo chú giải in trên biểu mẫu (`printLeaveCode()`):
+`AL8` và `AL4` → **AL**, `NP` → **NPL**, `OFF` → **COM**. Nửa ngày vẫn phân biệt được
+vì cột *Tổng ngày* ghi `0.5`.
+
+### Logo
+
+Logo nhúng trong `LOGO_B64` **bị mất đúng 1 byte cuối** (18 020 / 18 021 byte, thiếu dấu
+kết thúc `FF D9`) nên trình duyệt vẽ ra ảnh vỡ. Đã thay bằng ảnh gốc lấy từ chính file
+biểu mẫu công ty (`xl/media/image1.jpeg`, 358 × 86 px). CSS cũng đổi sang **khoá chiều cao**
+(`height:8mm; width:auto`) để ảnh không bao giờ bị bóp méo.
+- Ca đêm (20:00 → 08:00) tự đẩy cột *Đến / Ngày* sang hôm sau.
+- **Bộ phận** in trên đơn lấy từ `S.settings.deptDefault` (mặc định `LPG Terminal`),
+  chỉ khi bỏ trống mới rơi về tên nhóm.
+- Bố cục in mặc định là **1 đơn / tờ A5 ngang** (đúng chuẩn công ty); vẫn giữ tuỳ chọn
+  *2 đơn / tờ A4 đứng* cho ai muốn tiết kiệm giấy. Trên 10 dòng thì tự tách thêm tờ.
+- **Màn In đơn** là một danh sách chia hai nhóm: *Chưa in* (mặc định **tích hết**) và
+  *Đã in rồi* (mặc định **bỏ tích**, chỉ tích lại khi cần in bù). Mỗi nhóm có ô tích ở đầu để
+  chọn/bỏ cả nhóm, kèm ô tìm theo tên và lọc khoảng ngày.
+- **Ai đăng nhập cũng in được.** Riêng **điện thoại ẩn hẳn mọi nút in** (class `pc-only`) vì
+  công ty không cho điện thoại kết nối máy in.
+
+Mở `mau-in-A5-xem-thu.html` bằng trình duyệt để xem thử cả 6 biểu mẫu trên khung giấy
+đúng kích thước, bấm Ctrl+P chọn khổ A5 để in đối chiếu với file Excel.
 
 ---
 

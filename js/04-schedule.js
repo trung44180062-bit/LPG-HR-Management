@@ -69,8 +69,20 @@ function buildSlots(period,phases){
 // Generate {iso:code} for one employee across the given day list.
 function genForEmp(e,days){
   const out={};
+  // Người mới vào giữa kỳ: chỉ xếp lịch từ NGÀY VÀO LÀM trở đi,
+  // những ngày trước đó để trống (chưa thuộc biên chế).
+  if(e.joinAt)days=days.filter(iso=>iso>=e.joinAt);
+  if(!days.length)return out;
+
+  if(e.shiftType==='none')return out;                      // thư ký / sếp — không xếp lịch
+  // Hành chính T2–T6 (nghỉ T7 + CN)
   if(e.empType==='admin'||e.shiftType==='admin'){
     days.forEach(iso=>{const dw=new Date(iso+'T00:00:00').getDay();out[iso]=(dw===0||dw===6)?'R':'O';});
+    return out;
+  }
+  // Hành chính T2–T7 (chỉ nghỉ Chủ nhật) — operator mới nhận việc đi ca này để học việc
+  if(e.shiftType==='office6'){
+    days.forEach(iso=>{const dw=new Date(iso+'T00:00:00').getDay();out[iso]=(dw===0)?'R':'O';});
     return out;
   }
   const type1=e.shiftType!=='type2'; // default type1
@@ -79,7 +91,7 @@ function genForEmp(e,days){
   let period=def;
   if(e.a1&&e.a2){const p=dayNum(e.a2)-dayNum(e.a1);if(p>=phases.length)period=p;}
   const slots=buildSlots(period,phases);
-  const anchor=e.a1||days[0];const a0=dayNum(anchor);
+  const anchor=e.a1||e.joinAt||days[0];const a0=dayNum(anchor);
   days.forEach(iso=>{
     const di=dayNum(iso)-a0;
     const idx=((di%period)+period)%period;
@@ -96,7 +108,7 @@ function schedDays(){
 }
 // If range is empty, auto-derive the 21→20 period that contains the earliest Mốc 1.
 function autoRangeFromAnchor(){
-  const withA1=activeEmps().filter(e=>e.a1&&e.empType!=='admin'&&e.shiftType!=='admin').map(e=>e.a1).sort();
+  const withA1=schedEmps().filter(e=>e.a1&&e.empType!=='admin'&&e.shiftType!=='admin'&&e.shiftType!=='office6').map(e=>e.a1).sort();
   if(!withA1.length)return false;
   const ym=schedMonthOf(withA1[0]);const p=periodFor(ym);
   $('setFrom').value=p.from;$('setTo').value=p.to;fillPeriodSel();
@@ -110,9 +122,9 @@ function fillSchedule(){
   }
   const sd=schedDays();if(!sd){toast('Khoảng ngày không hợp lệ');return;}
   let cnt=0,skipped=0;
-  activeEmps().forEach(e=>{
-    const isAdmin=e.empType==='admin'||e.shiftType==='admin';
-    if(!isAdmin&&!e.a1){skipped++;return;} // cần Mốc 1 để biết pha
+  schedEmps().forEach(e=>{
+    const fixed=e.empType==='admin'||e.shiftType==='admin'||e.shiftType==='office6';
+    if(!fixed&&!e.a1&&!e.joinAt){skipped++;return;} // ca xoay cần Mốc 1 để biết pha
     const gen=genForEmp(e,sd.days);
     S.base[e.id]=S.base[e.id]||{};
     for(const iso in gen){S.base[e.id][iso]=gen[iso];cnt++;}
@@ -163,4 +175,47 @@ function clearSchedRange(){
 function clearSchedAll(){
   if(!confirm(t('Xóa TOÀN BỘ lịch ca? (giữ danh sách nhân sự)')))return;
   S.base={};S.over={};save();renderSetup();renderBoth();toast('Đã xóa toàn bộ lịch');
+}
+
+
+/* ============================================================
+   NHÂN VIÊN MỚI VÀO GIỮA KỲ
+   Điền lịch cho riêng một người, từ ngày vào làm (hoặc ngày chọn)
+   tới hết kỳ — không đụng tới lịch của những người khác.
+   ============================================================ */
+function fillScheduleForOne(id,fromIso,toIso){
+  const e=empById(id);
+  if(!e){toast(t('Không tìm thấy nhân viên'));return 0;}
+  if(e.shiftType==='none'){toast(t('Người này đặt "Không xếp lịch" — đổi Kiểu ca trước'));return 0;}
+  const from=fromIso||e.joinAt;
+  if(!from){toast(t('Điền "Ngày vào làm" cho người này trước'));return 0;}
+  const to=toIso||periodFor(schedMonthOf(from)).to;
+  if(to<from){toast(t('Khoảng ngày không hợp lệ'));return 0;}
+  const days=[];let d=new Date(from+'T00:00:00'),end=new Date(to+'T00:00:00'),g=0;
+  while(d<=end&&g++<400){days.push(isoOf(d));d.setDate(d.getDate()+1);}
+  const gen=genForEmp(e,days);
+  S.base[e.id]=S.base[e.id]||{};
+  let n=0;for(const iso in gen){S.base[e.id][iso]=gen[iso];n++;}
+  save();fillMonthSelects();renderSetup();renderBoth();
+  toast(t('Đã điền')+' '+n+' '+t('ô ca cho')+' '+(e.name||id));
+  return n;
+}
+/* Hộp thoại: chọn người + ngày bắt đầu rồi điền */
+function newHireSchedule(){
+  if(!adm){toast(t('Cần quyền quản trị'));return;}
+  const list=schedEmps();
+  if(!list.length){toast(t('Chưa có nhân sự'));return;}
+  const names=list.map((e,i)=>`${i+1}. ${e.name||e.id}${e.joinAt?' (vào '+fmtVNfull(e.joinAt)+')':''}`).join('\n');
+  const pick=prompt(t('Điền lịch cho nhân viên mới — nhập số thứ tự:')+'\n'+names);
+  if(pick===null)return;
+  const e=list[(+pick||0)-1];
+  if(!e){toast(t('Số thứ tự không hợp lệ'));return;}
+  const from=prompt(t('Điền lịch từ ngày (YYYY-MM-DD):'), e.joinAt||todayIso());
+  if(!from)return;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(from)){toast(t('Định dạng YYYY-MM-DD'));return;}
+  const p=periodFor(schedMonthOf(from));
+  const to=prompt(t('Điền tới ngày (YYYY-MM-DD):'), p.to);
+  if(!to)return;
+  if(!e.joinAt){e.joinAt=from;}
+  fillScheduleForOne(e.id,from,to);
 }

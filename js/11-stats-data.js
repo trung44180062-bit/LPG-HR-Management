@@ -3,48 +3,19 @@
    LPGT Cavern — Quan ly Cong Ca v4
    ============================================================ */
 /* =================== TAB THỐNG KÊ (quản lý) =================== */
-function stShift(d){
-  const sel=$('stMonth');const i=sel.selectedIndex+d;
-  if(i>=0&&i<sel.options.length){sel.selectedIndex=i;renderStats();}
-}
+/* stShift()/renderStats() đã chuyển sang js/15-report.js (tab Báo cáo).
+   statRows() giữ lại ở đây vì cả tab Báo cáo lẫn Xuất Excel đều dùng. */
 function statRows(ym,grp){
   const days=daysOfPeriod(ym);
-  let emps=activeEmps();
+  let emps=schedEmps();
   if(grp&&grp!=='__all')emps=emps.filter(e=>(e.team||'')===grp);
   return emps.map(e=>({e,s:calcStats(e.id,days)}));
 }
-function renderStats(){
-  fillGroupFilter('stGroup');
-  if(!$('stMonth').options.length)fillMonthSelects();
-  const ym=$('stMonth').value||curSchedMonth();
-  const rows=statRows(ym,$('stGroup').value);
-  const sum=f=>rnd1(rows.reduce((a,r)=>a+f(r.s),0));
-  $('stSummary').innerHTML=`
-    <div class="stat-box"><div class="v">${sum(s=>s.hWork)}</div><div class="k">TỔNG GIỜ CÔNG</div></div>
-    <div class="stat-box"><div class="v">${sum(s=>s.hOT)}</div><div class="k">TỔNG GIỜ TĂNG CA</div></div>
-    <div class="stat-box"><div class="v">${sum(s=>s.hLeave)}</div><div class="k">TỔNG GIỜ PHÉP</div></div>
-    <div class="stat-box"><div class="v">${rows.length}</div><div class="k">NHÂN SỰ</div></div>`;
-  const cD=s=>(s.cnt.D||0)+(s.cnt.SD||0),cN=s=>(s.cnt.N||0)+(s.cnt.SN||0),cO=s=>(s.cnt.O||0)+(s.cnt.SO||0);
-  let h='<table><thead><tr><th class="l">Nhóm</th><th class="l">Họ tên</th><th>D</th><th>N</th><th>O</th><th>R</th><th>AL8</th><th>AL4</th><th>NP</th><th>OFF</th><th>Ca OT</th><th class="hl">Giờ công</th><th class="hl">Giờ OT</th><th class="hl">Giờ phép</th></tr></thead><tbody>';
-  rows.forEach(({e,s})=>{
-    h+=`<tr><td class="l">${esc(e.team||'—')}</td>
-      <td class="l"><b>${esc(e.name||e.id)}</b> <span class="muted" style="font-size:10px">${esc(e.pos||'')}</span></td>
-      <td>${cD(s)}</td><td>${cN(s)}</td><td>${cO(s)}</td><td>${s.cnt.R||0}</td>
-      <td>${s.cnt.AL8||0}</td><td>${s.cnt.AL4||0}</td><td>${s.cnt.NP||0}</td><td>${s.cnt.OFF||0}</td>
-      <td>${otShifts(s)}</td>
-      <td class="hl">${rnd1(s.hWork)}</td><td class="hl">${rnd1(s.hOT)}</td><td class="hl">${rnd1(s.hLeave)}</td></tr>`;
-  });
-  h+='</tbody><tfoot><tr><td class="l" colspan="2">TỔNG CỘNG</td>';
-  h+=`<td>${rows.reduce((a,r)=>a+cD(r.s),0)}</td><td>${rows.reduce((a,r)=>a+cN(r.s),0)}</td><td>${rows.reduce((a,r)=>a+cO(r.s),0)}</td>`;
-  ['R','AL8','AL4','NP','OFF'].forEach(c=>{h+=`<td>${rows.reduce((a,r)=>a+(r.s.cnt[c]||0),0)}</td>`;});
-  h+=`<td>${rows.reduce((a,r)=>a+otShifts(r.s),0)}</td>
-    <td class="hl">${sum(s=>s.hWork)}</td><td class="hl">${sum(s=>s.hOT)}</td><td class="hl">${sum(s=>s.hLeave)}</td></tr></tfoot></table>`;
-  $('stTable').innerHTML=rows.length?h:'<p class="muted" style="padding:16px">Chưa có nhân sự / lịch trong kỳ này.</p>';
-}
 function exportStats(){
-  const ym=$('stMonth').value;if(!ym){toast('Chưa có kỳ nào');return;}
+  const ym=(typeof repYm!=='undefined'&&repYm)||curSchedMonth();
+  if(!ym){toast(t('Chưa có kỳ nào'));return;}
   const p=periodFor(ym);
-  const rows=statRows(ym,$('stGroup').value);
+  const rows=statRows(ym,(typeof repGroup!=='undefined')?repGroup:'__all');
   const cD=s=>(s.cnt.D||0)+(s.cnt.SD||0),cN=s=>(s.cnt.N||0)+(s.cnt.SN||0),cO=s=>(s.cnt.O||0)+(s.cnt.SO||0);
   const aoa=[['LPGT CAVERN — THỐNG KÊ CÔNG CA',p.label],[],
     ['Nhóm','Mã NV','Họ tên','Vị trí','Ca D','Ca N','Ca O','R','AL8','AL4','NP','OFF','Ca OT','Giờ công','Giờ OT','Giờ phép']];
@@ -101,36 +72,103 @@ function delCustomCode(c){
   S.settings.customCodes=(S.settings.customCodes||[]).filter(x=>x.c!==c);
   save();renderHoursTbl();
 }
+/* ============================================================
+   BẢNG TÀI KHOẢN — nơi DUY NHẤT quản lý người dùng
+   Gồm: mã NV · họ tên · nhóm · vị trí · KIỂU CA · QUYỀN · mật khẩu.
+   Cột Quyền đã chuyển hẳn về đây (trước nằm lẫn trong tab Nhóm & Lịch),
+   để chỗ tạo lịch chỉ lo việc xếp ca.
+   Chỉ QUẢN TRỊ mới sửa được; quản trị gốc thì không ai hạ quyền được.
+   ============================================================ */
 function renderAccTbl(){
   const tb=$('accTbl');if(!tb)return;
-  let h='<thead><tr><th>Mã NV</th><th>Họ tên</th><th>Nhóm</th><th>Trạng thái</th><th></th></tr></thead><tbody>';
+  if(!adm){
+    tb.innerHTML='<tbody><tr><td class="muted" style="padding:12px">Cần quyền quản trị để xem và sửa tài khoản.</td></tr></tbody>';
+    return;
+  }
+  const sel=(v,cur)=>v===cur?' selected':'';
+  let h=`<thead><tr>
+    <th>Mã NV</th><th>Họ tên</th><th>Nhóm</th><th>Vị trí</th>
+    <th>Kiểu ca</th><th>Quyền</th><th>Mật khẩu</th><th></th></tr></thead><tbody>`;
   activeEmps().forEach(e=>{
-    const acc=S.accounts&&S.accounts[e.id];
-    const has=acc&&acc.hash;
-    h+=`<tr><td style="font-family:var(--mono)">${esc(e.id)}</td><td>${esc(e.name||'—')}</td><td>${esc(e.team||'')}</td>
-      <td>${has?'<span class="st approved">Đã cấp</span>':'<span class="st pending">Chưa cấp</span>'}</td>
-      <td class="emp-act">${adm
-        ?`<button class="btn sec sm" onclick="setPass('${e.id}')">${has?'🔁 Reset MK':'🔑 Cấp MK'}</button>${has?`<button class="btn warn sm" onclick="delPass('${e.id}')">✕ Thu hồi</button>`:''}`
-        :'<span class="muted">Cần quyền quản trị</span>'}</td></tr>`;
+    const acc=(S.accounts&&S.accounts[e.id])||{};
+    const root=isRootAdmin(e.id), perm=permOf(e.id);
+    const dflt=usingDefaultPw(e.id);
+    h+=`<tr>
+      <td><input class="inp sm" style="width:110px;font-family:var(--mono)" value="${esc(e.id)}" onchange="changeId('${e.id}',this.value)"></td>
+      <td><input class="inp sm" style="min-width:150px" value="${esc(e.name||'')}" placeholder="Họ tên" onchange="updEmp('${e.id}','name',this.value)"></td>
+      <td><input class="inp sm" style="width:70px" value="${esc(e.team||'')}" placeholder="A" onchange="updEmp('${e.id}','team',this.value,true)"></td>
+      <td><input class="inp sm" style="min-width:120px" value="${esc(e.pos||'')}" placeholder="VD: Field Engineer" onchange="updEmp('${e.id}','pos',this.value)"></td>
+      <td><select class="inp sm" style="min-width:150px" onchange="updType('${e.id}',this.value)">
+        <option value="type1"${sel('type1',e.shiftType)}>Ca 8 ngày (OODDNNRR)</option>
+        <option value="type2"${sel('type2',e.shiftType)}>Ca 6 ngày (DDNNRR)</option>
+        <option value="admin"${sel('admin',e.shiftType)}>Hành chính T2–T6</option>
+        <option value="office6"${sel('office6',e.shiftType)}>Hành chính T2–T7 (học việc)</option>
+        <option value="none"${sel('none',e.shiftType)}>Không xếp lịch</option>
+      </select></td>
+      <td>${root
+        ?'<span class="st approved" title="Quản trị gốc — không thể hạ quyền">Quản trị gốc</span>'
+        :`<select class="inp sm" style="min-width:130px" onchange="updPerm('${e.id}',this.value)" title="${esc(PERM_HINT[perm]||'')}">
+            ${PERM_VALUES.map(v=>`<option value="${v}"${sel(v,perm)}>${esc(PERM_LABEL[v])}</option>`).join('')}
+          </select>`}</td>
+      <td>${dflt?'<span class="st pending" title="Mật khẩu đang là mã số — nhắc nhân viên đổi">Mặc định</span>'
+                :'<span class="st approved" title="'+esc(acc.at?fmtDateTime(acc.at):'')+'">Đã đặt riêng</span>'}</td>
+      <td class="emp-act">
+        <button class="btn sec sm" onclick="setPass('${e.id}')">🔑 Đặt lại MK</button>
+        ${dflt?'':`<button class="btn sec sm" onclick="resetToDefaultPw('${e.id}')" title="Đưa về mật khẩu = mã số">↺ Về mặc định</button>`}
+        ${root?'':`<button class="btn warn sm" onclick="delEmp('${e.id}')" title="Xoá khỏi danh sách">✕</button>`}
+      </td></tr>`;
   });
   tb.innerHTML=h+'</tbody>';
 }
-function setPass(id){
-  if(!adm){toast('Cần quyền quản trị');return;}
+/* Đổi quyền — chỉ quản trị, không hạ được quản trị gốc */
+function updPerm(id,v){
+  if(!adm){toast(t('Cần quyền quản trị'));renderAccTbl();return;}
+  if(isRootAdmin(id)){renderAccTbl();return;}
+  const e=empById(id);if(!e)return;
+  e.perm=PERM_VALUES.includes(v)?v:'staff';
+  save();
+  if(id===meId()){applyPerm();applyRoleUI();refreshBadge();}
+  renderAccTbl();
+  toast(t('Đã đặt quyền')+' '+(PERM_LABEL[e.perm]||e.perm)+' '+t('cho')+' '+(e.name||id));
+}
+/* Đặt mật khẩu mới cho một người (băm PBKDF2, không lưu chữ gốc) */
+async function setPass(id){
+  if(!adm){toast(t('Cần quyền quản trị'));return;}
   const e=empById(id);
-  const pw=prompt(t('Mật khẩu cho')+' '+(e&&e.name?e.name:id)+' '+t('(tối thiểu 4 ký tự):'));
+  const pw=prompt(t('Mật khẩu mới cho')+' '+(e&&e.name?e.name:id)+' '+t('(tối thiểu 6 ký tự):'));
   if(pw===null)return;
-  if(pw.trim().length<4){toast('Tối thiểu 4 ký tự');return;}
+  const bad=pwProblem(id,pw);
+  if(bad){toast(t(bad));return;}
   S.accounts=S.accounts||{};
-  S.accounts[id]={hash:hashPw(id,pw.trim()),by:'manager',at:Date.now()};
-  save();renderAccTbl();toast('Đã cấp mật khẩu cho '+id+' ✔');
+  S.accounts[id]=Object.assign(await makePwRecord(id,pw.trim()),{at:Date.now(),by:meId()||'admin',init:false});
+  save();renderAccTbl();
+  toast(t('Đã đặt mật khẩu cho')+' '+(e&&e.name?e.name:id)+' ✔');
 }
-function delPass(id){
-  if(!adm)return;
-  if(!confirm(t('Thu hồi tài khoản đăng nhập của')+' '+id+'?'))return;
-  delete S.accounts[id];
-  save();renderAccTbl();toast('Đã thu hồi tài khoản '+id);
+/* Đưa về mật khẩu mặc định = mã số (dùng khi nhân viên quên mật khẩu) */
+function resetToDefaultPw(id){
+  if(!adm){toast(t('Cần quyền quản trị'));return;}
+  const e=empById(id);
+  if(!confirm(t('Đưa mật khẩu của')+' '+(e&&e.name?e.name:id)+' '+t('về mặc định (= mã số)?')))return;
+  S.accounts=S.accounts||{};
+  S.accounts[id]={init:true,by:meId()||'admin',at:Date.now()};
+  save();renderAccTbl();
+  toast(t('Mật khẩu đã về mặc định')+' = '+loginKey(id));
 }
+/* Thêm người mới ngay trong bảng tài khoản */
+function addAccountRow(){
+  if(!adm){toast(t('Cần quyền quản trị'));return;}
+  const id=prompt(t('Mã nhân viên mới (ví dụ vc44260099):'),newVc());
+  if(!id)return;
+  const nid=id.trim();
+  if(empById(nid)){toast(t('Mã đã tồn tại'));return;}
+  const name=(prompt(t('Họ tên:'))||'').trim();
+  S.employees.push({id:nid,name,pos:'',role:'oper',team:'',empType:'shift',shiftType:'type1',
+                    a1:'',a2:'',order:S.employees.length+1,active:true,perm:'staff'});
+  ensureAccount(nid,true);
+  save();renderAccTbl();if(typeof renderSetup==='function')renderSetup();
+  toast(t('Đã thêm')+' '+(name||nid));
+}
+function delPass(id){resetToDefaultPw(id);}
 
 /* =================== EXPORT XLSX =================== */
 function exportXlsx(){

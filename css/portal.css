@@ -231,9 +231,11 @@ i.d-ok{background:#0E9F6E}
 /* Ca thực tế khác lịch chuẩn → viền cam + hiện "chuẩn → thực tế" */
 .crew-n .mate.ovr{border-color:#F59E0B;background:#FFFBEB;box-shadow:inset 3px 0 0 #F59E0B}
 .crew-n .mate.me.ovr{background:#0B3B5C;box-shadow:inset 3px 0 0 #F59E0B}
-.crew-n .mate .chg,.crew-n .mate .now{display:inline-flex;align-items:center;gap:2px;font-style:normal}
-.crew-n .mate .chg .cc{opacity:.62;text-decoration:line-through}
-.crew-n .mate .chg .ar{color:#B45309;font-size:10px;font-weight:800}
+.crew-n .mate .now{display:inline-flex;align-items:center;gap:2px;font-style:normal}
+/* dấu "chuyển từ ca X" — nhỏ, đứng cuối chip, không gây nhầm với ca đang làm */
+.crew-n .mate .chg{font-style:normal;font-size:9.5px;font-weight:800;color:#B45309;
+  background:#FEF3C7;border-radius:5px;padding:1px 4px;letter-spacing:-.2px}
+.crew-n .mate.me .chg{background:#F59E0B;color:#3B2200}
 .crew-n .mate .cc{font-size:9.5px;padding:1px 5px;border-radius:5px;font-weight:800;color:#fff}
 .crew-note{font-size:10.5px;color:#64748B;line-height:1.55;margin-top:8px}
 .crew-note .ovr-dot{color:#B45309}
@@ -299,6 +301,13 @@ i.d-ok{background:#0E9F6E}
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pk-item .m{font-size:10.5px;color:#94A3B8;font-weight:700;flex:none}
 .pk-item .cc{flex:none}
+/* Người không đổi ca được trong ngày đó (nghỉ phép / tăng ca): xám và bấm không được */
+.pk-item.off{background:#F8FAFC;cursor:not-allowed;opacity:.62}
+.pk-item.off:hover{background:#F8FAFC;border-color:transparent}
+.pk-item.off .n{font-weight:600;text-decoration:line-through;text-decoration-color:#CBD5E1}
+.pk-item.off .m{color:#B45309;font-weight:800}
+.pk-sep{margin:8px 0 4px;padding-top:7px;border-top:1px dashed #E3EAF1;
+  font-size:10px;font-weight:800;color:#94A3B8;text-transform:uppercase;letter-spacing:.03em}
 
 .ot-row.pre{opacity:.45}
 
@@ -390,4 +399,17 @@ i.d-ok{background:#0E9F6E}
 @media print{
   .gate,.sheetmask{display:none!important}
   body.locked .wrap{filter:none}
+}
+
+/* ---- Dòng khai tăng ca: mẫu OT + mốc bắt đầu / kết thúc ---- */
+.ds-rows.ot .ds-row.ot{grid-template-columns:1fr}
+.ds-row.ot .othr{font-size:12px;font-weight:800;color:#0B6244}
+.ds-row.ot .othr .ovn{font-style:normal;font-size:9.5px;font-weight:800;color:#B45309;
+  background:#FEF3C7;border-radius:5px;padding:1px 5px;margin-left:3px}
+@media(min-width:820px){
+  .ds-row.ot{grid-template-columns:minmax(0,1.6fr) 132px 96px 132px 96px 78px 34px;gap:7px}
+}
+@media(min-width:560px) and (max-width:819px){
+  .ds-row.ot{grid-template-columns:1fr 1fr;gap:7px}
+  .ds-row.hd.ot{display:none}
 }

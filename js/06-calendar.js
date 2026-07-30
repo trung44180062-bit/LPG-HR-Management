@@ -14,20 +14,34 @@ function teamColor(tm){
   return PALETTE[s%PALETTE.length];
 }
 // Pastel fills matched to the Excel WORKING SCHEDULE sheet
-const SCHEDBG={O:'#E3DBF5',D:'#BDD7EE',N:'#C6E0B4',R:'#FFFFFF'};
-const SCHEDTXT={O:'#000000',D:'#1F3B57',N:'#2E4B22',R:'#C00000'};
+/* Nền pastel + chữ đậm màu tối — chữ trắng trên nền đậm bị chìm khi ô trùng
+   với cột "hôm nay" (nền vàng nhạt ghi đè), nên mọi mã đều dùng chữ tối. */
+const SCHEDBG={
+  O:'#E3DBF5', D:'#BDD7EE', N:'#C6E0B4', R:'#FFFFFF',
+  AL8:'#FBD9E4', AL4:'#FCE7EF', NP:'#FBD5D2', OFF:'#FDEBC8',
+  OTD:'#CFEFDF', OTN:'#CFEFDF', X:'#CFEFDF',
+  SD:'#E6DAFB', SN:'#E6DAFB', SO:'#E6DAFB',
+  OTL:'#CFEFDF', OT2:'#CFEFDF', OT3:'#CFEFDF'
+};
+const SCHEDTXT={
+  O:'#000000', D:'#1F3B57', N:'#2E4B22', R:'#C00000',
+  AL8:'#98123F', AL4:'#98123F', NP:'#A31B14', OFF:'#8A5A00',
+  OTD:'#0B6244', OTN:'#0B6244', X:'#0B6244',
+  SD:'#4C1D95', SN:'#4C1D95', SO:'#4C1D95',
+  OTL:'#0B6244', OT2:'#0B6244', OT3:'#0B6244'
+};
 function cellStyle(code){
   if(!code)return '';
-  if(SCHEDBG[code])return `background:${SCHEDBG[code]};color:${SCHEDTXT[code]}`;
+  if(SCHEDBG[code])return `background:${SCHEDBG[code]};color:${SCHEDTXT[code]};font-weight:800`;
   const info=codeInfo(code);
-  return `background:${info.col||'#64748B'};color:#fff`;
+  return `background:${info.col||'#64748B'};color:#fff;font-weight:800`;
 }
 function renderSched(){renderCal({mode:'std'});}
 function renderReal(){renderCal({mode:'real'});}
 function renderBoth(){renderCal();}
 // Cấu hình bảng chuẩn (S.base, chỉ đọc) và thực tế (base+over, sửa được, tô khác biệt) — v4: dùng chung 1 bộ control + 1 box, chỉ khác cờ `real`
-const STD ={real:false, box:'mtxBox', lbl:'schedPeriodLbl', month:'calMonth', range:'calRange', grp:'calGroupFilter', legend:'legend'};
-const REAL={real:true,  box:'mtxBox', lbl:'schedPeriodLbl', month:'calMonth', range:'calRange', grp:'calGroupFilter', legend:'legend'};
+const STD ={real:false, box:'mtxBox', month:'calMonth', range:'calRange', grp:'calGroupFilter'};
+const REAL={real:true,  box:'mtxBox', month:'calMonth', range:'calRange', grp:'calGroupFilter'};
 /* ===== v4: renderCal() hợp nhất — điều phối desktop (matrix) và mobile (thẻ tuần / theo ngày) ===== */
 function renderCal(opts){
   opts=opts||{};
@@ -39,11 +53,6 @@ function renderCal(opts){
   document.querySelectorAll('#calSeg button').forEach(b=>b.classList.toggle('on',b.dataset.m===calMode));
   const real=calMode==='real';
   $('calDiffWrap').style.display=real?'':'none';
-  $('calModeTitleVN').textContent=real?'Cavern Process · LỊCH THỰC TẾ (biến động ca)':'Cavern Process · LỊCH CHUẨN (tham chiếu)';
-  $('calModeTitleEN').textContent=real?'WORKING SCHEDULE — ACTUAL':'WORKING SCHEDULE — STANDARD';
-  $('calHintDesktop').innerHTML=real
-    ?'● cam = ca đã đổi so với chuẩn (viền cam). Bật <b>Quản lý</b> rồi chạm ô để sửa ca thực tế; lịch chuẩn không đổi. Yêu cầu đã duyệt (nghỉ/đổi ca/tăng ca) cũng hiện ở đây.'
-    :'Đây là <b>lịch ca chuẩn</b> — cố định, dùng làm tham chiếu. Chỉ tạo/điền ở tab <b>Nhóm &amp; Lịch</b>. Mọi biến động thực tế xem &amp; sửa ở chế độ <b>Thực tế</b>.';
   const tgl=$('calViewToggle');if(tgl)tgl.textContent=calMobileView==='day'?'📅 Xem tuần':'👁 Theo ngày';
   renderMatrix(real?REAL:STD);
   if(calMobileView==='day'){$('calWeekBox').style.display='none';$('calDayBox').style.display='';renderCalDayView();}
@@ -54,16 +63,14 @@ function toggleCalMobileView(){calMobileView=calMobileView==='week'?'day':'week'
 function renderMatrix(C){
   fillGroupFilter(C.grp);
   const ym=$(C.month).value;
-  if(!ym){$(C.box).innerHTML='<p style="padding:20px" class="muted">Chưa có lịch. Vào tab 🛠️ <b>Nhóm &amp; Lịch</b> để tạo nhóm và điền lịch.</p>';renderLegend(C.legend);$(C.lbl).textContent='';return;}
-  const p=periodFor(ym);
-  $(C.lbl).textContent=p.label;
+  if(!ym){$(C.box).innerHTML='<p style="padding:20px" class="muted">Chưa có lịch. Vào tab 🛠️ <b>Nhóm &amp; Lịch</b> để tạo nhóm và điền lịch.</p>';return;}
   const rg=$(C.range).value;
   let days=daysOfPeriod(ym);
   if(rg==='p1')days=days.filter(iso=>+iso.slice(8)>=21);
   else if(rg==='p2')days=days.filter(iso=>{const d=+iso.slice(8);return d>=1&&d<=10;});
   else if(rg==='p3')days=days.filter(iso=>{const d=+iso.slice(8);return d>=11&&d<=20;});
   const fGrp=$(C.grp).value;
-  let emps=activeEmps();if(fGrp&&fGrp!=='__all')emps=emps.filter(e=>(e.team||'')===fGrp);
+  let emps=schedEmps();if(fGrp&&fGrp!=='__all')emps=emps.filter(e=>(e.team||'')===fGrp);
   const tIso=todayIso();
   const wkClass=iso=>{const dw=new Date(iso+'T00:00:00').getDay();return dw===0||dw===6?' wknd':'';};
   const diffOnly=C.real&&$('realDiffOnly')&&$('realDiffOnly').checked;
@@ -102,7 +109,7 @@ function renderMatrix(C){
       const roleLbl=e.role==='eng'?'Kỹ sư':e.role==='oper'?'Operator':(e.role==='other'?'':'');
       h+=`<tr>`+
         `<td class="c0">${i+1}</td>`+
-        `<td class="c1" style="background:${col}">${esc(tm)}</td>`+
+        `<td class="c1" style="background:${col}">${esc(teamShort(tm))}</td>`+
         `<td class="c2">${esc(e.id)}</td>`+
         `<td class="c3">${esc(e.name||'(chưa đặt tên)')}</td>`+
         `<td class="c4">${esc(e.pos||roleLbl)}</td>`;
@@ -124,9 +131,9 @@ function renderMatrix(C){
   });
   h+='</tr></tfoot></table>';
   $(C.box).innerHTML=h;
-  renderLegend(C.legend);
 }
 function renderLegend(elId){
+  if(!$(elId))return;
   const L=[['O','Office (08–17h)'],['D','Day time (08–20h)'],['N','Night time (20–08h)'],['R','Rest']];
   let s=L.map(([c,d])=>`<span class="lg"><span class="box" style="${cellStyle(c)}">${c}</span>${d}</span>`).join('');
   s+=allCodes().filter(c=>c.cat==='leave'||c.cat==='ot').map(c=>`<span class="lg"><span class="box" style="background:${c.col};color:#fff">${c.c}</span>${c.l}</span>`).join('');
@@ -198,7 +205,7 @@ function renderCalWeekCards(){
   const days=calDaysForCurrentFilter();
   if(!days.length){box.innerHTML='<p class="muted" style="padding:16px">Chưa có lịch. Vào 🛠️ Nhóm &amp; Lịch để tạo nhóm và điền lịch.</p>';return;}
   const fGrp=$('calGroupFilter').value;
-  let emps=activeEmps();if(fGrp&&fGrp!=='__all')emps=emps.filter(e=>(e.team||'')===fGrp);
+  let emps=schedEmps();if(fGrp&&fGrp!=='__all')emps=emps.filter(e=>(e.team||'')===fGrp);
   const meIdCur=meId();
   const byTeam={};emps.forEach(e=>{const t=e.team||'';(byTeam[t]=byTeam[t]||[]).push(e);});
   const teams=[];emps.forEach(e=>{const t=e.team||'';if(!teams.includes(t))teams.push(t);});

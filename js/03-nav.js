@@ -15,8 +15,7 @@ function go(v,opts){
   if(v==='me')renderMe();
   if(v==='cal')renderCal(opts);
   if(v==='setup')renderSetup();
-  if(v==='mp')renderMp();
-  if(v==='stats')renderStats();
+  if(v==='rep')renderReport();
   if(v==='appr')renderAppr();
   if(v==='data')renderData();
 }

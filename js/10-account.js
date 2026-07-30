@@ -48,28 +48,77 @@ function sha256(ascii){
 }
 function hashPw(id,pw){return sha256(unescape(encodeURIComponent(id+'|'+pw)));}
 
-/* =================== TÀI KHOẢN TỰ ĐỘNG THEO MÃ NV ===================
-   Quy tắc: MỌI nhân viên đã có mã NV + họ tên đều tự động là một tài khoản
-   đăng nhập, mật khẩu ban đầu = chính mã NV (dù mã có dạng gì đi nữa).
-   Chỉ dòng trống (chưa nhập tên) mới bị bỏ qua — đó là dòng vừa thêm chưa điền.
-   acc.init === true  →  vẫn đang dùng mật khẩu mặc định (hiện banner nhắc đổi).
-   ==================================================================== */
+/* ============================================================
+   TÀI KHOẢN ĐĂNG NHẬP
+   Operator không có email nên đăng nhập bằng MÃ NHÂN VIÊN (phần số).
+
+   Cách lưu mật khẩu (xem thêm BAO-MAT.md):
+     · Chưa đặt mật khẩu riêng → chỉ ghi cờ {init:true}, KHÔNG lưu chuỗi băm
+       nào cả. Mật khẩu tạm thời là chính mã số. Không có gì để lộ.
+     · Đã đặt mật khẩu → lưu {alg:'pbkdf2', it, salt, hash}. PBKDF2-SHA256
+       150 000 vòng, muối ngẫu nhiên 16 byte cho từng người, tính bằng
+       WebCrypto của trình duyệt. Không lưu mật khẩu gốc ở bất kỳ đâu và
+       KHÔNG viết mật khẩu nào trong mã nguồn.
+     · Bản băm cũ (sha256 trần) vẫn đăng nhập được, và được nâng cấp âm thầm
+       sang PBKDF2 ngay lần đăng nhập thành công kế tiếp.
+   ============================================================ */
 const SESS=LS+'_sess';
+const PBKDF2_ITER=150000;
+
+/* ---- Tiện ích mã hoá ---- */
+function _hex(buf){return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');}
+function _rndSalt(){const a=new Uint8Array(16);(crypto||window.crypto).getRandomValues(a);return _hex(a);}
+function _hasWebCrypto(){try{return !!(crypto&&crypto.subtle&&crypto.subtle.importKey);}catch(e){return false;}}
+
+/* Băm mật khẩu bằng PBKDF2 — trả về Promise chuỗi hex */
+async function pbkdf2Hex(pw,saltHex,iter){
+  const enc=new TextEncoder();
+  const key=await crypto.subtle.importKey('raw',enc.encode(pw),'PBKDF2',false,['deriveBits']);
+  const salt=Uint8Array.from(saltHex.match(/.{2}/g).map(h=>parseInt(h,16)));
+  const bits=await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt,iterations:iter||PBKDF2_ITER},key,256);
+  return _hex(bits);
+}
+/* Tạo bản ghi mật khẩu mới cho một người */
+async function makePwRecord(id,pw){
+  if(_hasWebCrypto()){
+    const salt=_rndSalt();
+    const hash=await pbkdf2Hex(pw,salt,PBKDF2_ITER);
+    return{alg:'pbkdf2',it:PBKDF2_ITER,salt,hash};
+  }
+  // Trình duyệt quá cũ (hoặc mở qua file:// không có crypto.subtle) → quay về sha256
+  return{alg:'sha256',hash:hashPw(id,pw)};
+}
+/* Kiểm tra mật khẩu — trả về Promise<boolean> */
+async function verifyPw(id,pw,acc){
+  if(!acc)return false;
+  if(acc.init&&!acc.hash)return pw===loginKey(id)||pw===id;     // chưa đặt mật khẩu riêng
+  if(acc.alg==='pbkdf2'&&acc.salt){
+    try{return (await pbkdf2Hex(pw,acc.salt,acc.it||PBKDF2_ITER))===acc.hash;}catch(e){return false;}
+  }
+  return hashPw(id,pw)===acc.hash;                              // bản cũ sha256
+}
 
 /* ===================== PHÂN QUYỀN =====================
-   Không còn chế độ Quản lý mở bằng PIN. Quyền khai báo ngay trong danh sách
-   nhân viên (tab Nhóm & Lịch), lưu ở trường e.perm:
-     'staff' — nhân viên thường (mặc định)
-     'appr'  — duyệt đơn: thấy tab Duyệt, sửa lịch thực tế, in đơn
-     'admin' — quản trị: thêm Nhóm & Lịch, Dữ liệu, cấp/reset mật khẩu
-     'kmgr'  — Quản lý người Hàn: quyền y hệt 'admin', khác duy nhất ở chỗ
-               đăng nhập vào là giao diện TIẾNG ANH (xem js/14-i18n.js).
-               Vẫn tự đổi được sang tiếng Việt bằng nút EN/VI trên đầu trang.
+     'staff' — nhân viên thường (mặc định): xem lịch của mình, gửi đơn
+     'sec'   — Thư ký: xem hết lịch & báo cáo, in đơn, khai hộ đơn.
+               KHÔNG duyệt đơn, KHÔNG sửa cấu hình.
+     'appr'  — Duyệt đơn: thêm quyền duyệt/từ chối và sửa lịch thực tế
+     'admin' — Quản trị: thêm Nhóm & Lịch, Dữ liệu, quản lý tài khoản
+     'kmgr'  — Quản lý người Hàn: quyền y hệt 'admin', khác duy nhất là
+               đăng nhập vào là giao diện TIẾNG ANH (xem js/14-i18n.js)
+   Người không nằm trong lịch ca (thư ký, sếp Hàn) đặt Kiểu ca = "Không xếp lịch".
    ROOT_ADMIN luôn là quản trị để còn người cấp quyền cho những người khác.
    ====================================================== */
 const ROOT_ADMIN='vc44180062';
-const PERM_LABEL={staff:'Nhân viên',appr:'Duyệt đơn',admin:'Quản trị',kmgr:'Quản lý người Hàn (EN)'};
-const PERM_VALUES=['staff','appr','admin','kmgr'];
+const PERM_LABEL={staff:'Nhân viên',sec:'Thư ký',appr:'Duyệt đơn',admin:'Quản trị',kmgr:'Quản lý người Hàn (EN)'};
+const PERM_HINT ={
+  staff:'Xem lịch của mình, gửi đơn',
+  sec:'Xem hết lịch & báo cáo, in đơn, khai hộ — không duyệt đơn',
+  appr:'Như Thư ký, thêm quyền duyệt đơn và sửa lịch thực tế',
+  admin:'Toàn quyền: Nhóm & Lịch, Dữ liệu, quản lý tài khoản',
+  kmgr:'Toàn quyền như Quản trị, giao diện mặc định tiếng Anh'
+};
+const PERM_VALUES=['staff','sec','appr','admin','kmgr'];
 
 function isRootAdmin(id){
   if(!id)return false;
@@ -82,11 +131,12 @@ function permOf(id){
   const p=e&&e.perm;
   return PERM_VALUES.includes(p)?p:'staff';
 }
-/* Đọc lại quyền của người đang đăng nhập → cập nhật cờ mgr / adm */
+/* Đọc lại quyền của người đang đăng nhập → cập nhật các cờ toàn cục */
 function applyPerm(){
   const p=permOf(meId());
-  adm=(p==='admin'||p==='kmgr');
-  mgr=(p==='admin'||p==='kmgr'||p==='appr');
+  adm =(p==='admin'||p==='kmgr');
+  mgr =(p==='admin'||p==='kmgr'||p==='appr');
+  secr=(p==='sec')||mgr;                        // được xem số liệu cả tổ
   if(typeof applyLangForUser==='function')applyLangForUser();
   return p;
 }
@@ -105,28 +155,19 @@ function loginKey(id){
 function canHaveAccount(e){return !!(e&&e.id&&String(e.name||'').trim());}
 function isRealEmpId(id){return canHaveAccount(empById(id));}
 
-/* Tạo tài khoản mặc định cho 1 mã NV (không ghi đè nếu đã có).
-   Tài khoản cũ còn dùng mật khẩu mặc định kiểu cũ (= cả mã vc…) được cấp lại
-   theo phần số, để không ai phải nhớ hai kiểu. */
+/* Đánh dấu một mã NV là có tài khoản. KHÔNG tính băm ở đây — chỉ ghi cờ
+   {init:true} nghĩa là "mật khẩu tạm thời = mã số, chưa ai đặt riêng". */
 function ensureAccount(id,silent){
   if(!id)return false;
   const e=empById(id);
-  if(e&&!canHaveAccount(e))return false;      // dòng chưa nhập tên → bỏ qua
+  if(e&&!canHaveAccount(e))return false;
   S.accounts=S.accounts||{};
-  const want=hashPw(id,loginKey(id));
   const a=S.accounts[id];
-  if(a&&a.hash){
-    if(a.init&&a.hash!==want&&a.hash===hashPw(id,id)){   // chuyển mặc định cũ → mới
-      a.hash=want;a.at=Date.now();a.by='auto';
-      return true;
-    }
-    return false;
-  }
-  S.accounts[id]={hash:want,by:'auto',at:Date.now(),init:true};
-  if(!silent)toast('Đã tạo tài khoản '+loginKey(id)+' (mật khẩu = mã số)');
+  if(a&&(a.hash||a.init))return false;
+  S.accounts[id]={init:true,by:'auto',at:Date.now()};
+  if(!silent)toast(t('Đã tạo tài khoản')+' '+loginKey(id)+' '+t('(mật khẩu = mã số)'));
   return true;
 }
-/* Quét toàn bộ danh sách — gọi sau khi load / khi roster đổi */
 function syncAccounts(){
   let changed=false;
   S.employees.forEach(e=>{
@@ -136,16 +177,17 @@ function syncAccounts(){
   if(changed)save();
   return changed;
 }
-/* Có đang dùng mật khẩu mặc định không */
+/* Còn đang dùng mật khẩu mặc định (= mã số) hay chưa */
 function usingDefaultPw(id){
   const a=S.accounts&&S.accounts[id];
-  if(!a)return false;
-  return !!(a.init||a.hash===hashPw(id,loginKey(id))||a.hash===hashPw(id,id));
+  return !!(a&&a.init&&!a.hash);
 }
 
 function meId(){
   try{const s=JSON.parse(localStorage.getItem(SESS)||'null');
-    if(s&&s.id&&empById(s.id)&&S.accounts&&S.accounts[s.id]&&S.accounts[s.id].hash)return s.id;
+    // Tài khoản hợp lệ khi đã có bản băm riêng HOẶC còn dùng mật khẩu mặc định (init)
+    const a=s&&s.id&&S.accounts&&S.accounts[s.id];
+    if(s&&s.id&&empById(s.id)&&a&&(a.hash||a.init))return s.id;
   }catch(e){}
   return null;
 }
@@ -184,41 +226,45 @@ function findEmpLoose(raw){
   return{};
 }
 
-function doLogin(){
+async function doLogin(){
   const raw=$('loginId').value.trim(),pw=$('loginPw').value;
-  if(!raw||!pw){gateMsg('Nhập cả mã nhân viên và mật khẩu.');return;}
+  if(!raw||!pw){gateMsg(t('Nhập cả mã nhân viên và mật khẩu.'));return;}
 
   if(!S.employees||!S.employees.length){
-    gateMsg('Chưa tải được danh sách nhân sự. Kiểm tra kết nối mạng rồi thử lại — hoặc nhờ quản lý mở app một lần trên máy này để đồng bộ.');
+    gateMsg(t('Chưa tải được danh sách nhân sự. Kiểm tra kết nối mạng rồi thử lại — hoặc nhờ quản lý mở app một lần trên máy này để đồng bộ.'));
     return;
   }
-
   const found=findEmpLoose(raw);
   if(found.many){
-    gateMsg('Có '+found.many.length+' người cùng mã số <b>'+esc(loginKey(raw))+'</b>. Nhờ quản lý sửa lại cho mỗi người một mã riêng.');
+    gateMsg(t('Có')+' '+found.many.length+' '+t('người cùng mã số <b>')+esc(loginKey(raw))+t('</b>. Nhờ quản lý sửa lại cho mỗi người một mã riêng.'));
     return;
   }
   const e=found.emp;
   if(!e){
-    gateMsg('Không tìm thấy mã nhân viên <b>'+esc(raw)+'</b>. Nhập phần số trong ô <b>Mã NV</b> ở tab Nhóm &amp; Lịch, ví dụ <b>44180062</b>.');
+    gateMsg(t('Không tìm thấy mã nhân viên <b>')+esc(raw)+t('</b>. Nhập phần số trong ô <b>Mã NV</b> ở tab Nhóm &amp; Lịch, ví dụ <b>44180062</b>.'));
     return;
   }
   const id=e.id, key=loginKey(id);
   if(!canHaveAccount(e)){
-    gateMsg('Mã <b>'+esc(key)+'</b> chưa có họ tên trong danh sách nên chưa được cấp tài khoản. Nhờ quản lý điền họ tên giúp.');
+    gateMsg(t('Mã <b>')+esc(key)+t('</b> chưa có họ tên trong danh sách nên chưa được cấp tài khoản. Nhờ quản lý điền họ tên giúp.'));
     return;
   }
-  ensureAccount(id,true);                       // NV chưa có tài khoản → tạo ngay
+  ensureAccount(id,true);
   const acc=S.accounts&&S.accounts[id];
-  if(!acc||!acc.hash){gateMsg('Không tạo được tài khoản cho mã này — liên hệ quản lý.');return;}
+  if(!acc){gateMsg(t('Không tạo được tài khoản cho mã này — liên hệ quản lý.'));return;}
 
-  // Còn dùng mật khẩu mặc định thì chấp nhận cả phần số lẫn mã đầy đủ (tránh kẹt khi chuyển đổi)
-  const ok = hashPw(id,pw)===acc.hash ||
-             (acc.init && (hashPw(id,key)===acc.hash || hashPw(id,id)===acc.hash) &&
-              (pw===key || pw===id));
+  const btn=$('gateBtn');if(btn){btn.disabled=true;btn.textContent=t('Đang kiểm tra…');}
+  let ok=false;
+  try{ok=await verifyPw(id,pw,acc);}catch(err){ok=false;}
+  if(btn){btn.disabled=false;btn.textContent=t('Đăng nhập');}
+
   if(!ok){
-    gateMsg('Sai mật khẩu. Nếu chưa từng đổi, mật khẩu chính là mã số của bạn: <b>'+esc(key)+'</b>');
+    gateMsg(t('Sai mật khẩu. Nếu chưa từng đổi, mật khẩu chính là mã số của bạn: <b>')+esc(key)+'</b>');
     return;
+  }
+  // Tài khoản còn dùng bản băm sha256 cũ → nâng cấp âm thầm sang PBKDF2
+  if(acc.hash&&acc.alg!=='pbkdf2'&&_hasWebCrypto()){
+    try{Object.assign(S.accounts[id],await makePwRecord(id,pw),{at:Date.now(),by:'auto-upgrade',init:false});save();}catch(err){}
   }
   localStorage.setItem(SESS,JSON.stringify({id,at:Date.now()}));
   localStorage.setItem(LS+'_me',id);
@@ -226,7 +272,7 @@ function doLogin(){
   gateMsg('');
   markSeen(id);
   renderGate();applyRoleUI();refreshBadge();go('me');
-  applyLangForUser();                       // quyền kmgr → giao diện tiếng Anh
+  applyLangForUser();
   toast(t('Xin chào')+' '+(e.name||id)+' 👋');
 }
 
@@ -238,21 +284,30 @@ function gateMsg(html){
 }
 function doLogout(){
   localStorage.removeItem(SESS);
-  mgr=false;adm=false;
-  renderGate();applyRoleUI();renderMe();toast('Đã đăng xuất');
+  mgr=false;adm=false;secr=false;
+  renderGate();applyRoleUI();renderMe();toast(t('Đã đăng xuất'));
 }
-function changeMyPass(){
+/* Kiểm tra mật khẩu mới có đủ an toàn không */
+function pwProblem(id,pw){
+  const p=(pw||'').trim();
+  if(p.length<6)return 'Mật khẩu mới tối thiểu 6 ký tự';
+  if(p===id||p===loginKey(id))return 'Không dùng lại mã nhân viên làm mật khẩu';
+  if(/^(\d)\1+$/.test(p))return 'Mật khẩu quá dễ đoán';
+  if('0123456789'.includes(p)||'9876543210'.includes(p))return 'Mật khẩu quá dễ đoán';
+  return '';
+}
+async function changeMyPass(){
   const id=meId();if(!id)return;
-  const cur=$('mePwCur').value,n1=$('mePwNew').value,n2=$('mePwNew2')?$('mePwNew2').value:n1;
+  const cur=$('mePwCur').value,n1=($('mePwNew').value||'').trim(),n2=($('mePwNew2')?$('mePwNew2').value:n1).trim();
   const acc=S.accounts[id];
-  if(!acc||hashPw(id,cur)!==acc.hash){toast('Mật khẩu hiện tại không đúng');return;}
-  if(n1.trim().length<4){toast('Mật khẩu mới tối thiểu 4 ký tự');return;}
-  if(n1.trim()!==n2.trim()){toast('Hai ô mật khẩu mới chưa khớp');return;}
-  if(n1.trim()===id||n1.trim()===loginKey(id)){toast('Không dùng lại mã nhân viên làm mật khẩu');return;}
-  acc.hash=hashPw(id,n1.trim());acc.at=Date.now();acc.by='self';acc.init=false;
+  if(!await verifyPw(id,cur,acc)){toast(t('Mật khẩu hiện tại không đúng'));return;}
+  const bad=pwProblem(id,n1);
+  if(bad){toast(t(bad));return;}
+  if(n1!==n2){toast(t('Hai ô mật khẩu mới chưa khớp'));return;}
+  S.accounts[id]=Object.assign(await makePwRecord(id,n1),{at:Date.now(),by:'self',init:false});
   save();
   ['mePwCur','mePwNew','mePwNew2'].forEach(k=>{if($(k))$(k).value='';});
-  toast('Đã đổi mật khẩu ✔');renderMe(true);
+  toast(t('Đã đổi mật khẩu ✔'));renderMe(true);
 }
 
 /* ===== Thống kê cá nhân / chung ===== */

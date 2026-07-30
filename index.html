@@ -49,7 +49,7 @@
 
     <div class="gate-msg" id="gateMsg" style="display:none"></div>
 
-    <button class="btn gate-btn" onclick="doLogin()">Đăng nhập</button>
+    <button class="btn gate-btn" id="gateBtn" onclick="doLogin()">Đăng nhập</button>
 
     <p class="gate-hint">Chỉ nhập <b>phần số</b> của mã nhân viên (bỏ chữ đầu).<br>
       Lần đầu đăng nhập: <b>mật khẩu = mã số</b> đó.
@@ -79,15 +79,14 @@
   <button class="tab on" data-v="me" onclick="go('me')"><span class="ic">🏠</span>Trang chính</button>
   <button class="tab" data-v="cal" onclick="go('cal')"><span class="ic">📅</span>Lịch</button>
   <button class="tab mgr-only" data-v="appr" onclick="go('appr')" style="position:relative"><span class="ic">✅</span>Duyệt<span class="bdg" id="pendBdg" style="display:none">0</span></button>
-  <button class="tab" data-v="mp" onclick="go('mp')"><span class="ic">👥</span>Nhân lực</button>
-  <button class="tab" data-v="stats" onclick="go('stats')"><span class="ic">📊</span>Thống kê</button>
+  <button class="tab" data-v="rep" onclick="go('rep')"><span class="ic">📊</span>Báo cáo</button>
 </nav>
 
 <!-- Mobile (<768px): bottom bar 5 mục cố định đáy -->
 <nav class="bottombar" id="bottombar">
   <button class="bb on" data-v="me" onclick="go('me')"><span class="ic">🏠</span>Trang chính</button>
   <button class="bb" data-v="cal" onclick="go('cal')"><span class="ic">📅</span>Lịch</button>
-  <button class="bb" data-v="mp" onclick="go('mp')"><span class="ic">👥</span>Nhân lực</button>
+  <button class="bb" data-v="rep" onclick="go('rep')"><span class="ic">📊</span>Báo cáo</button>
   <button class="bb mgr-only" data-v="appr" onclick="go('appr')"><span class="ic">✅</span>Duyệt<span class="bdg" id="pendBdgM" style="display:none">0</span></button>
   <button class="bb" onclick="openMoreSheet()"><span class="ic">☰</span>Thêm</button>
 </nav>
@@ -96,13 +95,13 @@
   <div class="sheet">
     <div class="bar"></div>
     <button class="si" onclick="closeMoreSheet();go('me');openDaySheet(todayIso())"><span class="ic">📝</span>Gửi đơn</button>
-    <button class="si" onclick="closeMoreSheet();go('stats')"><span class="ic">📊</span>Thống kê</button>
+    <button class="si" onclick="closeMoreSheet();go('rep')"><span class="ic">📊</span>Báo cáo</button>
     <button class="si" onclick="closeMoreSheet();openMyPanel('ot')"><span class="ic">⚡</span>Tăng ca của tôi</button>
     <button class="si" onclick="closeMoreSheet();openMyPanel('req')"><span class="ic">📋</span>Đơn của tôi</button>
     <button class="si" onclick="closeMoreSheet();openMyPanel('acc')"><span class="ic">🔑</span>Tài khoản</button>
     <button class="si admin-only" onclick="closeMoreSheet();go('setup')"><span class="ic">🛠️</span>Nhóm &amp; Lịch</button>
     <button class="si admin-only" onclick="closeMoreSheet();go('data')"><span class="ic">⚙️</span>Dữ liệu</button>
-    <button class="si mgr-only" onclick="closeMoreSheet();openPrintBulk()" style="position:relative"><span class="ic">🖨️</span>In đơn<span class="bdg" id="printBdgSheet" style="display:none;position:static;margin-left:auto">0</span></button>
+    <button class="si pc-only" onclick="closeMoreSheet();openPrintBulk()" style="position:relative"><span class="ic">🖨️</span>In đơn<span class="bdg" id="printBdgSheet" style="display:none;position:static;margin-left:auto">0</span></button>
     <button class="si" onclick="closeMoreSheet();doLogout()"><span class="ic">↪</span>Đăng xuất</button>
   </div>
 </div>
@@ -145,46 +144,31 @@
 
 <!-- ============ LỊCH (hợp nhất Chuẩn / Thực tế) ============ -->
 <section class="view on" id="v-cal">
-  <div class="card" style="padding:10px 12px 12px">
-    <div class="row" style="justify-content:space-between">
-      <div class="seg" id="calSeg">
-        <button class="on" data-m="std" onclick="setCalMode('std')">Chuẩn</button>
-        <button data-m="real" onclick="setCalMode('real')">Thực tế</button>
-      </div>
-      <div class="row" style="gap:6px">
-        <button class="btn sec sm cal-mobile-only" id="calCollapseAllBtn" onclick="calCollapseAll()">Thu/Mở tất cả</button>
-        <button class="btn sec sm cal-mobile-only" onclick="toggleCalMobileView()" id="calViewToggle">👁 Theo ngày</button>
-        <button class="btn sec sm cal-mobile-only" onclick="openLegendSheet()">?</button>
-      </div>
+  <div class="card cal-bar">
+    <button class="btn sec sm" onclick="shiftCalMonth(-1)" title="Kỳ trước">◀</button>
+    <select class="inp sm" id="calMonth" style="font-weight:700" onchange="renderCal()"></select>
+    <button class="btn sec sm" onclick="shiftCalMonth(1)" title="Kỳ sau">▶</button>
+    <div class="seg" id="calSeg">
+      <button class="on" data-m="std" onclick="setCalMode('std')">Chuẩn</button>
+      <button data-m="real" onclick="setCalMode('real')">Thực tế</button>
     </div>
-    <div class="row" style="margin-top:9px">
-      <button class="btn sec sm" onclick="shiftCalMonth(-1)">◀</button>
-      <select class="inp" id="calMonth" style="width:auto;font-weight:700" onchange="renderCal()"></select>
-      <button class="btn sec sm" onclick="shiftCalMonth(1)">▶</button>
-      <select class="inp" id="calRange" style="width:auto" onchange="renderCal()">
-        <option value="month">Cả kỳ (21→20)</option>
-        <option value="p1">21 → cuối tháng</option><option value="p2">01 → 10</option><option value="p3">11 → 20</option>
-      </select>
-      <select class="inp" id="calGroupFilter" style="width:auto;max-width:200px" onchange="renderCal()">
-        <option value="__all">Tất cả nhóm</option>
-      </select>
-      <label id="calDiffWrap" style="font-size:12px;display:flex;gap:6px;align-items:center;margin-left:4px"><input type="checkbox" id="realDiffOnly" onchange="renderCal()"> Chỉ tô ô khác chuẩn</label>
-    </div>
+    <select class="inp sm" id="calRange" onchange="renderCal()">
+      <option value="month">Cả kỳ (21→20)</option>
+      <option value="p1">21 → cuối tháng</option><option value="p2">01 → 10</option><option value="p3">11 → 20</option>
+    </select>
+    <select class="inp sm" id="calGroupFilter" style="max-width:170px" onchange="renderCal()">
+      <option value="__all">Tất cả nhóm</option>
+    </select>
+    <label id="calDiffWrap" class="cal-chk"><input type="checkbox" id="realDiffOnly" onchange="renderCal()"> Chỉ ô khác chuẩn</label>
+    <span class="sp"></span>
+    <button class="btn sec sm cal-mobile-only" id="calCollapseAllBtn" onclick="calCollapseAll()">Thu/Mở</button>
+    <button class="btn sec sm cal-mobile-only" onclick="toggleCalMobileView()" id="calViewToggle">👁 Theo ngày</button>
+    <button class="btn sec sm" onclick="openLegendSheet()" title="Chú giải mã ca">❔ Chú giải</button>
   </div>
 
-  <div class="sched-wrap cal-desktop">
-    <div class="sched-title">
-      <div><div class="t1" id="calModeTitleVN">Cavern Process · LỊCH CHUẨN (tham chiếu)</div><div class="t2" id="calModeTitleEN">WORKING SCHEDULE — STANDARD</div></div>
-      <div class="t1" id="schedPeriodLbl"></div>
-    </div>
-    <div class="sched-legend" id="legend"></div>
-    <div class="mtx-scroll" id="mtxBox"></div>
-  </div>
-
+  <div class="sched-wrap cal-desktop"><div class="mtx-scroll" id="mtxBox"></div></div>
   <div id="calWeekBox" class="cal-mobile"></div>
   <div id="calDayBox" class="cal-mobile" style="display:none"></div>
-
-  <p class="muted cal-desktop" style="margin-top:8px" id="calHintDesktop">Đây là <b>lịch ca chuẩn</b> — cố định, dùng làm tham chiếu. Chỉ tạo/điền ở tab <b>Nhóm &amp; Lịch</b>. Mọi biến động thực tế xem &amp; sửa ở chế độ <b>Thực tế</b>.</p>
 </section>
 
 <!-- ============ NHÓM & TẠO LỊCH ============ -->
@@ -198,14 +182,16 @@
       <button class="btn sec sm" onclick="periodFromAnchor()">📍 Theo mốc</button>
       <button class="btn ok" onclick="fillSchedule()">⚡ Điền lịch tự động</button>
       <button class="btn" onclick="nextMonthSchedule()" style="background:var(--brand2)">➡️ Tạo lịch tháng kế tiếp</button>
+      <button class="btn sec" onclick="newHireSchedule()">🆕 Lịch cho người mới vào giữa kỳ</button>
       <button class="btn warn sm" onclick="clearSchedRange()">🗑️ Xóa lịch (khoảng)</button>
       <button class="btn warn sm" onclick="clearSchedAll()">🗑️ Xóa toàn bộ lịch</button>
     </div>
     <div class="hint" style="margin-top:10px">
       <b>Kỳ lịch Hyosung: kỳ Tháng N = 21 tháng trước → 20 tháng này</b> (VD kỳ Tháng 7 = 21/06 → 20/07). Chọn <b>Kỳ lịch</b> (hoặc bấm <b>📍 Theo mốc</b> để phần mềm tự nhận kỳ chứa Mốc 1) rồi bấm <b>⚡ Điền lịch tự động</b> — hệ thống tạo đủ lịch cả kỳ.<br>
-      Mỗi người chọn <b>Kiểu</b> ca · <b>Ca 8 ngày</b> = O O D D N N R R · <b>Ca 6 ngày</b> = D D N N R R · <b>Hành chính</b> = T2–T6 làm (O), T7/CN nghỉ.
-      Với ca 8/6 ngày: điền <b>Mốc 1</b> (ngày đầu của cặp Office/ca đầu) và <b>Mốc 2</b> (cặp kế tiếp) — phần mềm đo khoảng cách 2 mốc để suy ra chu kỳ. Bỏ trống Mốc 2 sẽ dùng chu kỳ mặc định (8 / 6 ngày).
-      Sau khi điền, có thể chỉnh tay từng ô ở tab <b>Lịch ca</b> (chế độ Quản lý) cho các trường hợp đặc biệt.
+      Các kiểu ca: Ca 8 ngày là O O D D N N R R. Ca 6 ngày là D D N N R R. Hành chính T2–T6 làm ca O, nghỉ thứ bảy và chủ nhật. Hành chính T2–T7 làm ca O, chỉ nghỉ chủ nhật — operator mới nhận việc đi ca này để học việc. Không xếp lịch dành cho thư ký và quản lý cấp trên, vẫn có tài khoản nhưng không nằm trong bảng lịch.<br>
+      Với ca 8 ngày và 6 ngày: điền Mốc 1 là ngày đầu của cặp Office hoặc ca đầu, và Mốc 2 là cặp kế tiếp — phần mềm đo khoảng cách hai mốc để suy ra chu kỳ. Bỏ trống Mốc 2 sẽ dùng chu kỳ mặc định 8 hoặc 6 ngày.<br>
+      Sau khi điền, có thể chỉnh tay từng ô ở tab Lịch, chế độ Thực tế, cho các trường hợp đặc biệt.<br>
+      Người vào làm giữa kỳ: điền Ngày vào làm ở dòng của họ rồi bấm nút Lịch cho người mới vào giữa kỳ — phần mềm chỉ xếp ca từ ngày đó trở đi, không đụng lịch người khác.
     </div>
   </div>
   <div class="row" style="margin-bottom:12px">
@@ -215,48 +201,22 @@
   <div id="setupBody"></div>
 </section>
 
-<!-- ============ NHÂN LỰC ============ -->
-<section class="view" id="v-mp">
-  <div class="card">
-    <div class="row">
-      <div style="flex:1;min-width:140px"><label class="fl">Từ ngày</label><input type="date" class="inp" id="mpFrom"></div>
-      <div style="flex:1;min-width:140px"><label class="fl">Đến ngày</label><input type="date" class="inp" id="mpTo"></div>
-      <div style="align-self:flex-end"><button class="btn" onclick="renderMp()">Xem</button></div>
-    </div>
-    <div class="row" style="margin-top:9px">
-      <label style="font-size:12.5px;display:flex;gap:6px;align-items:center"><input type="checkbox" id="mpOnlyLow" onchange="renderMp()"> Chỉ hiện ngày thiếu nhân lực</label>
-      <span class="muted">Định mức tối thiểu: D ≥ <b id="minDLbl"></b>, N ≥ <b id="minNLbl"></b> (chỉnh ở tab Dữ liệu)</span>
-    </div>
-  </div>
-  <div id="mpList"></div>
-</section>
-
-<!-- ============ THỐNG KÊ ============ -->
-<section class="view" id="v-stats">
-  <div class="card">
-    <div class="row">
-      <button class="btn sec sm" onclick="stShift(-1)">◀</button>
-      <select class="inp" id="stMonth" style="width:auto;font-weight:700" onchange="renderStats()"></select>
-      <button class="btn sec sm" onclick="stShift(1)">▶</button>
-      <select class="inp" id="stGroup" style="width:auto" onchange="renderStats()"><option value="__all">Tất cả nhóm</option></select>
-      <button class="btn ok sm" onclick="exportStats()">📤 Xuất Excel</button>
-    </div>
-    <p class="muted" style="margin-top:8px">Tính theo <b>lịch thực tế</b> (chuẩn + điều chỉnh + yêu cầu đã duyệt). Số giờ mỗi mã ca khai báo ở tab <b>⚙️ Dữ liệu</b>.</p>
-  </div>
-  <div class="me-stats" id="stSummary" style="margin-bottom:12px"></div>
-  <div class="card stbl" id="stTable"></div>
+<!-- ============ BÁO CÁO (Nhân lực · Thống kê · Biểu đồ) ============ -->
+<section class="view" id="v-rep">
+  <div class="card rep-bar" id="repBar"></div>
+  <div id="repBody"></div>
 </section>
 
 <!-- ============ DUYỆT ============ -->
 <section class="view" id="v-appr">
   <div class="card" id="apprLock">
     <h3>🔒 Khu vực quản lý</h3>
-    <p class="muted">Tài khoản của bạn chưa được cấp quyền duyệt đơn. Quản trị viên cấp quyền ở cột <b>Quyền</b> trong tab Nhóm &amp; Lịch.</p>
+    <p class="muted">Tài khoản của bạn chưa được cấp quyền duyệt đơn. Quản trị viên cấp quyền ở bảng Tài khoản đăng nhập và phân quyền trong tab Dữ liệu.</p>
   </div>
   <div id="apprBody" style="display:none">
-    <div class="row" style="margin-bottom:12px"><button class="btn" style="position:relative" onclick="openPrintBulk()">🖨️ In đơn<span class="bdg" id="printBdgAppr" style="display:none;position:static;margin-left:6px">0</span></button></div>
-    <div class="card"><h3>⏳ Chờ duyệt (<span id="pendCount">0</span>)</h3><div id="pendList"></div></div>
-    <div class="card"><h3>🗂️ Lịch sử</h3><div id="histList"></div></div>
+    <div class="card appr-bar" id="apprBar"></div>
+    <div class="appr-bulk" id="apprBulk"></div>
+    <div id="apprList"></div>
   </div>
 </section>
 
@@ -293,8 +253,15 @@
   </div>
 
   <div class="card">
-    <h3>👤 Tài khoản đăng nhập nhân viên</h3>
-    <p class="muted" style="margin-bottom:8px">Nhân viên vào tab <b>👤 Của tôi</b> đăng nhập bằng <b>Mã NV + mật khẩu</b> để xem lịch của mình và gửi đăng ký. Quản trị viên cấp / reset / thu hồi mật khẩu tại đây. Mật khẩu được mã hoá (hash) trước khi lưu lên Firebase.</p>
+    <h3>👤 Tài khoản đăng nhập và phân quyền
+      <span style="flex:1"></span>
+      <button class="btn sec sm" onclick="addAccountRow()">＋ Thêm người</button></h3>
+    <p class="muted" style="margin-bottom:8px">Đây là nơi duy nhất quản lý người dùng: mã NV, họ tên, nhóm, kiểu ca, quyền và mật khẩu.</p>
+    <p class="muted" style="margin-bottom:8px">Nhân viên đăng nhập bằng mã số và mật khẩu; lần đầu mật khẩu chính là mã số. Mật khẩu lưu dạng băm PBKDF2 có muối nên không xem lại được — quên thì đặt lại. Xem thêm file BAO-MAT.md.</p>
+    <div class="hint" style="margin-bottom:9px">
+      <p>Quyền: Nhân viên chỉ xem lịch của mình và gửi đơn. Thư ký xem hết lịch và báo cáo, in đơn, khai hộ nhưng không duyệt. Duyệt đơn có thêm quyền duyệt và sửa lịch thực tế. Quản trị toàn quyền. Quản lý người Hàn như Quản trị nhưng giao diện mặc định tiếng Anh.</p>
+      <p style="margin-top:5px">Người không nằm trong lịch ca như thư ký hay quản lý cấp trên thì đặt Kiểu ca là Không xếp lịch — vẫn có tài khoản, không hiện trong bảng lịch.</p>
+    </div>
     <div style="overflow:auto"><table class="tbl" id="accTbl"></table></div>
   </div>
 
@@ -314,7 +281,7 @@
       <div class="fg"><label class="fl">Tối thiểu ca ngày (D)</label><input type="number" class="inp" id="setMinD" min="0"></div>
       <div class="fg"><label class="fl">Tối thiểu ca đêm (N)</label><input type="number" class="inp" id="setMinN" min="0"></div>
     </div>
-    <p class="muted" style="margin:4px 0 10px">Phân quyền (Nhân viên · Duyệt đơn · Quản trị) khai báo ở cột <b>Quyền</b> trong tab <b>🛠️ Nhóm &amp; Lịch</b>.</p>
+    <p class="muted" style="margin:4px 0 10px">Phân quyền khai báo ở bảng Tài khoản đăng nhập và phân quyền ngay trên trang này.</p>
     <button class="btn warn sm" onclick="wipeAll()">🗑️ Xoá toàn bộ dữ liệu trên máy</button>
   </div>
 </section>
@@ -337,30 +304,21 @@
 <div class="mask" id="printMask" onclick="if(event.target===this)closePrintBulk()">
   <div class="modal">
     <h3>🖨️ In đơn</h3>
-    <div class="seg" id="pbTabSeg" style="margin-bottom:10px">
-      <button class="on" data-t="pending" onclick="setPbTab('pending')">Chưa in (<span id="pbPendCount">0</span>)</button>
-      <button data-t="done" onclick="setPbTab('done')">Đã in</button>
+    <div class="row" style="gap:7px;margin-bottom:9px">
+      <input class="inp sm" id="pbSearchName" placeholder="Tìm theo tên nhân viên..." style="flex:1;min-width:150px" oninput="renderPrintBulkList(true)">
+      <label class="fl2">Từ</label><input type="date" class="inp sm" id="pbFrom" onchange="renderPrintBulkList()">
+      <label class="fl2">Đến</label><input type="date" class="inp sm" id="pbTo" onchange="renderPrintBulkList()">
     </div>
-    <div id="pbPendingPane">
-      <div class="grid2">
-        <div class="fg"><label class="fl">Từ ngày</label><input type="date" class="inp" id="pbFrom" onchange="renderPrintBulkList()"></div>
-        <div class="fg"><label class="fl">Đến ngày</label><input type="date" class="inp" id="pbTo" onchange="renderPrintBulkList()"></div>
-      </div>
-      <div class="fg"><label class="fl">Bố cục in</label><select class="inp" id="pbLayout">
-        <option value="2up">2 đơn/tờ A4 đứng — tiết kiệm giấy (mặc định)</option>
-        <option value="a5">1 đơn/tờ A5 ngang (chữ to hơn)</option>
-      </select></div>
-      <div class="print-modal-list" id="pbList"></div>
-      <div class="hint" style="margin-top:10px" id="pbCountHint"></div>
-      <div class="row" style="margin-top:12px">
-        <button class="btn" style="flex:1" onclick="doPrintBulk()">🖨️ In</button>
-        <button class="btn sec" style="flex:1" onclick="closePrintBulk()">Đóng</button>
-      </div>
-    </div>
-    <div id="pbDonePane" style="display:none">
-      <input class="inp" id="pbSearchName" placeholder="Tìm theo tên nhân viên..." oninput="renderPrintLogList()" style="margin-bottom:8px">
-      <div class="print-modal-list" id="pbLogList"></div>
-      <div class="row" style="margin-top:12px"><button class="btn sec" style="flex:1" onclick="closePrintBulk()">Đóng</button></div>
+    <div class="fg"><label class="fl">Bố cục in</label><select class="inp" id="pbLayout">
+      <option value="a5">1 đơn/tờ A5 ngang — đúng chuẩn công ty (mặc định)</option>
+      <option value="2up">2 đơn/tờ A4 đứng — tiết kiệm giấy</option>
+    </select></div>
+    <p class="muted sm2" style="margin-bottom:7px">Đơn chưa in mặc định tích sẵn hết; đơn đã in rồi mặc định bỏ tích — tích lại nếu cần in bù.</p>
+    <div class="print-modal-list" id="pbList"></div>
+    <div class="hint" style="margin-top:10px" id="pbCountHint"></div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn" style="flex:1" onclick="doPrintBulk()">🖨️ In</button>
+      <button class="btn sec" style="flex:1" onclick="closePrintBulk()">Đóng</button>
     </div>
   </div>
 </div>
@@ -390,6 +348,7 @@
 <script src="js/10-account.js"></script>
 <script src="js/11-stats-data.js"></script>
 <script src="js/13-portal.js"></script>
+<script src="js/15-report.js"></script>
 <script src="js/12-main.js"></script>
 
 </body>

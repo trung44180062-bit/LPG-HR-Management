@@ -69,13 +69,13 @@ function myReqs(id){
 /* Đơn đã có quyết định mà nhân viên chưa xem */
 function unseenDecisions(id){
   const t=lastSeen(id);
-  return myReqs(id).filter(r=>r.decidedAt&&r.decidedAt>t);
+  return myReqs(id).filter(r=>(r.decidedAt||0)>t);
 }
 /* Trùng đơn: đã có đơn pending/approved nào phủ lên các ngày đang khai chưa */
 function conflictReqs(id,isoList,type){
   const want=new Set(isoList);
   return Object.values(S.requests||{}).filter(r=>{
-    if(r.empId!==id||r.status==='rejected')return false;
+    if(r.empId!==id||REQ_DEAD(r.status))return false;
     if(type&&r.type!==type&&r.status!=='approved')return false;
     for(const iso of reqDaySet(r))if(want.has(iso))return true;
     return false;
@@ -103,7 +103,7 @@ function crewGroupInfo(g){
 }
 function crewOfDay(iso){
   const g={};
-  activeEmps().forEach(e=>{
+  schedEmps().forEach(e=>{
     const r=eff(e.id,iso), c=r.code;
     if(!c||!CREW_SHOW(c))return;
     const std=(S.base[e.id]||{})[iso]||'';
@@ -121,10 +121,43 @@ function crewOfDay(iso){
       (y.ovr-x.ovr)||                                    // người có biến động lên trước
       String(x.e.team||'').localeCompare(String(y.e.team||''),'vi',{numeric:true}))]);
 }
+/* ============================================================
+   AI ĐỔI CA ĐƯỢC VỚI AI
+   Chỉ đổi ca giữa hai người đang có CA THẬT trong ngày đó: ca làm việc
+   (O / D / N và các mã ca tự khai) hoặc ngày nghỉ ca R.
+   Người đang NGHỈ PHÉP (AL8 / AL4 / NP / OFF) hay đang TĂNG CA (OTD /
+   OTN / X) thì không đổi ca được — nghỉ phép rồi thì lấy ca đâu mà đổi.
+   ============================================================ */
+const SWAP_OK_CATS={work:1,rest:1,swap:1};
+const SWAPPABLE=c=>!!(c&&SWAP_OK_CATS[codeInfo(c).cat]);
+/* Trả về lý do KHÔNG đổi ca được ('' nghĩa là đổi được) */
+function swapBlockReason(id,iso){
+  const c=eff(id,iso).code;
+  if(!c)return 'chưa xếp ca';
+  if(SWAPPABLE(c))return '';
+  const cat=codeInfo(c).cat;
+  if(cat==='leave')return 'đang nghỉ phép';
+  if(cat==='ot')   return 'đang tăng ca';
+  return 'ca '+c+' không đổi được';
+}
+/* Kiểm tra cả hai người trên toàn bộ các ngày của đơn */
+function swapBlockList(aId,bId,isoList){
+  const out=[];
+  const nm=id=>shortName((empById(id)||{}).name||id);
+  isoList.forEach(iso=>{
+    [aId,bId].forEach(id=>{
+      if(!id)return;
+      const why=swapBlockReason(id,iso);
+      if(why)out.push(`${fmtVN(iso)}: ${nm(id)} ${t(why)}`);
+    });
+  });
+  return out;
+}
+
 /* ---- Người đang nghỉ (R) ngày đó → ưu tiên gợi ý đổi ca ---- */
 function swapCandidates(id,iso){
   const me=empById(id);
-  const list=activeEmps().filter(e=>e.id!==id);
+  const list=schedEmps().filter(e=>e.id!==id);
   const score=e=>{
     const c=eff(e.id,iso).code;
     let s=0;
@@ -210,7 +243,7 @@ function otSummary(id,ym){
   });
   Object.values(S.requests||{}).forEach(r=>{
     if(r.empId!==id||r.type!=='ot'||r.status!=='pending')return;
-    reqDays(r).forEach(d=>{if(days.includes(d.iso))pending+=getHours(d.code||'OTD');});
+    reqDays(r).forEach(d=>{if(days.includes(d.iso))pending+=(d.hours||getHours(d.code||'OTD'));});
   });
   return{approved,pending};
 }
@@ -251,7 +284,7 @@ function renderMe(force){
 
   ${news.length?`<div class="pv-alert info">
      🔔 ${news.length} đơn vừa có kết quả:
-     ${news.slice(0,3).map(r=>`<b>${r.status==='approved'?'✅ duyệt':'❌ từ chối'}</b> ${esc(REQ_LABEL[r.type]||r.type)} ${fmtVN(r.from)}`).join(' · ')}
+     ${news.slice(0,3).map(r=>`<b>${({approved:'✅ duyệt',rejected:'❌ từ chối'})[r.status]||''}</b> ${esc(REQ_LABEL[r.type]||r.type)} ${fmtVN(r.from)}`).join(' · ')}
      <button class="btn sm" onclick="openMyPanel('req')">Xem</button></div>`:''}
 
   <div class="card pv-cal-card">
@@ -407,10 +440,27 @@ function dsDefaultTimes(iso){
 }
 function dsNewRow(t,iso){
   const hrs=dsDefaultTimes(iso);
+  if(t==='ot'){
+    // Mặc định gợi ý mẫu theo ca đang làm hôm đó cho đỡ phải chọn
+    const cur=baseShiftOf(eff(dsOwnerId||meId(),iso).code);
+    const pv=cur==='N'?'OTN':(cur==='D'?'OTD':'OT3');
+    const p=otPreset(pv);
+    return{iso,isoEnd:'',preset:pv,code:p.code,timeIn:p.from,timeOut:p.to};
+  }
   return{iso,code:dsDefaultCode(t,iso),
     timeIn:(t==='wt'||t==='late')?hrs[0]:'',
     timeOut:(t==='wt'||t==='late')?hrs[1]:''};
 }
+/* Chọn mẫu OT → tự điền giờ; "Tự điền giờ" thì để người khai tự nhập */
+function dsSetPreset(i,v){
+  const r=dsRows[i];if(!r)return;
+  const p=otPreset(v);
+  r.preset=v;r.code=p.code;
+  if(p.from){r.timeIn=p.from;r.timeOut=p.to;r.isoEnd=p.overnight?addDaysIso(r.iso,1):'';}
+  dsRenderForm();
+}
+/* Số giờ của một dòng OT */
+function dsRowOtHours(r){return otHours(r.iso,r.timeIn,r.isoEnd,r.timeOut);}
 function dsAddRow(){
   const t=pvSheetForm;if(!t)return;
   if(dsRows.length>=DS_MAX_ROWS){toast('Một đơn tối đa '+DS_MAX_ROWS+' ngày — gửi thêm đơn mới');return;}
@@ -479,14 +529,32 @@ function dsPickFilter(key){
   if(key==='owner')list=list.filter(e=>e.id!==dsWithId);
   if(key==='guar') list=list.filter(e=>e.id!==own);
   if(q)list=list.filter(e=>noAccent(e.name).includes(q)||noAccent(e.id).includes(q));
-  box.innerHTML=list.slice(0,50).map(e=>{
+  list=list.slice(0,60);
+
+  /* Đơn đổi ca: tách người đổi được / không đổi được (nghỉ phép, tăng ca…) */
+  // ô "Đổi ca với" chỉ có ở đơn đổi ca; ô "Người đứng đơn" cũng phải kiểm khi đang khai đổi ca
+  const checkSwap=(key==='with')||(key==='owner'&&pvSheetForm==='swap');
+  const row=(e,why)=>{
     const c=eff(e.id,iso).code, rest=codeInfo(c).cat==='rest';
-    return `<button type="button" class="pk-item${rest?' free':''}" onclick="dsPickSet('${key}','${e.id}')">
-      <span class="n">${rest?'🟢 ':''}${esc(e.name||e.id)}</span>
-      <span class="m">${e.team?'Nhóm '+esc(e.team)+' · ':''}${esc(e.id)}</span>
+    const dis=!!why;
+    return `<button type="button" class="pk-item${rest&&!dis?' free':''}${dis?' off':''}"
+      ${dis?`disabled title="${esc(t('Không đổi ca được'))}: ${esc(t(why))}"`:`onclick="dsPickSet('${key}','${e.id}')"`}>
+      <span class="n">${rest&&!dis?'🟢 ':''}${esc(e.name||e.id)}</span>
+      <span class="m">${dis?esc(t(why)):(e.team?'Nhóm '+esc(e.team)+' · ':'')+esc(e.id)}</span>
       ${c?`<span class="cc" style="background:${codeInfo(c).col}">${c}</span>`:'<span class="cc" style="background:#94A3B8">—</span>'}
     </button>`;
-  }).join('')||'<p class="muted" style="padding:8px 4px">Không tìm thấy ai khớp.</p>';
+  };
+  let html='';
+  if(checkSwap){
+    const ok=[],no=[];
+    list.forEach(e=>{const why=swapBlockReason(e.id,iso);(why?no:ok).push([e,why]);});
+    html=ok.map(([e])=>row(e,'')).join('');
+    if(!ok.length)html='<p class="muted" style="padding:8px 4px">Ngày này không có ai đổi ca được.</p>';
+    if(no.length)html+=`<div class="pk-sep">Không đổi ca được ngày ${fmtVN(iso)}</div>`+no.map(([e,w])=>row(e,w)).join('');
+  }else{
+    html=list.map(e=>row(e,'')).join('');
+  }
+  box.innerHTML=html||'<p class="muted" style="padding:8px 4px">Không tìm thấy ai khớp.</p>';
 }
 function dsPickSet(key,id){
   if(key==='owner'){dsOwnerId=id;if(dsWithId===id)dsWithId='';}
@@ -524,7 +592,7 @@ function renderDaySheet(){
           ${x.withId?`<i>với ${esc((empById(x.withId)||{}).name||x.withId)}</i>`:''}
           ${x.reason?`<i>Lý do từ chối: ${esc(x.reason)}</i>`:''}</span>
         <span class="st ${x.status}">${{pending:'CHỜ',approved:'DUYỆT',rejected:'TỪ CHỐI'}[x.status]}</span>
-        ${x.status==='pending'&&(x.empId===id||x.byId===id)?`<button class="btn warn sm" onclick="cancelMyReq('${x.id}')">Huỷ</button>`:''}
+        ${canCancelReq(x,id)?`<button class="btn warn sm" onclick="cancelMyReq('${x.id}')">${x.status==='approved'?'Huỷ đơn đã duyệt':'Huỷ'}</button>`:''}
       </div>`).join('')}
    </div>`:''}
 
@@ -536,17 +604,18 @@ function renderDaySheet(){
           const gi=crewGroupInfo(b);
           return `<div class="crew-col${gi.rest?' rest':''}">
           <div class="crew-h"><span class="cc" style="background:${gi.col}">${esc(gi.code)}</span><b>${esc(gi.label)}</b><i>${list.length}</i></div>
-          <div class="crew-n">${list.map(m=>`<span class="mate${m.e.id===id?' me':''}${m.ovr?' ovr':''}">
-              ${m.ovr?`<em class="chg">${chip(m.std)}<b class="ar">→</b></em>`:''}
+          <div class="crew-n">${list.map(m=>`<span class="mate${m.e.id===id?' me':''}${m.ovr?' ovr':''}"${
+              m.ovr?` title="${esc(t('Lịch chuẩn')+': '+m.std+' → '+t('thực tế')+': '+m.code)}"`:''}>
               <b class="nm">${esc(shortName(m.e.name)||m.e.id)}</b>
+              ${m.e.team?`<i class="tm">${esc(teamShort(m.e.team))}</i>`:''}
               ${m.code!==gi.code?`<em class="now">${chip(m.code)}</em>`:''}
-              ${m.e.team?`<i class="tm">${esc(m.e.team)}</i>`:''}
+              ${m.ovr?`<em class="chg" title="${esc(t('Chuyển từ ca')+' '+m.std)}">⇄${esc(m.std)}</em>`:''}
             </span>`).join('')}</div>
         </div>`;}).join('')}
      </div>
-     <p class="crew-note">Đang xem lịch thực tế: lịch chuẩn + điều chỉnh + đơn đã duyệt.</p>
+     <p class="crew-note">Xếp theo <b>ca thực tế</b> — ai đổi ca đã nằm sẵn ở nhóm mình đi làm hôm đó.</p>
      <p class="crew-note">${nChanged
-        ?'Ô viền cam là người có ca khác lịch chuẩn, hiện dạng chuẩn → thực tế.'
+        ?'Ô viền cam là người khác lịch chuẩn; dấu ⇄ ghi ca chuẩn cũ của họ.'
         :'Ngày này chưa có ai đổi so với lịch chuẩn.'}</p>
    </div>`:''}
 
@@ -572,7 +641,7 @@ function dsRenderForm(){
 function dsFormHtml(t){
   const own=dsOwnerId||meId();
   const codes=dsCodesFor(t);
-  const needCode=(t==='leave'||t==='ot'||t==='change');
+  const needCode=(t==='leave'||t==='change');   // đơn tăng ca có bảng riêng bên dưới
   const needTime=(t==='wt'||t==='late');
 
   /* --- Đơn làm liên tục nhiều ngày: chọn theo KHOẢNG ngày --- */
@@ -606,10 +675,48 @@ function dsFormHtml(t){
     h+=dsPersonPicker('owner','Người đứng đơn',own,
         own===meId()?'Mặc định là bạn. Đổi sang người khác nếu bạn khai hộ.':'⚠️ Bạn đang khai hộ người này.');
     h+=dsPersonPicker('with','Đổi ca với',dsWithId,
-        'Người đang <b>nghỉ ca R</b> ngày đó được xếp lên đầu danh sách.');
+        'Người đang <b>nghỉ ca R</b> ngày đó được xếp lên đầu danh sách. '
+       +'Chỉ đổi ca giữa hai người đang có ca O / D / N / R — ai đang nghỉ phép hoặc tăng ca thì không đổi ca được.');
+  }
+
+  /* --- Đơn tăng ca: mỗi dòng là một lần OT, khai được mốc giờ và ngày --- */
+  if(t==='ot'){
+    h+=`<div class="fg"><label class="fl">Các lần tăng ca — mỗi lần một dòng</label>
+      <div class="ds-rows ot">
+        <div class="ds-row hd ot">
+          <span class="c2">Mẫu tăng ca</span>
+          <span class="c1">Từ ngày</span><span class="c2">Giờ bắt đầu</span>
+          <span class="c1">Đến ngày</span><span class="c2">Giờ kết thúc</span>
+          <span class="c3">Số giờ</span><span class="c4"></span>
+        </div>
+        ${dsRows.map((row,i)=>{
+          const hrs=dsRowOtHours(row);
+          const over=row.isoEnd&&row.isoEnd!==row.iso;
+          return `<div class="ds-row ot">
+          <span class="c2"><select class="inp" onchange="dsSetPreset(${i},this.value)">
+            ${OT_PRESETS.map(p=>`<option value="${p.v}"${p.v===(row.preset||'')?' selected':''}>${esc(p.label)}</option>`).join('')}
+          </select></span>
+          <span class="c1"><input type="date" class="inp" value="${row.iso}" onchange="dsSetRow(${i},'iso',this.value)"></span>
+          <span class="c2"><input type="time" class="inp" value="${row.timeIn||''}" onchange="dsSetRow(${i},'timeIn',this.value)"></span>
+          <span class="c1"><input type="date" class="inp" value="${row.isoEnd||''}" placeholder="cùng ngày"
+                 title="Bỏ trống nếu tăng ca trong cùng ngày" onchange="dsSetRow(${i},'isoEnd',this.value)"></span>
+          <span class="c2"><input type="time" class="inp" value="${row.timeOut||''}" onchange="dsSetRow(${i},'timeOut',this.value)"></span>
+          <span class="c3 othr">${hrs?rnd1(hrs)+'h':'—'}${over?' <i class="ovn">qua đêm</i>':''}</span>
+          <span class="c4"><button type="button" class="rowx" onclick="dsDelRow(${i})" title="Xoá dòng">✕</button></span>
+        </div>`;}).join('')}
+      </div>
+      <button type="button" class="btn sec sm addrow" onclick="dsAddRow()">＋ Thêm lần tăng ca</button>
+      <p class="muted" style="margin-top:4px">Chọn mẫu là tự điền giờ. Tăng ca vắt qua nửa đêm thì điền <b>Đến ngày</b> là hôm sau — để trống nghĩa là trong cùng ngày. Tối đa ${DS_MAX_ROWS} dòng / đơn.</p>
+    </div>`;
+    h+=dsNoteHtml();
+    h+=`<div id="dsWarn"></div>
+      <button class="btn ds-submit" onclick="dsSubmit('${t}')">Gửi đơn ${esc(REQ_LABEL[t])}</button>
+    </div>`;
+    return h;
   }
 
   /* Bảng dòng */
+
   h+=`<div class="fg"><label class="fl">Các ngày xin ${esc((REQ_LABEL[t]||'').toLowerCase())} — mỗi ngày một dòng</label>
     <div class="ds-rows">
       <div class="ds-row hd${needTime?' wt':''}">
@@ -683,11 +790,22 @@ function dsFormUI(){
 
   if(t==='swap'&&!dsWithId)h+=`<div class="pv-alert warn sm">⚠️ Chưa chọn người đổi ca.</div>`;
   if(t==='swap'&&dsWithId===own)h+=`<div class="pv-alert warn sm">⚠️ Không thể đổi ca với chính mình.</div>`;
+  if(t==='swap'){
+    const bad=swapBlockList(own,dsWithId,isos);
+    if(bad.length)h+=`<div class="pv-alert warn sm">⚠️ Không đổi ca được: ${bad.map(esc).join(' · ')}.
+      Chỉ đổi ca giữa hai người đang có ca O / D / N / R — nghỉ phép hay tăng ca thì không đổi ca được.</div>`;
+  }
 
   const cf=conflictReqs(own,isos,t);
   if(cf.length)h+=`<div class="pv-alert warn sm">⚠️ Đã có ${cf.length} đơn khác phủ lên ngày đang khai
      (${cf.slice(0,3).map(r=>esc(REQ_LABEL[r.type]||r.type)+' '+fmtVN(r.from)).join(', ')}). Gửi tiếp có thể bị trùng.</div>`;
 
+  if(t==='ot'){
+    const bad=dsRows.filter(r=>!dsRowOtHours(r));
+    if(bad.length)h+=`<div class="pv-alert warn sm">⚠️ Có ${bad.length} dòng chưa điền đủ giờ bắt đầu / kết thúc.</div>`;
+    const tot=dsRows.reduce((a,r)=>a+dsRowOtHours(r),0);
+    if(tot)h+=`<div class="pv-alert info sm">Tổng giờ tăng ca của đơn: <b>${rnd1(tot)}h</b>.</div>`;
+  }
   if(t==='leave'){
     const want=dsRows.reduce((a,r)=>a+alDayValue(r.code),0);
     const left=alLeft(own), pend=alPending(own);
@@ -725,7 +843,16 @@ function dsSubmit(t){
       if(!row.iso||seen.has(row.iso))return;
       seen.add(row.iso);
       const d={iso:row.iso};
-      if(t==='leave'||t==='ot'||t==='change')d.code=row.code||dsDefaultCode(t,row.iso);
+      if(t==='leave'||t==='change')d.code=row.code||dsDefaultCode(t,row.iso);
+      if(t==='ot'){
+        const p=otPreset(row.preset||'');
+        d.code=row.code||p.code||'OTD';
+        d.preset=row.preset||'';
+        d.timeIn=row.timeIn||p.from||'';
+        d.timeOut=row.timeOut||p.to||'';
+        if(row.isoEnd&&row.isoEnd!==row.iso)d.isoEnd=row.isoEnd;
+        d.hours=otHours(d.iso,d.timeIn,d.isoEnd,d.timeOut);
+      }
       if(t==='wt'||t==='late'){
         const hrs=dsDefaultTimes(row.iso);
         d.timeIn=row.timeIn||hrs[0];d.timeOut=row.timeOut||hrs[1];
@@ -734,7 +861,15 @@ function dsSubmit(t){
     });
     if(!days.length){toast('Thêm ít nhất 1 ngày cho đơn');return;}
     if(t==='swap'){
-      if(!dsWithId||dsWithId===empId){toast('Chọn người đổi ca hợp lệ');return;}
+      if(!dsWithId||dsWithId===empId){toast(t2('Chọn người đổi ca hợp lệ'));return;}
+      // Chỉ đổi ca giữa hai người đang có ca thật (O/D/N/R).
+      // Nghỉ phép rồi thì không còn ca nào để đổi; tăng ca cũng không phải ca chính.
+      const bad=swapBlockList(empId,dsWithId,days.map(d=>d.iso));
+      if(bad.length){
+        alert(t2('Không đổi ca được:')+'\n• '+bad.join('\n• ')+'\n\n'
+             +t2('Chỉ đổi ca giữa hai người đang có ca O / D / N / R.'));
+        return;
+      }
       r.withId=dsWithId;
     }else r.withId='';
     r.days=days;
@@ -768,12 +903,25 @@ function dsSubmit(t){
   toastWithPrint(t2('Đã gửi đơn')+' '+t2(REQ_LABEL[t]||t)+who+' '+t2('— chờ duyệt ✔'),r.id);
 }
 
+/* Nhân viên tự huỷ đơn của mình (kể cả đơn đã duyệt — lịch sẽ trả về ca chuẩn).
+   Đơn đã in nộp nhân sự thì phải nhờ quản lý huỷ để còn báo lại giấy tờ. */
 function cancelMyReq(rid){
   const id=meId(),r=S.requests[rid];
-  if(!r||(r.empId!==id&&r.byId!==id)||r.status!=='pending')return;
-  if(!confirm(t('Huỷ đơn này?')))return;
-  delete S.requests[rid];
-  save();renderDaySheet();renderMe(true);toast(t('Đã huỷ đơn'));
+  if(!r){toast(t('Không tìm thấy đơn'));return;}
+  if(!canCancelReq(r,id)){
+    toast(r.printedAt?t('Đơn đã in nộp nhân sự — nhờ quản lý huỷ giúp')
+                     :t('Bạn không huỷ được đơn này'));
+    return;
+  }
+  let msg=t('Huỷ đơn này? Đơn sẽ bị xoá hẳn.');
+  if(r.status==='approved')msg+='\n'+t('Đơn đã duyệt — lịch thực tế sẽ trả về ca chuẩn.');
+  if(!confirm(msg))return;
+  const x=cancelReq(rid);
+  save();
+  renderDaySheet();renderMe(true);
+  if(typeof renderAppr==='function')renderAppr();
+  if(typeof refreshBadge==='function')refreshBadge();
+  toast(t('Đã huỷ đơn')+(x&&x.reverted?' · '+t('hoàn tác')+' '+x.reverted+' '+t('ô lịch'):''));
 }
 
 /* ============================================================
@@ -818,7 +966,7 @@ function myPanelOt(id){
   const wait=Object.values(S.requests||{}).filter(r=>r.empId===id&&r.type==='ot'&&r.status==='pending');
   const rej =Object.values(S.requests||{}).filter(r=>r.empId===id&&r.type==='ot'&&r.status==='rejected').slice(0,5);
   const hDone=done.reduce((a,x)=>a+x.h,0);
-  let hWait=0;wait.forEach(r=>reqDays(r).forEach(d=>{hWait+=getHours(d.code||'OTD');}));
+  let hWait=0;wait.forEach(r=>reqDays(r).forEach(d=>{hWait+=(d.hours||getHours(d.code||'OTD'));}));
 
   // tổng cả năm
   let hYear=0;const yr=String(new Date().getFullYear());
@@ -877,7 +1025,7 @@ function myPanelReq(id){
         ${r.byId&&r.byId!==r.empId?`<i>✍️ ${r.byId===id?'Bạn khai hộ '+esc((empById(r.empId)||{}).name||r.empId):'Khai hộ bởi '+esc((empById(r.byId)||{}).name||r.byId)}</i>`:''}
         ${r.note?`<i>${esc(r.note)}</i>`:''}${r.reason?`<i>Lý do: ${esc(r.reason)}</i>`:''}</span>
       <span class="st ${r.status}">${{pending:'CHỜ',approved:'DUYỆT',rejected:'TỪ CHỐI'}[r.status]}</span>
-      ${r.status==='pending'&&(r.empId===id||r.byId===id)?`<button class="btn warn sm" onclick="cancelMyReq('${r.id}');renderMyPanel()">Huỷ</button>`:''}
+      ${canCancelReq(r,id)?`<button class="btn warn sm" onclick="cancelMyReq('${r.id}');renderMyPanel()">${r.status==='approved'?'Huỷ đơn đã duyệt':'Huỷ'}</button>`:''}
       ${r.status==='approved'?`<button class="btn sec sm" onclick="printOne('${r.id}')">🖨️</button>`:''}
     </div>`;
   return `
@@ -887,7 +1035,8 @@ function myPanelReq(id){
   <div class="ds-block"><h4>✅ Đã duyệt (${grp.approved.length})</h4>
     ${grp.approved.length?grp.approved.slice(0,15).map(row).join(''):'<p class="muted">Chưa có.</p>'}</div>
   ${grp.rejected.length?`<div class="ds-block"><h4>❌ Bị từ chối (${grp.rejected.length})</h4>
-    ${grp.rejected.slice(0,10).map(row).join('')}</div>`:''}`;
+    ${grp.rejected.slice(0,10).map(row).join('')}</div>`:''}
+`;
 }
 
 /* ---- Phép năm (cho phép tự khai số còn lại) ---- */
