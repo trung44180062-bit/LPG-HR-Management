@@ -212,6 +212,20 @@ function renderData(){
   $('setMinD').value=S.settings.minD;$('setMinN').value=S.settings.minN;
   $('setMinD').onchange=()=>{S.settings.minD=+$('setMinD').value||0;save();};
   $('setMinN').onchange=()=>{S.settings.minN=+$('setMinN').value||0;save();};
+  if($('setOtLimit')){
+    $('setOtLimit').value=S.settings.otLimit||40;
+    $('setOtLimit').onchange=()=>{S.settings.otLimit=+$('setOtLimit').value||40;save();
+      if(typeof asRender==='function')asRender();};
+  }
+  /* Ngưỡng của trợ lý duyệt đơn (js/18-advice.js) */
+  if($('setMinO')){
+    $('setMinO').value=(S.settings.minO===''||S.settings.minO==null)?1:S.settings.minO;
+    $('setMinO').onchange=()=>{S.settings.minO=+$('setMinO').value||0;save();};
+  }
+  if($('setMaxOffTeam')){
+    $('setMaxOffTeam').value=(S.settings.maxOffTeam===''||S.settings.maxOffTeam==null)?1:S.settings.maxOffTeam;
+    $('setMaxOffTeam').onchange=()=>{S.settings.maxOffTeam=+$('setMaxOffTeam').value||0;save();};
+  }
   $('setDeptDefault').value=S.settings.deptDefault||DEPT_DEFAULT_FALLBACK;
   $('setApprover1').value=S.settings.approver1||'';
   $('setApprover2').value=S.settings.approver2||'';

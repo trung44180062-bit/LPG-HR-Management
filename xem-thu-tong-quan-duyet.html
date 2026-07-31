@@ -1,0 +1,108 @@
+<!doctype html><html lang="vi"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Xem thử — Tổng quan phê duyệt (tab Duyệt)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css">
+<style>body{padding:16px}.wrap{max-width:1300px;margin:0 auto}
+.note{background:#FFFBEB;border:1px solid #FDE68A;color:#92400E;border-radius:10px;padding:9px 12px;font-size:12.5px;margin-bottom:12px;font-weight:600}</style>
+</head><body><div class="wrap">
+<p class="note">Trang xem thử dữ liệu giả — chỉ để soi bố cục bảng <b>Tổng quan phê duyệt</b> ở đầu tab Duyệt. Bấm thử các con số / chip cảnh báo đều chạy được (chỉ không có danh sách đơn bên dưới).</p>
+<div class="appr-tabs" id="apprTabs"></div>
+<div class="card as-panel" id="apprSum"></div>
+<div class="card appr-bar" id="apprListWrap" style="margin-top:12px"><p class="muted">↑ Bấm một ô số hoặc một chip cảnh báo → app thật nhảy sang sub-tab Danh sách đơn với đúng bộ lọc (ở đây chỉ ghi ra bên dưới).</p><p id="echo" class="muted sm2" style="margin-top:6px"></p></div>
+</div>
+
+<script>
+/* ---- các hàm dùng chung, lấy đúng bản trong app ---- */
+const $=id=>document.getElementById(id);
+const pad=n=>String(n).padStart(2,'0');
+const t=s=>s, esc=s=>String(s??'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+const rnd1=v=>Math.round(v*10)/10;
+const isEN=()=>false;
+const isoOf=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+const todayIso=()=>isoOf(new Date());
+const fmtVNfull=iso=>iso.split('-').reverse().join('/');
+const noAccent=s=>String(s??'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/đ/g,'d').toLowerCase().trim();
+const toast=m=>{$('echo').textContent='→ '+m;};
+function periodShort(m,y){return 'Kỳ T'+m+'/'+y;}
+function periodFor(ym){const[y,m]=ym.split('-').map(Number);const pm=m===1?12:m-1,py=m===1?y-1:y;
+  return{from:py+'-'+pad(pm)+'-21',to:y+'-'+pad(m)+'-20',y,m,short:periodShort(m,y),
+         label:periodShort(m,y)+' · 21/'+pad(pm)+' → 20/'+pad(m)};}
+function schedMonthOf(iso){const[y,m,d]=iso.split('-').map(Number);
+  if(d>=21){const nm=m===12?1:m+1,ny=m===12?y+1:y;return ny+'-'+pad(nm);}return y+'-'+pad(m);}
+function curSchedMonth(){return schedMonthOf(todayIso());}
+const monthsAvailable=()=>['2026-04','2026-05','2026-06','2026-07','2026-08'];
+const getHours=c=>({OTD:12,OTN:12,OTL:1,AL8:8,AL4:4,D:12,N:12,O:8}[c]||0);
+function otHours(iso,a,e,b){if(!iso||!a||!b)return 0;const x=new Date(iso+'T'+a+':00');let y=new Date((e||iso)+'T'+b+':00');
+  if(y<=x)y=new Date(y.getTime()+864e5);return Math.round((y-x)/36e5*10)/10;}
+const reqDays=r=>(r.days||[]).map(d=>({iso:d.iso,code:d.code||'',timeIn:d.timeIn||'',timeOut:d.timeOut||'',isoEnd:d.isoEnd||'',hours:d.hours||0}));
+const reqInRange=(r,f,tt)=>reqDays(r).some(d=>d.iso>=f&&d.iso<=tt);
+const REQ_LABEL={leave:'Nghỉ phép',swap:'Đổi ca',ot:'Tăng ca',change:'Đổi mã ca',wt:'Bổ sung công',late:'Đi trễ / Về sớm',multi:'Làm liên tục nhiều ngày'};
+const REQ_ICON={leave:'🏖',swap:'🔄',ot:'⚡',change:'✏️',wt:'🪪',late:'⏰',multi:'🔁'};
+const TEAM_TONE=[['#DBEAFE','#1D4ED8'],['#DCFCE7','#15803D'],['#FEF3C7','#B45309'],['#FCE7F3','#BE185D'],['#E0E7FF','#4338CA'],['#CCFBF1','#0F766E']];
+function teamChip(tm){const n=String(tm||'').trim();if(!n)return '<span class="team-chip" style="background:#F1F5F9;color:#64748B">—</span>';
+  let s=0;for(let i=0;i<n.length;i++)s=(s*31+n.charCodeAt(i))>>>0;const[bg,fg]=TEAM_TONE[s%TEAM_TONE.length];
+  return '<span class="team-chip" style="background:'+bg+';color:'+fg+'">'+esc(n)+'</span>';}
+let mgr=true, curView='appr', apprTab='sum';
+const applyRoleUI=()=>{};
+const refreshPrintBadge=()=>{};
+function renderApprTabs(){const b=$('apprTabs');if(!b)return;
+  b.innerHTML=[['list','📋 Danh sách đơn',3],['sum','📊 Tổng quan',0]].map(([k,l,n])=>
+    '<button class="aptab'+(apprTab===k?' on':'')+'" onclick="apprSetTab(\''+k+'\')">'+l+(n?'<i>'+n+'</i>':'')+'</button>').join('');
+  $('apprSum').style.display=apprTab==='sum'?'':'none';
+  $('apprListWrap').style.display=apprTab==='sum'?'none':'';}
+function apprSetTab(v){apprTab=v;renderAppr();}
+function renderAppr(){renderApprTabs();if(apprTab==='sum')asRender();
+  $('echo').textContent='→ Lọc danh sách: kỳ='+apprFilter.ym+' · trạng thái='+apprFilter.status+' · loại='+apprFilter.type+' · cảnh báo='+(apprFilter.flag||'—')+' · tìm="'+apprFilter.q+'"';}
+let apprFilter={status:'pending',print:'__all',type:'__all',q:'',ym:curSchedMonth(),from:'',to:'',flag:''};
+function apprRange(){if(apprFilter.ym==='__range'){const f=apprFilter.from,tt=apprFilter.to;if(!f&&!tt)return null;return[f||'0000-01-01',tt||'9999-12-31'];}
+  if(apprFilter.ym&&apprFilter.ym!=='__all'){const p=periodFor(apprFilter.ym);return[p.from,p.to];}return null;}
+
+/* ---- danh sách nhân sự & đơn giả lập ---- */
+const EMPS=[['vc001','Nguyễn Văn An','A','Operator'],['vc002','Trần Thị Bình','A','Field Engineer'],
+  ['vc003','Lê Hoàng Cường','B','Operator'],['vc004','Phạm Minh Dũng','B','Operator'],
+  ['vc005','Đỗ Thu Hà','C','Admin Officer'],['vc006','Vũ Quốc Khánh','C','Operator'],
+  ['vc007','Bùi Thanh Lâm','D','Operator'],['vc008','Ngô Đức Mạnh','D','Field Engineer'],
+  ['vc009','Hoàng Trung','Office','Team Leader']];
+const empById=id=>{const e=EMPS.find(x=>x[0]===id);return e?{id:e[0],name:e[1],team:e[2],pos:e[3]}:null;};
+const P=periodFor(curSchedMonth());const D=86400000, NOW=Date.now();
+function d(n){const x=new Date(P.from+'T00:00:00');x.setDate(x.getDate()+n);return isoOf(x);}
+let seed=7;const rnd=()=>(seed=(seed*1103515245+12345)&0x7fffffff)/0x7fffffff;
+const S={settings:{otLimit:40},requests:{}};
+let k=0;
+function add(emp,type,st,days,x){S.requests['r'+(++k)]=Object.assign({id:'r'+k,empId:emp,type,status:st,days,
+  from:days[0].iso,to:days[days.length-1].iso,createdAt:NOW-Math.floor(rnd()*12)*D},x||{});}
+/* tăng ca — dồn nhiều vào vài người để thấy cảnh báo vượt trần */
+[['vc001',6],['vc003',5],['vc004',3],['vc006',2],['vc007',2],['vc002',1]].forEach(([id,n])=>{
+  for(let i=0;i<n;i++){const day=d(2+Math.floor(rnd()*27));
+    const long=rnd()<.55;
+    add(id,'ot',rnd()<.12?'pending':'approved',
+      [long?{iso:day,code:'OTN',hours:12}:{iso:day,code:'OTD',timeIn:'14:00',timeOut:'19:30'}],
+      rnd()<.5?{printedAt:NOW-2*D}:{});}});
+/* nghỉ phép */
+[['vc002',2],['vc005',2],['vc008',1],['vc009',1]].forEach(([id,n])=>{
+  for(let i=0;i<n;i++){const day=d(3+Math.floor(rnd()*25));
+    add(id,'leave',rnd()<.3?'pending':'approved',[{iso:day,code:rnd()<.3?'AL4':'AL8'}]);}});
+/* đổi ca */
+add('vc003','swap','pending',[{iso:d(24),code:'SD'}],{withId:'vc004',confirmW:'pending'});
+add('vc007','swap','approved',[{iso:d(12),code:'SN'}],{withId:'vc008',confirmW:'confirmed',printedAt:NOW-D});
+add('vc008','swap','pending',[{iso:d(19),code:'SN'}],{withId:'vc007',confirmW:'declined'});
+/* các loại còn lại */
+add('vc004','wt','approved',[{iso:d(9),code:'D'}],{byId:'vc003'});
+add('vc006','late','rejected',[{iso:d(6),code:'D'}]);
+add('vc001','late','approved',[{iso:d(14),code:'N'}],{noPrint:true});
+add('vc005','change','approved',[{iso:d(11),code:'O'}]);
+add('vc002','multi','pending',[{iso:d(17),code:'D'}],{to:d(20),createdAt:NOW-8*D});
+/* vài đơn kỳ trước & kỳ trước nữa để có đường diễn biến */
+for(let p=1;p<=5;p++){const pm=(()=>{let[y,m]=curSchedMonth().split('-').map(Number);m-=p;while(m<1){m+=12;y--;}return y+'-'+pad(m);})();
+  const pp=periodFor(pm);
+  for(let i=0;i<6+Math.floor(rnd()*8);i++){
+    const x=new Date(pp.from+'T00:00:00');x.setDate(x.getDate()+Math.floor(rnd()*29));
+    const id=EMPS[Math.floor(rnd()*EMPS.length)][0];
+    const ty=rnd()<.55?'ot':(rnd()<.5?'leave':'change');
+    add(id,ty,'approved',[{iso:isoOf(x),code:ty==='ot'?'OTN':(ty==='leave'?'AL8':'D'),hours:ty==='ot'?(rnd()<.5?12:5.5):0}]);}}
+</script>
+<script src="js/17-appr-sum.js"></script>
+<script>renderAppr();</script>
+</body></html>

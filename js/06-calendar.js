@@ -43,6 +43,14 @@ function renderBoth(){renderCal();}
 const STD ={real:false, box:'mtxBox', month:'calMonth', range:'calRange', grp:'calGroupFilter'};
 const REAL={real:true,  box:'mtxBox', month:'calMonth', range:'calRange', grp:'calGroupFilter'};
 /* ===== v4: renderCal() hợp nhất — điều phối desktop (matrix) và mobile (thẻ tuần / theo ngày) ===== */
+/* ------------------------------------------------------------
+   ĐIỆN THOẠI XEM LỊCH KIỂU "NHÂN LỰC"
+   Ma trận lịch và thẻ tuần vốn thiết kế cho màn hình rộng; nhét vào
+   màn hình điện thoại thì chữ li ti, cuộn ngang, nhìn rất rối. Từ bản
+   này, trên điện thoại tab Lịch hiện DANH SÁCH THEO NGÀY giống bảng
+   Nhân lực: mỗi ngày một dòng gọn, chạm mới bung tên người. Máy tính
+   giữ nguyên ma trận đầy đủ.
+   ------------------------------------------------------------ */
 function renderCal(opts){
   opts=opts||{};
   if(opts.mode)calMode=opts.mode;
@@ -53,10 +61,22 @@ function renderCal(opts){
   document.querySelectorAll('#calSeg button').forEach(b=>b.classList.toggle('on',b.dataset.m===calMode));
   const real=calMode==='real';
   $('calDiffWrap').style.display=real?'':'none';
+  const mob=isMobile();
+  const show=(id,on)=>{const el=$(id);if(el)el.style.display=on?'':'none';};
+
+  if(mob){
+    /* Điện thoại: chỉ một danh sách theo ngày, bỏ hẳn ma trận & thẻ tuần
+       (không dựng luôn cho nhẹ máy, chứ không phải chỉ ẩn bằng CSS). */
+    show('calWeekBox',false);show('calDayBox',false);show('calMpBox',true);
+    fillGroupFilter('calGroupFilter');   // renderMatrix không chạy trên ĐT nên phải điền ở đây
+    renderCalMpList();
+    return;
+  }
+  show('calMpBox',false);
   const tgl=$('calViewToggle');if(tgl)tgl.textContent=calMobileView==='day'?'📅 Xem tuần':'👁 Theo ngày';
   renderMatrix(real?REAL:STD);
-  if(calMobileView==='day'){$('calWeekBox').style.display='none';$('calDayBox').style.display='';renderCalDayView();}
-  else{$('calWeekBox').style.display='';$('calDayBox').style.display='none';renderCalWeekCards();}
+  if(calMobileView==='day'){show('calWeekBox',false);show('calDayBox',true);renderCalDayView();}
+  else{show('calWeekBox',true);show('calDayBox',false);renderCalWeekCards();}
 }
 function setCalMode(m){calMode=m;renderCal();}
 function toggleCalMobileView(){calMobileView=calMobileView==='week'?'day':'week';renderCal();}
@@ -304,6 +324,113 @@ function renderCalWeekCards(){
     setTimeout(()=>{const el=$('wkc'+firstOpenIdx);if(el)el.scrollIntoView({block:'center',behavior:'smooth'});},80);
   }
 }
+/* ============================================================
+   LỊCH TRÊN ĐIỆN THOẠI — DANH SÁCH THEO NGÀY (kiểu Nhân lực)
+   Một dòng = một ngày. Nhìn phát biết ngay hôm đó ai trực ca nào,
+   khối sản xuất và khối văn phòng đếm riêng, ngày thiếu người tô đỏ.
+   Chạm vào dòng mới bung danh sách tên → màn hình không bị chữ dày đặc.
+   ============================================================ */
+let calMpOpen={};                 // ngày nào đang bung chi tiết
+let calMpLowOnly=false;           // chỉ hiện ngày thiếu người
+function calMpToggle(iso){
+  calMpOpen[iso]=!calMpOpen[iso];
+  const el=$('cmp_'+iso);if(el)el.classList.toggle('open',!!calMpOpen[iso]);
+}
+function calMpSetLow(on){calMpLowOnly=!!on;renderCalMpList();}
+function calMpNames(list,iso,codes){
+  if(!list.length)return `<span class="muted">—</span>`;
+  return list.map(e=>{
+    const c=codes?eff(e.id,iso).code:'';
+    const nm=esc(shortName(e.name)||e.id)+(e.team?`<em>${esc(teamShort(e.team))}</em>`:'');
+    return (calMode==='real'&&mgr)
+      ? `<button type="button" class="cmp-nm edit" onclick="openCell('${e.id}','${iso}')">${nm}${c?chip(c):''}</button>`
+      : `<span class="cmp-nm">${nm}${c?chip(c):''}</span>`;
+  }).join('');
+}
+function renderCalMpList(){
+  const box=$('calMpBox');if(!box)return;
+  const days=calDaysForCurrentFilter();
+  if(!days.length){box.innerHTML='<p class="muted" style="padding:16px">Chưa có lịch. Vào 🛠️ Nhóm &amp; Lịch để tạo nhóm và điền lịch.</p>';return;}
+  const fGrp=$('calGroupFilter').value;
+  const tIso=todayIso(), meCur=meId();
+  const only=(fGrp&&fGrp!=='__all')?fGrp:'';
+  const keep=e=>!only||String(e.team||'')===only;
+  const pick=arr=>arr.filter(keep);
+  const pickX=arr=>arr.filter(x=>keep(x.e));
+
+  let rows='',nLow=0,shown=0,todayIdx=-1;
+  days.forEach(iso=>{
+    const P=mpBucketsByPool(iso);
+    const B={D:pick(P.prod.D),N:pick(P.prod.N),O:pick(P.prod.O),R:pick(P.prod.R),
+             leave:pickX(P.prod.leave),ot:pickX(P.prod.ot)};
+    const V={O:pick(P.office.O),R:pick(P.office.R),
+             leave:pickX(P.office.leave),ot:pickX(P.office.ot)};
+    /* Định mức chỉ áp cho khối sản xuất — khối văn phòng không trực ca */
+    const lowD=P.prod.D.length<minOfShift('D'), lowN=P.prod.N.length<minOfShift('N');
+    const low=lowD||lowN;
+    if(low)nLow++;
+    if(calMpLowOnly&&!low)return;
+    if(iso===tIso)todayIdx=shown;
+    shown++;
+    const dw=new Date(iso+'T00:00:00').getDay();
+    const nLeave=B.leave.length+V.leave.length, nOt=B.ot.length+V.ot.length;
+    const mine=eff(meCur,iso).code;
+    const pl=(n,lb,col,bad)=>`<span class="cmp-p${bad?' bad':''}${n?'':' zero'}" style="--pc:${col}"><b>${n}</b><i>${lb}</i></span>`;
+    const sec=(ttl,inner)=>`<div class="cmp-s"><h5>${ttl}</h5>${inner}</div>`;
+
+    rows+=`<div class="cmp-row${iso===tIso?' today':''}${low?' low':''}${calMpOpen[iso]?' open':''}" id="cmp_${iso}">
+      <button type="button" class="cmp-h" onclick="calMpToggle('${iso}')">
+        <span class="cmp-d">
+          <b>${+iso.slice(8)}/${+iso.slice(5,7)}</b>
+          <i class="${dw===0?'dowSun':dw===6?'dowSat':''}">${dowOf(iso)}</i>
+          ${iso===tIso?`<em class="tdy">${t('hôm nay')}</em>`:''}
+        </span>
+        <span class="cmp-ps">
+          ${pl(B.D.length,'D','var(--cD)',lowD)}
+          ${pl(B.N.length,'N','var(--cN)',lowN)}
+          ${pl(B.O.length,'O',"var(--cO)",false)}
+          ${pl(V.O.length,'VP','var(--cSW)',false)}
+          ${pl(B.R.length,'R','var(--cR)',false)}
+          ${nLeave?pl(nLeave,'🏖','var(--cAL)',false):''}
+          ${nOt?pl(nOt,'⚡','var(--cOT)',false):''}
+        </span>
+        ${mine?`<span class="cmp-me">${chip(mine)}</span>`:''}
+        ${low?'<span class="cmp-w">⚠</span>':''}
+        <span class="cmp-cv">▾</span>
+      </button>
+      <div class="cmp-det">
+        <div class="cmp-pool">${poolChip(POOL_PROD)} ${t('Khối sản xuất')}</div>
+        ${sec(chip('D')+' '+t('Ca ngày')+' <i>'+B.D.length+(minOfShift('D')?'/'+minOfShift('D'):'')+'</i>',calMpNames(B.D,iso))}
+        ${sec(chip('N')+' '+t('Ca đêm')+' <i>'+B.N.length+(minOfShift('N')?'/'+minOfShift('N'):'')+'</i>',calMpNames(B.N,iso))}
+        ${sec(chip('O')+' '+t('Ca hành chính (sản xuất)')+' <i>'+B.O.length+'</i>',calMpNames(B.O,iso))}
+        ${sec(chip('R')+' '+t('Nghỉ ca')+' <i>'+B.R.length+'</i>',calMpNames(B.R,iso))}
+        ${B.leave.length?sec(chip('AL8')+' '+t('Nghỉ phép')+' <i>'+B.leave.length+'</i>',calMpNames(B.leave.map(x=>x.e),iso,true)):''}
+        ${B.ot.length?sec(chip('OTD')+' '+t('Tăng ca')+' <i>'+B.ot.length+'</i>',calMpNames(B.ot.map(x=>x.e),iso,true)):''}
+        <div class="cmp-pool">${poolChip(POOL_OFF)} ${t('Khối văn phòng')}</div>
+        ${sec(chip('O')+' '+t('Hành chính')+' <i>'+V.O.length+'</i>',calMpNames(V.O,iso))}
+        ${V.leave.length?sec(chip('AL8')+' '+t('Nghỉ phép')+' <i>'+V.leave.length+'</i>',calMpNames(V.leave.map(x=>x.e),iso,true)):''}
+        ${V.ot.length?sec(chip('OTD')+' '+t('Tăng ca')+' <i>'+V.ot.length+'</i>',calMpNames(V.ot.map(x=>x.e),iso,true)):''}
+        <div class="cmp-acts">
+          ${noSelf?'':`<button class="btn sec sm" onclick="openDaySheet('${iso}')">✍️ ${t('Xem ngày & gửi đơn')}</button>`}
+          ${(calMode==='real'&&mgr)?`<span class="muted sm2">${t('Chạm tên để sửa ca thực tế')}</span>`:''}
+        </div>
+      </div>
+    </div>`;
+  });
+
+  const head=`<div class="cmp-head">
+    <span class="st ${nLow?'rejected':'approved'}">${nLow?('⚠ '+nLow+' '+t('ngày thiếu người')):'✓ '+t('đủ nhân lực cả kỳ')}</span>
+    <label class="cal-chk"><input type="checkbox" ${calMpLowOnly?'checked':''} onchange="calMpSetLow(this.checked)"> ${t('Chỉ ngày thiếu người')}</label>
+    <span class="muted sm2">${t('Định mức khối sản xuất')}: D ≥ ${minOfShift('D')} · N ≥ ${minOfShift('N')}</span>
+  </div>`;
+  box.innerHTML=head+(shown?`<div class="cmp">${rows}</div>`
+    :`<div class="card"><p class="muted">${t('Không có ngày nào khớp bộ lọc.')}</p></div>`);
+  if(todayIdx>=0&&!box._scrolled){
+    box._scrolled=true;
+    setTimeout(()=>{const el=$('cmp_'+tIso);if(el)el.scrollIntoView({block:'center',behavior:'smooth'});},80);
+  }
+}
+
 /* Nhân lực theo ngày (mobile) */
 function calDayShift(d){const dt=new Date((calDate||todayIso())+'T00:00:00');dt.setDate(dt.getDate()+d);calDate=isoOf(dt);renderCalDayView();}
 function calDaySet(v){if(v){calDate=v;renderCalDayView();}}

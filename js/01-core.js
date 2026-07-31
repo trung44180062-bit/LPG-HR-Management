@@ -73,7 +73,7 @@ let S={
   over:{},                // over[empId][iso] = {code, reqId?, by, at}  (sửa tay)
   requests:{},            // requests[id] = {...}
   accounts:{},            // accounts[empId] = {hash, by, at}  (whitelist đăng nhập nhân viên)
-  settings:{pin:DEFAULT_PIN,minD:3,minN:3,hours:{},customCodes:[],deptDefault:DEPT_DEFAULT_FALLBACK,approver1:APPROVER1_FALLBACK,approver2:APPROVER2_FALLBACK},
+  settings:{pin:DEFAULT_PIN,minD:3,minN:3,minO:1,maxOffTeam:1,hours:{},customCodes:[],deptDefault:DEPT_DEFAULT_FALLBACK,approver1:APPROVER1_FALLBACK,approver2:APPROVER2_FALLBACK},
   printLog:{},            // printLog[batchId] = {ts, by, formType, reqIds:[...], rows, pages, reprint}
   notifs:{},              // notifs[id] = {kind, to, from, status, createdAt, ...payload} — xác nhận đổi lịch / đổi ca
   meta:{schedFrom:'',schedTo:''},
@@ -152,6 +152,45 @@ function noAccent(s){
   return String(s??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'')
     .replace(/[\u0111]/g,'d').replace(/[\u0110]/g,'D').toLowerCase().trim();
 }
+/* ============================================================
+   HAI KHỐI NHÂN LỰC: SẢN XUẤT vs VĂN PHÒNG
+   ------------------------------------------------------------
+   Nhóm A / B / C / D … là nhóm SẢN XUẤT, trực vận hành theo ca.
+   Nhóm Office là nhóm VĂN PHÒNG, làm hành chính.
+   Hai khối này KHÔNG thay ca / tăng ca cover cho nhau được:
+   người Office không trực thay ca O của nhóm sản xuất và ngược lại.
+
+   Công ty quy định ký hiệu ca in ra giấy vẫn là "O" cho cả hai,
+   nên phần mềm KHÔNG đổi ký hiệu — chỉ gắn một "khoá ẩn" (pool)
+   suy ra từ NHÓM của người đó: 'prod' hoặc 'office'. Mọi phép đếm
+   thiếu nhân lực, ai đang nghỉ, khuyến nghị duyệt đơn… đều tính
+   tách bạch theo pool. Xem js/18-advice.js.
+   ============================================================ */
+const POOL_PROD='prod', POOL_OFF='office';
+const POOL_LABEL={prod:'Sản xuất',office:'Văn phòng'};
+const POOL_SHORT={prod:'SX',office:'VP'};
+const POOL_ICON ={prod:'🏭',office:'🏢'};
+/* Tên nhóm nào được coi là khối văn phòng (viết sao cũng nhận) */
+const OFFICE_TEAM_RE=/^(office|van phong|vp|hanh chinh|hc|admin|office team)$/;
+function isOfficeTeam(tm){return OFFICE_TEAM_RE.test(noAccent(tm).replace(/\s+/g,' ').trim());}
+function poolOfTeam(tm){return isOfficeTeam(tm)?POOL_OFF:POOL_PROD;}
+function poolOf(e){return poolOfTeam(e&&e.team);}
+function poolOfId(id){const e=empById(id);return e?poolOf(e):POOL_PROD;}
+function samePool(aId,bId){return poolOfId(aId)===poolOfId(bId);}
+/* Khoá ẩn của một ô lịch — dùng nội bộ để phân biệt O sản xuất / O văn phòng.
+   KHÔNG bao giờ đưa ra bản in hay biểu mẫu công ty. */
+function shiftKey(empId,code){return (code||'')+'@'+poolOfId(empId);}
+function poolEmps(p){return schedEmps().filter(e=>poolOf(e)===p);}
+function poolChip(p){return `<span class="pool-chip ${p}">${POOL_ICON[p]} ${POOL_SHORT[p]}</span>`;}
+/* Ngưỡng cấu hình (tab Dữ liệu) */
+function minOfShift(sh){
+  if(sh==='D')return +S.settings.minD||0;
+  if(sh==='N')return +S.settings.minN||0;
+  if(sh==='O')return (S.settings.minO===''||S.settings.minO==null)?1:(+S.settings.minO||0);
+  return 0;
+}
+function maxOffTeam(){const v=S.settings&&S.settings.maxOffTeam;return (v===''||v==null)?1:(+v||0);}
+
 function firstOfMonthIso(){const d=new Date();return isoOf(new Date(d.getFullYear(),d.getMonth(),1));}
 function lastOfMonthIso(){const d=new Date();return isoOf(new Date(d.getFullYear(),d.getMonth()+1,0));}
 function curMonthStr(){const d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1);}

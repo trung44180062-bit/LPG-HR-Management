@@ -230,7 +230,7 @@ function conflictReqs(id,isoList,type){
    lịch chuẩn thì đánh dấu và hiện luôn "chuẩn → thực tế" để người sắp làm đơn
    biết ngay hôm đó ai nghỉ, ai đã đổi ca. */
 const CREW_SHOW=c=>{const k=codeInfo(c).cat;return k==='work'||k==='swap'||k==='ot'||k==='rest'||k==='leave';};
-const CREW_ORDER=['O','D','N','OTD','OTN','R','LEAVE'];
+const CREW_ORDER=['O','OVP','D','N','OTD','OTN','R','LEAVE'];
 /* Nhóm hiển thị của một mã ca */
 function crewGroupOf(c){
   const cat=codeInfo(c).cat;
@@ -238,11 +238,18 @@ function crewGroupOf(c){
   if(cat==='rest') return 'R';
   return baseShiftOf(c)||c;
 }
+/* Ca O của khối văn phòng tách thành cột riêng: ký hiệu in ra vẫn là "O"
+   theo quy định công ty, nhưng đứng riêng vì hai khối không cover cho nhau. */
+function crewGroupOfEmp(e,c){
+  const g=crewGroupOf(c);
+  return (g==='O'&&poolOf(e)===POOL_OFF)?'OVP':g;
+}
 /* Nhãn + màu của cột nhóm */
 function crewGroupInfo(g){
   if(g==='LEAVE')return{code:'AL',label:'Nghỉ phép / vắng mặt',col:'var(--cAL)',rest:true};
+  if(g==='OVP') return{code:'O', label:'Office — khối văn phòng',col:'var(--cSW)',rest:false};
   const i=codeInfo(g);
-  return{code:g,label:i.l,col:i.col,rest:i.cat==='rest'};
+  return{code:g,label:g==='O'?'Office — khối sản xuất':i.l,col:i.col,rest:i.cat==='rest'};
 }
 function crewOfDay(iso){
   const g={};
@@ -250,7 +257,8 @@ function crewOfDay(iso){
     const r=eff(e.id,iso), c=r.code;
     if(!c||!CREW_SHOW(c))return;
     const std=(S.base[e.id]||{})[iso]||'';
-    (g[crewGroupOf(c)]=g[crewGroupOf(c)]||[]).push({
+    const key=crewGroupOfEmp(e,c);
+    (g[key]=g[key]||[]).push({
       e,code:c,std,
       ovr:!!(std&&std!==c)          // ca thực tế khác lịch chuẩn
     });
@@ -283,10 +291,18 @@ function swapBlockReason(id,iso){
   if(cat==='ot')   return 'đang tăng ca';
   return 'ca '+c+' không đổi được';
 }
-/* Kiểm tra cả hai người trên toàn bộ các ngày của đơn */
+/* Kiểm tra cả hai người trên toàn bộ các ngày của đơn.
+   Thêm một chốt chặn nữa: KHÁC KHỐI thì không đổi ca được. Nhóm Office làm
+   hành chính, nhóm A/B/C/D trực vận hành — ca O của hai bên khác hẳn tính
+   chất nên không ai trực thay ai, dù ký hiệu in ra đều là "O". */
 function swapBlockList(aId,bId,isoList){
   const out=[];
   const nm=id=>shortName((empById(id)||{}).name||id);
+  if(aId&&bId&&!samePool(aId,bId)){
+    out.push(`${nm(aId)} (${t(POOL_LABEL[poolOfId(aId)])}) ⇄ ${nm(bId)} (${t(POOL_LABEL[poolOfId(bId)])}): `
+      +t('khác khối nhân lực, không trực thay ca cho nhau được'));
+    return out;
+  }
   isoList.forEach(iso=>{
     [aId,bId].forEach(id=>{
       if(!id)return;
@@ -720,7 +736,14 @@ function dsPickFilter(key){
   let html='';
   if(checkSwap){
     const ok=[],no=[];
-    list.forEach(e=>{const why=swapBlockReason(e.id,iso);(why?no:ok).push([e,why]);});
+    /* Khác khối (sản xuất ⇄ văn phòng) thì loại thẳng, kèm lý do rõ ràng */
+    const myPool=poolOfId(own);
+    list.forEach(e=>{
+      const why=(key==='with'&&poolOf(e)!==myPool)
+        ? t('khác khối')+' — '+t(POOL_LABEL[poolOf(e)])
+        : swapBlockReason(e.id,iso);
+      (why?no:ok).push([e,why]);
+    });
     html=ok.map(([e])=>row(e,'')).join('');
     if(!ok.length)html='<p class="muted" style="padding:8px 4px">Ngày này không có ai đổi ca được.</p>';
     if(no.length)html+=`<div class="pk-sep">Không đổi ca được ngày ${fmtVN(iso)}</div>`+no.map(([e,w])=>row(e,w)).join('');
@@ -1006,6 +1029,12 @@ function dsFormUI(){
     }
   }
   if(isos.length>1)h+=`<div class="pv-alert info sm">Đơn gồm <b>${isos.length} dòng</b> — khi in ra mỗi ngày là một dòng riêng${t==='swap'?' cho mỗi người':''}.</div>`;
+
+  /* Nhắc nhở bối cảnh: hôm đó ai đã nghỉ, đơn của họ đang ở trạng thái nào,
+     và đơn này có khả năng bị vướng không. Chạy hoàn toàn bằng logic trên
+     dữ liệu đã tải sẵn — xem js/18-advice.js. */
+  if(typeof advForFormHtml==='function')h+=advForFormHtml(own,dsRows,t);
+
   w.innerHTML=h;
 }
 

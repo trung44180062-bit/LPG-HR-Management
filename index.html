@@ -164,8 +164,10 @@
     </select>
     <label id="calDiffWrap" class="cal-chk"><input type="checkbox" id="realDiffOnly" onchange="renderCal()"> Chỉ ô khác chuẩn</label>
     <span class="sp"></span>
-    <button class="btn sec sm cal-mobile-only" id="calCollapseAllBtn" onclick="calCollapseAll()">Thu/Mở</button>
-    <button class="btn sec sm cal-mobile-only" onclick="toggleCalMobileView()" id="calViewToggle">👁 Theo ngày</button>
+    <!-- Thu/Mở và "Theo ngày" là của bố cục thẻ tuần trên máy tính.
+         Điện thoại nay xem lịch theo danh sách ngày (kiểu Nhân lực) nên ẩn đi. -->
+    <button class="btn sec sm pc-only" id="calCollapseAllBtn" onclick="calCollapseAll()">Thu/Mở</button>
+    <button class="btn sec sm pc-only" onclick="toggleCalMobileView()" id="calViewToggle">👁 Theo ngày</button>
     <button class="btn sec sm" onclick="openLegendSheet()" title="Chú giải mã ca">❔ Chú giải</button>
     <button class="btn sm pc-only" id="calPrintBtn" style="position:relative" onclick="openPrintBulk()" title="In đơn đã duyệt">🖨️ In đơn<span class="bdg" id="printBdgCal" style="display:none;position:static;margin-left:6px">0</span></button>
   </div>
@@ -173,6 +175,8 @@
   <div class="sched-wrap cal-desktop"><div class="mtx-scroll" id="mtxBox"></div></div>
   <div id="calWeekBox" class="cal-mobile"></div>
   <div id="calDayBox" class="cal-mobile" style="display:none"></div>
+  <!-- Điện thoại: danh sách theo ngày kiểu Nhân lực (js/06-calendar.js) -->
+  <div id="calMpBox" class="cal-mobile" style="display:none"></div>
 </section>
 
 <!-- ============ NHÓM & TẠO LỊCH ============ -->
@@ -218,9 +222,15 @@
     <p class="muted">Tài khoản của bạn chưa được cấp quyền duyệt đơn. Quản trị viên cấp quyền ở bảng Tài khoản đăng nhập và phân quyền trong tab Dữ liệu.</p>
   </div>
   <div id="apprBody" style="display:none">
-    <div class="card appr-bar" id="apprBar"></div>
-    <div class="appr-bulk" id="apprBulk"></div>
-    <div id="apprList"></div>
+    <!-- 3 sub-tab: Danh sách đơn · Tổng quan (js/17-appr-sum.js) · Nhật ký tăng ca (js/15-report.js) -->
+    <div class="appr-tabs" id="apprTabs"></div>
+    <div class="card as-panel" id="apprSum" style="display:none"></div>
+    <div id="apprOtlog" style="display:none"></div>
+    <div id="apprListWrap">
+      <div class="card appr-bar" id="apprBar"></div>
+      <div class="appr-bulk" id="apprBulk"></div>
+      <div id="apprList"></div>
+    </div>
   </div>
 </section>
 
@@ -293,7 +303,12 @@
     <div class="grid2">
       <div class="fg"><label class="fl">Tối thiểu ca ngày (D)</label><input type="number" class="inp" id="setMinD" min="0"></div>
       <div class="fg"><label class="fl">Tối thiểu ca đêm (N)</label><input type="number" class="inp" id="setMinN" min="0"></div>
+      <div class="fg"><label class="fl">Trần giờ tăng ca / người / kỳ</label><input type="number" class="inp" id="setOtLimit" min="0" step="1" placeholder="40"></div>
+      <div class="fg"><label class="fl">Tối thiểu ca hành chính (O)</label><input type="number" class="inp" id="setMinO" min="0" placeholder="1"></div>
+      <div class="fg"><label class="fl">Tối đa người nghỉ / nhóm / ngày</label><input type="number" class="inp" id="setMaxOffTeam" min="0" placeholder="1"></div>
     </div>
+    <p class="muted" style="margin:4px 0 0">Vượt trần thì bảng Tổng quan phê duyệt sẽ tô đỏ và gắn cờ 🚨 (mặc định 40 giờ/tháng theo Bộ luật Lao động).</p>
+    <p class="muted" style="margin:4px 0 0"><b>Tối đa người nghỉ / nhóm / ngày</b> là tiêu chí chính của trợ lý duyệt đơn: cùng một nhóm mà số người đã nghỉ chạm mức này thì đơn tiếp theo trong ngày đó được khuyến nghị 🔴 <i>không nên duyệt</i>. Nhóm A/B/C/D là khối sản xuất, nhóm Office là khối văn phòng — hai khối tính tách bạch vì không trực thay ca cho nhau được.</p>
     <p class="muted" style="margin:4px 0 10px">Phân quyền khai báo ở bảng Tài khoản đăng nhập và phân quyền ngay trên trang này.</p>
     <button class="btn warn sm" onclick="wipeAll()">🗑️ Xoá toàn bộ dữ liệu trên máy</button>
   </div>
@@ -368,6 +383,8 @@
 <script src="js/13-portal.js"></script>
 <script src="js/16-otlog-data.js"></script>
 <script src="js/15-report.js"></script>
+<script src="js/17-appr-sum.js"></script>
+<script src="js/18-advice.js"></script>
 <script src="js/12-main.js"></script>
 
 </body>

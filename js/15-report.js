@@ -19,13 +19,16 @@ let repGroup='__all';
 let repFrom='', repTo='';       // khoảng ngày của bảng nhân lực
 let repOnlyLow=false;
 
-function repModes(){return repSeeAll()?['mp','stats','chart','otlog']:['stats','chart','otlog'];}
+/* Nhật ký tăng ca ('otlog') đã CHUYỂN sang làm sub-tab của tab Duyệt
+   (xem renderApprTabs trong js/08-requests.js). Các hàm otlog* vẫn nằm
+   ở cuối file này và được màn Duyệt gọi lại nguyên vẹn. */
+function repModes(){return repSeeAll()?['mp','stats','chart']:['stats','chart'];}
 const REP_LABEL={mp:'👥 Nhân lực',stats:'📊 Thống kê',chart:'📈 Biểu đồ',otlog:'🗂 Nhật ký tăng ca'};
 const REP_LABEL_ME={stats:'📊 Số liệu của tôi',chart:'📈 Biểu đồ của tôi',otlog:'🗂 Nhật ký tăng ca'};
 
 function repDefaults(){
   const ms=repModes();
-  if(!ms.includes(repMode))repMode=ms[0];
+  if(!ms.includes(repMode))repMode=ms[0];   // quản lý vào là thấy Nhân lực trước
   if(!repYm)repYm=curSchedMonth();
   if(!repFrom)repFrom=todayIso();
   if(!repTo){const d=new Date();d.setDate(d.getDate()+6);repTo=isoOf(d);}
@@ -118,14 +121,20 @@ function repManpower(){
   const pill=(n,lbl,col,low)=>`<span class="mpp${low?' low':''}${n?'':' zero'}" style="background:${col}">${n}<small>${lbl}</small></span>`;
   let rows='',nLow=0,shown=0;
   days.forEach(iso=>{
-    const B=mpBuckets(iso);
-    const lowD=B.D.length<S.settings.minD, lowN=B.N.length<S.settings.minN, low=lowD||lowN;
+    /* Đếm TÁCH KHỐI: nhóm sản xuất A/B/C/D trực ca, nhóm Office làm hành chính.
+       Hai khối không cover cho nhau nên định mức chỉ áp cho khối sản xuất. */
+    const P=mpBucketsByPool(iso), B=P.prod, V=P.office;
+    const lowD=B.D.length<minOfShift('D'), lowN=B.N.length<minOfShift('N'), low=lowD||lowN;
     if(low)nLow++;
     if(repOnlyLow&&!low)return;
     shown++;
     const dw=new Date(iso+'T00:00:00').getDay();
+    const nm=x=>esc((x&&x.name)||(x&&x.id)||'');
     const line=(code,arr,tip)=>`<div class="mp-line">${chip(code)}<span class="who"${tip?` title="${esc(tip)}"`:''}>${
-      arr.length?arr.map(e=>esc(e.name||e.id)).join(', '):'—'}</span></div>`;
+      arr.length?arr.map(nm).join(', '):'—'}</span></div>`;
+    const lvOt=(arr,code)=>arr.length?`<div class="mp-line">${chip(code)}<span class="who">${
+      arr.map(x=>nm(x.e)+' ('+x.c+')').join(', ')}</span></div>`:'';
+    const nLeave=B.leave.length+V.leave.length, nOt=B.ot.length+V.ot.length;
     rows+=`<div class="mp2-row${iso===todayIso()?' today':''}${low?' low':''}">
       <div class="mp2-main" onclick="this.parentElement.classList.toggle('open')">
         <div class="dt"><div class="d1">${fmtVN(iso)}</div>
@@ -133,26 +142,30 @@ function repManpower(){
         <div class="pillrow">
           ${pill(B.D.length,t2('NGÀY'),'var(--cD)',lowD)}
           ${pill(B.N.length,t2('ĐÊM'),'var(--cN)',lowN)}
-          ${pill(B.O.length,t2('VP'),'var(--cO)',false)}
+          ${pill(B.O.length,t2('O SX'),'var(--cO)',false)}
+          ${pill(V.O.length,t2('O VP'),'var(--cSW)',false)}
           ${pill(B.R.length,t2('NGHỈ CA'),'var(--cR)',false)}
-          ${pill(B.leave.length,t2('PHÉP'),'var(--cAL)',false)}
-          ${pill(B.ot.length,t2('TĂNG CA'),'var(--cOT)',false)}
+          ${pill(nLeave,t2('PHÉP'),'var(--cAL)',false)}
+          ${pill(nOt,t2('TĂNG CA'),'var(--cOT)',false)}
         </div>
         ${low?'<span class="st rejected">⚠</span>':''}
         <span class="chev">▼</span>
       </div>
       <div class="mp2-det">
+        <div class="mp-pool">${poolChip(POOL_PROD)} ${t2('Khối sản xuất')}</div>
         ${line('D',B.D)}${line('N',B.N)}${line('O',B.O)}
         ${line('R',B.R,'Có thể huy động tăng ca')}
-        ${B.leave.length?`<div class="mp-line">${chip('AL8')}<span class="who">${B.leave.map(x=>esc(x.e.name||x.e.id)+' ('+x.c+')').join(', ')}</span></div>`:''}
-        ${B.ot.length?`<div class="mp-line">${chip('OTD')}<span class="who">${B.ot.map(x=>esc(x.e.name||x.e.id)+' ('+x.c+')').join(', ')}</span></div>`:''}
+        ${lvOt(B.leave,'AL8')}${lvOt(B.ot,'OTD')}
+        <div class="mp-pool">${poolChip(POOL_OFF)} ${t2('Khối văn phòng')}</div>
+        ${line('O',V.O)}
+        ${lvOt(V.leave,'AL8')}${lvOt(V.ot,'OTD')}
       </div>
     </div>`;
   });
   const head=`<div class="card rep-head">
     <b>${days.length} ngày</b>
     <span class="st ${nLow?'rejected':'approved'}">${nLow?('⚠ '+nLow+' ngày thiếu nhân lực'):'✓ Đủ nhân lực toàn khoảng'}</span>
-    <span class="muted sm2">Chạm vào từng ngày để xem danh sách tên</span></div>`;
+    <span class="muted sm2">Chạm vào từng ngày để xem danh sách tên · định mức chỉ tính khối sản xuất</span></div>`;
   return shown?head+`<div class="mp2">${rows}</div>`
               :head+'<div class="card"><p class="muted">Không có ngày nào khớp bộ lọc.</p></div>';
 }

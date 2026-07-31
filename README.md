@@ -52,11 +52,14 @@ LPGT-CongCa-Web/
 │   ├── 13-portal.js        # Trang chính nhân viên (lịch tuần/tháng, sheet theo ngày)
 │   ├── 14-i18n.js          # Song ngữ Việt/Anh — nạp NGAY SAU 01-core.js
 │   ├── 15-report.js        # Tab Báo cáo: Nhân lực · Thống kê · Biểu đồ (SVG thuần)
+│   ├── 16-otlog-data.js    # Nhật ký tăng ca lấy từ file Excel của công ty
+│   ├── 17-appr-sum.js      # Sub-tab Tổng quan trong tab Duyệt (bảng cho giám đốc)
 │   └── 12-main.js          # Boot — luôn nạp CUỐI CÙNG
 ├── BAO-MAT.md              # Đánh giá bảo mật + việc cần làm
 ├── firebase-rules.json     # Luật truy cập, dán vào Firebase Console
 ├── mau-in-A5-xem-thu.html  # Xem thử 6 biểu mẫu in trên khung giấy A5
 ├── xem-thu-giao-dien.html  # Xem thử màn Duyệt & Báo cáo với dữ liệu mẫu
+├── xem-thu-tong-quan-duyet.html # Xem thử sub-tab Tổng quan (dữ liệu giả)
 ├── .gitignore
 └── README.md
 ```
@@ -193,6 +196,42 @@ Bản cũ mỗi đơn là một thẻ to kèm 5 nút nên rất rối. Bản m�
 - **Thanh thao tác hàng loạt** chỉ hiện khi có đơn được chọn, dính trên đầu màn hình:
   Duyệt · Từ chối · In · Xoá đơn · Chọn hết · Bỏ chọn. `decide(id,ok,bulk)` nhận cờ
   `bulk` để không lưu và vẽ lại sau từng đơn.
+
+---
+
+## Tab Duyệt — sub-tab Tổng quan (`js/17-appr-sum.js`)
+
+Tab Duyệt chia **2 sub-tab** (`apprTab`, nhớ ở localStorage): **📋 Danh sách đơn** (mặc định,
+có badge số đơn chờ) và **📊 Tổng quan** — bảng cho giám đốc nhà máy, chỉ hiện với người có quyền duyệt.
+
+Sub-tab Tổng quan có **kỳ công riêng** (`asYm`), **mặc định luôn là kỳ hiện tại**, không dính
+vào bộ lọc của danh sách đơn. Header có nút ◀ ▶ nhảy kỳ + dropdown + nút *Về kỳ hiện tại*.
+
+Bốn khối:
+
+1. **6 thẻ chỉ số** — tổng đơn (kèm số dòng ngày đã khai) · đang chờ duyệt (kèm số đơn đã quá
+   ngày làm) · **tổng giờ đã duyệt** · giờ tăng ca đã duyệt (kèm cờ vượt trần) · ngày phép ·
+   duyệt rồi chưa in. Cố tình **không** có "tỉ lệ duyệt": cái cần điều hành là khối lượng giờ,
+   không phải tỉ lệ gật/lắc của chính người đang xem.
+2. **Dải tồn đọng & rủi ro** — chip chỉ hiện khi số > 0: ⌛ chờ quá 3 ngày · 🚩 quá ngày làm
+   · 🖨️ duyệt rồi chưa in · 🔄 đổi ca chờ xác nhận · ✋ đổi ca bị từ chối · 👥 khai hộ.
+   Cờ lưu ở `apprFilter.flag`; `apprMatch()` (08-requests.js) gọi ngược `asFlagMatch()`.
+3. **Tổng hợp theo loại đơn** — mỗi loại một thẻ: số đơn (to) · tổng giờ đã duyệt · thanh so
+   sánh giữa các loại · dòng chân ghi số ngày và phần đang chờ.
+4. **Chi tiết theo loại đơn và trạng thái** — ma trận Loại × (Chờ · Duyệt · Từ chối) kèm
+   **Tổng đơn · Số ngày · Giờ đã duyệt · Giờ đang chờ** và thanh so sánh giờ.
+5. **Bảng theo nhân viên** — sắp xếp được theo tên/đơn/chờ/tổng giờ/ngày phép/giờ OT, mặc định
+   top 8; ai **vượt trần** (`S.settings.otLimit`, mặc định 40h/kỳ, khai ở tab Dữ liệu) thì đỏ + 🚨.
+
+Mọi con số bấm được → `asApply()` đặt lại bộ lọc danh sách (kể cả **kỳ công** đang xem cho khớp
+tuyệt đối) rồi chuyển sang sub-tab Danh sách đơn; thanh lọc hiện dòng `.ab-flag` nói rõ đang xem
+riêng nhóm nào kèm nút gỡ.
+
+Giờ tính qua **`reqHours()`** cho MỌI loại đơn (`reqDayHours()`: ưu tiên `d.hours` nhân viên khai
+→ suy từ mốc giờ `otHours()` → giờ mặc định của mã ca), nên tăng ca 14:00–19:30 ra đúng 5.5h chứ
+không phải 12h. Ngày phép qua `reqLeaveDays()` (AL4 = nửa ngày).
+
+Xem thử bố cục bằng dữ liệu giả: mở `xem-thu-tong-quan-duyet.html`.
 
 ---
 
@@ -502,3 +541,105 @@ Lớp bảo vệ thật nằm ở **Realtime Database Rules**. Hãy giới hạn
 - Thêm mã ca mặc định → `DEFAULT_CODES` / `DEFAULT_HOURS` trong `js/01-core.js`.
 - Đổi quy tắc sinh lịch → `js/04-schedule.js`.
 - Thêm tab mới → thêm `<section class="view" id="v-xxx">` trong `index.html`, thêm file JS mới, khai báo script ở cuối `index.html`.
+
+---
+
+## v4.7 — Trợ lý duyệt đơn · tách khối sản xuất/văn phòng · đồng bộ theo delta
+
+### 1. Hai khối nhân lực (`js/01-core.js`)
+
+Nhóm **A / B / C / D** là khối **sản xuất** (trực vận hành theo ca), nhóm **Office** là khối
+**văn phòng**. Hai khối **không trực thay ca / tăng ca cover cho nhau**, nên phần mềm gắn một
+"khoá ẩn" suy ra từ tên nhóm:
+
+```js
+poolOf(emp)        // 'prod' | 'office'
+poolOfId(empId)
+samePool(a,b)
+isOfficeTeam(tm)   // khớp: office / văn phòng / vp / hành chính / hc / admin
+shiftKey(id,code)  // 'O@prod' | 'O@office' — CHỈ dùng nội bộ
+```
+
+> **Ký hiệu in ra giấy vẫn là `O` cho cả hai** theo quy định công ty. Khoá ẩn không bao giờ
+> xuất hiện trên biểu mẫu — nó chỉ để phần mềm đếm đúng.
+
+Ảnh hưởng: `mpBuckets(iso, pool)` và `mpBucketsByPool(iso)` đếm tách khối; định mức
+`minD/minN` chỉ áp cho khối sản xuất; `crewGroupOfEmp()` tách cột `O` (sản xuất) và `OVP`
+(văn phòng) trong "Nhân sự trong ngày"; `swapBlockList()` chặn thẳng đổi ca khác khối.
+
+### 2. Trợ lý duyệt đơn (`js/18-advice.js`)
+
+Chạy **hoàn toàn bằng logic trên state `S` đã nằm sẵn trong bộ nhớ** — không gọi thêm Firebase.
+
+| Hàm | Việc |
+|---|---|
+| `offListOfDay(iso)` | ai vắng mặt ngày đó: ô lịch đã mang mã nghỉ (**đã duyệt**) + đơn nghỉ **đang chờ duyệt** |
+| `leaveAdvice(empId,iso,newCode,skipReqId)` | khuyến nghị cho một người – một ngày |
+| `reqAdvice(r)` / `reqAdviceHtml(r)` | khuyến nghị cho cả một đơn (panel trong màn Duyệt) |
+| `advForFormHtml(empId,rows,type)` | nhắc nhở cho người **làm đơn** trước khi bấm gửi |
+| `apprAdviceBadge(r)` | chip 🟢🟡🔴 hiện ngay trên dòng đơn chưa cần bung |
+
+**Xếp hạng khuyến nghị**
+
+1. *Tiêu chí chính* — cùng **NHÓM** đã có bao nhiêu người nghỉ ngày đó.
+   Chạm trần `S.settings.maxOffTeam` (mặc định 1) → 🔴 **không nên duyệt**;
+   đã có người nghỉ nhưng chưa chạm trần → 🟡; chưa ai nghỉ → 🟢.
+   Còn đơn cùng nhóm **đang chờ duyệt** cùng ngày cũng đẩy lên 🟡.
+2. *Tiêu chí phụ* — sau khi duyệt thì ca của **đúng khối đó** còn mấy người so với
+   `minD` / `minN` / `minO`. Dưới định mức → 🔴, vừa sát định mức → 🟡.
+
+Panel còn liệt kê **ai đã nghỉ kèm trạng thái đơn của họ** (✓ đã duyệt / ⏳ chờ duyệt),
+đếm quân số **trước → sau** khi duyệt, và gợi ý **ai đang nghỉ ca R cùng khối** có thể huy động.
+
+Ngưỡng khai ở tab **Dữ liệu → Cài đặt**: `setMinO`, `setMaxOffTeam` (cạnh `setMinD/setMinN/setOtLimit`).
+
+> ⚠️ Bộ đệm `_advCache` khoá theo `S.rev`. Nếu viết test hoặc sửa `S` trực tiếp mà không qua
+> `save()`, phải tự tăng `S.rev` rồi reset `_advCache`, nếu không kết quả cũ vẫn được dùng lại.
+
+### 3. Lịch trên điện thoại = danh sách theo ngày (`js/06-calendar.js`)
+
+Trên màn hình < 768px, tab **Lịch** không dựng ma trận / thẻ tuần nữa (không dựng luôn cho nhẹ
+máy, chứ không phải chỉ ẩn bằng CSS) mà hiện `#calMpBox`: **mỗi ngày một dòng gọn**, chạm mới
+bung tên người, tách sẵn khối sản xuất / văn phòng, có ô lọc *Chỉ ngày thiếu người*.
+Hàm: `renderCalMpList()`, `calMpToggle(iso)`, `calMpSetLow(on)`. Máy tính giữ nguyên như cũ.
+Hai nút **Thu/Mở** và **Theo ngày** đổi sang class `pc-only`.
+
+### 4. Nhật ký tăng ca → sub-tab của Duyệt
+
+`apprTab` nay có 3 giá trị: `list` | `sum` | `otlog` (`APPR_TABS`, nhớ ở `localStorage[LS+'_apprtab']`).
+Panel mới `#apprOtlog` trong `index.html`; `renderAppr()` gọi `repOtLog()` của `js/15-report.js`.
+`repModes()` ở tab Báo cáo đã bỏ `'otlog'` — các hàm `otlog*` vẫn nằm nguyên chỗ cũ.
+
+### 5. Firebase đồng bộ theo DELTA (`js/02-storage.js`) — quan trọng
+
+Bản cũ nghe `on('value')` ngay **gốc** và ghi bằng `set(S)`: đổi **một ô lịch** là **mọi máy tải
+lại toàn bộ cây dữ liệu**. Gói **Spark** tính tiền theo băng thông tải xuống nên rất phí.
+
+Bản mới chia nhánh và nghe ở mức con:
+
+```js
+FB_MAP_BRANCHES = ['base','over','requests','accounts','printLog','notifs']  // child_added/changed/removed
+FB_VAL_BRANCHES = ['employees','settings','meta']                            // on('value')
+```
+
+Ghi cũng vậy: `fbSnapshot()` chụp JSON từng khoá, `fbDiff()` so với lần đồng bộ trước,
+`fbPush()` chỉ `update()` đúng những đường dẫn đã đổi. `_fbLast` được ghi **trước** khi gửi nên
+tiếng vọng của chính mình bị bỏ qua, không gây vẽ lại thừa. `fbTouch()` gộp nhiều sự kiện con
+thành một lần `renderAll()`.
+
+`fbBootSync()` chạy sau khi đợt sự kiện đầu tiên lặng ~900ms:
+máy chủ còn trắng → đẩy toàn bộ dữ liệu máy này lên; máy chủ mới hơn (`rev` lớn hơn) → xoá những
+bản ghi máy này còn giữ mà máy chủ đã bỏ (`_fbSeen`); máy này mới hơn → đẩy phần còn thiếu lên.
+
+**SCHEMA GIỮ NGUYÊN** — dữ liệu Firebase cũ dùng lại được ngay, không cần chuyển đổi.
+
+Đo trên bộ dữ liệu cỡ thật (40 NV · 12 kỳ lịch · 400 đơn ≈ **344 KB**):
+
+| Thao tác | Cũ | Mới |
+|---|---|---|
+| Mở app lần đầu | 344 KB | 344 KB |
+| Sửa 1 ô lịch (mỗi máy đang mở) | 344 KB | **~0,1 KB** |
+| Duyệt 1 đơn | 344 KB | **~0,3 KB** |
+| `save()` khi không có gì đổi | 344 KB | **0 KB** |
+
+100 lượt sửa/ngày × 8 máy: **269 MB/ngày → 0,26 MB/ngày** (chưa kể lần tải đầu).

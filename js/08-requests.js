@@ -165,13 +165,16 @@ function reqDesc(r){
   if(r.note)body+=`<div class="muted" style="margin-top:5px">Ghi chú: “${esc(r.note)}”</div>`;
   return {e,body};
 }
+/* Cảnh báo quân số khi duyệt — đếm TÁCH THEO KHỐI (sản xuất / văn phòng),
+   vì hai khối không trực thay ca cho nhau được. Xem js/18-advice.js. */
 function apprWarnLine(r){
   if(r.status!=='pending')return '';
   const catOf=c=>c==='D'||c==='SD'||c==='OTD'?'D':(c==='N'||c==='SN'||c==='OTN'?'N':null);
+  const pool=poolOfId(r.empId);
   const warnings=[];
   for(const d of reqDays(r)){
     const iso=d.iso;
-    const B=mpBuckets(iso);let cD=B.D.length,cN=B.N.length;
+    const B=mpBuckets(iso,pool);let cD=B.D.length,cN=B.N.length;
     const applyDelta=(fromCode,toCode)=>{const fc=catOf(fromCode),tc=catOf(toCode);if(fc==='D')cD--;if(fc==='N')cN--;if(tc==='D')cD++;if(tc==='N')cN++;};
     const curA=eff(r.empId,iso).code;
     if(r.type==='swap'&&r.withId){const curB=eff(r.withId,iso).code;applyDelta(curA,curB);applyDelta(curB,curA);}
@@ -182,7 +185,26 @@ function apprWarnLine(r){
   const w=warnings[0],parts=[];
   if(w.cD<S.settings.minD)parts.push(`${t('ca D còn')} ${w.cD}/${S.settings.minD}`);
   if(w.cN<S.settings.minN)parts.push(`${t('ca N còn')} ${w.cN}/${S.settings.minN}`);
-  return `<div class="hint" style="background:#FEF2F2;color:#991B1B;margin-top:6px">${t('⚠️ Nếu duyệt: ngày')} ${fmtVN(w.iso)} ${parts.join(', ')}${warnings.length>1?` (+${warnings.length-1} ${t('ngày khác)')}`:''}</div>`;
+  return `<div class="hint" style="background:#FEF2F2;color:#991B1B;margin-top:6px">${t('⚠️ Nếu duyệt: ngày')} ${fmtVN(w.iso)} — ${t('khối')} ${t(POOL_LABEL[pool])} ${parts.join(', ')}${warnings.length>1?` (+${warnings.length-1} ${t('ngày khác)')}`:''}</div>`;
+}
+/* Nhãn khuyến nghị gọn hiện ngay trên dòng đơn (chưa cần bung chi tiết).
+   Chỉ tính cho đơn CHỜ DUYỆT làm người đó vắng ca — các loại khác bỏ qua
+   để danh sách 150 dòng không phải tính thừa. */
+function apprAdviceBadge(r){
+  if(!r||r.status!=='pending')return '';
+  if(typeof leaveAdvice!=='function')return '';
+  if(r.type!=='leave'&&r.type!=='change')return '';
+  const days=reqDays(r)||[];
+  if(!days.length)return '';
+  let lv='ok';
+  for(const d of days.slice(0,6)){
+    if(r.type==='change'&&!advCodeLeavesShift(d.code))continue;
+    const a=leaveAdvice(r.empId,d.iso,d.code||'AL8',r.id);
+    if(a.level==='block'){lv='block';break;}
+    if(a.level==='warn')lv='warn';
+  }
+  if(lv==='ok')return '';
+  return advChip(lv,'appr');
 }
 /* ============================================================
    MÀN DUYỆT — danh sách gọn, lọc nhanh, bấm để mở chi tiết
@@ -190,7 +212,7 @@ function apprWarnLine(r){
    Nay: 1 đơn = 1 dòng (ai · loại · ngày · trạng thái) + 2 nút chính;
    bấm vào dòng mới bung chi tiết từng ngày và các nút phụ.
    ============================================================ */
-let apprFilter={status:'pending',print:'__all',type:'__all',q:'',ym:'__all',from:'',to:''};
+let apprFilter={status:'pending',print:'__all',type:'__all',q:'',ym:'__all',from:'',to:'',flag:''};
 let apprOpen={};                       // id đơn đang bung chi tiết
 
 function apprSetFilter(k,v){
@@ -201,7 +223,7 @@ function apprSetFilter(k,v){
 }
 function apprToggleRow(id){apprOpen[id]=!apprOpen[id];renderAppr();}
 function apprResetFilter(){
-  apprFilter={status:'__all',print:'__all',type:'__all',q:'',ym:'__all',from:'',to:''};
+  apprFilter={status:'__all',print:'__all',type:'__all',q:'',ym:'__all',from:'',to:'',flag:''};
   renderAppr();
 }
 /* Khoảng ngày đang lọc — trả về [from,to] hoặc null nếu không lọc theo ngày */
@@ -230,6 +252,8 @@ function apprMatch(r){
   if(apprFilter.print==='no'&&(r.printedAt||r.noPrint))return false;   // chưa in = chưa in & vẫn cần in
   if(apprFilter.print==='none'&&!r.noPrint)return false;               // không cần in
   if(apprFilter.type!=='__all'&&r.type!==apprFilter.type)return false;
+  // Lọc theo cờ cảnh báo của bảng Tổng quan (js/17-appr-sum.js)
+  if(apprFilter.flag&&typeof asFlagMatch==='function'&&!asFlagMatch(r,apprFilter.flag))return false;
   const rg=apprRange();
   if(rg&&!reqInRange(r,rg[0],rg[1]))return false;
   const q=noAccent(apprFilter.q||'');
@@ -265,7 +289,7 @@ function apprRow(r){
         <span class="l1"><b>${esc(e?e.name:r.empId)}</b>
           <i class="typ">${esc(REQ_LABEL[r.type]||r.type)}</i>
           <span class="st ${r.status}">${REQ_ST_LABEL[r.status]||r.status}</span>
-          <span class="prt ${r.printedAt?'yes':(r.noPrint?'none':'no')}">${r.printedAt?'🖨️ '+t('đã in'):(r.noPrint?'🚫 '+t('không in'):'○ '+t('chưa in'))}</span>${cfBadge}</span>
+          <span class="prt ${r.printedAt?'yes':(r.noPrint?'none':'no')}">${r.printedAt?'🖨️ '+t('đã in'):(r.noPrint?'🚫 '+t('không in'):'○ '+t('chưa in'))}</span>${cfBadge}${apprAdviceBadge(r)}</span>
         <span class="l2">${esc(sub.join(' · '))}</span>
       </button>
       <span class="ar-act">
@@ -277,6 +301,7 @@ function apprRow(r){
     <div class="ar-d">
       ${reqDetail(r)}
       ${r.status==='pending'?apprWarnLine(r):''}
+      ${open&&typeof reqAdviceHtml==='function'?reqAdviceHtml(r):''}
       ${r.note?`<div class="muted sm2">Ghi chú: “${esc(r.note)}”</div>`:''}
       <div class="ar-meta">
         <span>Gửi: ${fmtDateTime(r.createdAt)}</span>
@@ -304,12 +329,46 @@ function apprToggleNoPrint(id){
 }
 
 /* =================== DUYỆT =================== */
+/* Tab Duyệt chia 3 sub-tab:
+     'list'  = danh sách đơn (mặc định)
+     'sum'   = bảng Tổng quan cho quản lý (js/17-appr-sum.js)
+     'otlog' = Nhật ký tăng ca (chuyển từ tab Báo cáo sang, js/15-report.js)
+   Nhật ký tăng ca vốn nằm ở tab Báo cáo nhưng bản chất là hồ sơ phê duyệt
+   tăng ca, để chung với màn Duyệt thì người duyệt tra cứu liền tay hơn. */
+const APPR_TABS=['list','sum','otlog'];
+let apprTab=(()=>{try{const v=localStorage.getItem(LS+'_apprtab');return APPR_TABS.includes(v)?v:'list';}catch(e){return 'list';}})();
+function apprSetTab(v){
+  apprTab=APPR_TABS.includes(v)?v:'list';
+  try{localStorage.setItem(LS+'_apprtab',apprTab);}catch(e){}
+  renderAppr();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function renderApprTabs(){
+  const box=$('apprTabs');if(!box)return;
+  const nPend=Object.values(S.requests||{}).filter(r=>r&&r.status==='pending').length;
+  box.innerHTML=[['list','📋 '+t('Danh sách đơn'),nPend],
+                 ['sum','📊 '+t('Tổng quan'),0],
+                 ['otlog','🗂 '+t('Nhật ký tăng ca'),0]]
+    .map(([k,l,n])=>`<button class="aptab${apprTab===k?' on':''}" onclick="apprSetTab('${k}')">${l}${n?`<i>${n}</i>`:''}</button>`).join('');
+  const set=(id,on)=>{const el=$(id);if(el)el.style.display=on?'':'none';};
+  set('apprSum',   apprTab==='sum');
+  set('apprOtlog', apprTab==='otlog');
+  set('apprListWrap', apprTab==='list');
+}
 function renderAppr(){
   const lock=$('apprLock'),body=$('apprBody');
   if(!lock||!body)return;
   lock.style.display=mgr?'none':'';
   body.style.display=mgr?'':'none';
   if(!mgr)return;
+  renderApprTabs();
+  // Chỉ dựng đúng sub-tab đang mở — khỏi tính thừa
+  if(apprTab==='sum'){if(typeof asRender==='function')asRender();return;}
+  if(apprTab==='otlog'){
+    const box=$('apprOtlog');
+    if(box&&typeof repOtLog==='function')box.innerHTML=repOtLog();
+    return;
+  }
   const all=Object.values(S.requests).sort((a,b)=>b.createdAt-a.createdAt);
   /* Đếm theo từng chip: giữ nguyên các bộ lọc khác để con số phản ánh đúng */
   const countWith=(k,v)=>{
@@ -320,7 +379,13 @@ function renderAppr(){
   const prChips=[['__all','Mọi đơn'],['no','○ Chưa in'],['none','🚫 Không in'],['yes','🖨️ Đã in']];
   const ms=monthsAvailable();
 
+  // Đang lọc theo một cảnh báo của bảng Tổng quan → nói rõ, kèm nút gỡ
+  const fl=apprFilter.flag&&typeof AS_FLAGS!=='undefined'
+    ? AS_FLAGS.find(f=>f[0]===apprFilter.flag):null;
+
   $('apprBar').innerHTML=`
+    ${fl?`<div class="ab-flag">🔎 ${t('Đang xem riêng nhóm')}: <b>${fl[1]} ${t(fl[2])}</b>
+        <button class="btn sec sm" onclick="apprSetFilter('flag','')">✕ ${t('Bỏ lọc này')}</button></div>`:''}
     <div class="ab-chips">${stChips.map(([k,l])=>
       `<button class="abc${apprFilter.status===k?' on':''}" onclick="apprSetFilter('status','${k}')">${l}<i>${countWith('status',k)}</i></button>`).join('')}
     </div>
