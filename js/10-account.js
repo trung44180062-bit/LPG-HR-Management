@@ -143,6 +143,8 @@ function applyPerm(){
      xếp lịch cũng vậy. */
   const e=me?empById(me):null;
   noSelf=!!me && (p==='sec'||p==='kmgr'|| (e&&e.shiftType==='none'));
+  // Field Engineer của nhóm sản xuất = người duyệt cấp 1 (dù quyền là Nhân viên)
+  myFE=!!(e && typeof posCode==='function' && posCode(e)==='field_eng');
   if(typeof applyLangForUser==='function')applyLangForUser();
   return p;
 }

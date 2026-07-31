@@ -218,7 +218,7 @@ function repStatsAll(){
     +'<th class="hl">Giờ công</th><th class="hl-ot">Giờ OT</th><th class="hl-lv">Giờ phép</th></tr></thead><tbody>';
   rows.forEach(({e,s})=>{
     h+=`<tr><td class="l">${teamChip(e.team)}</td>
-      <td class="l"><b>${esc(e.name||e.id)}</b> <span class="muted" style="font-size:10px">${esc(e.pos||'')}</span></td>
+      <td class="l"><b>${esc(e.name||e.id)}</b> <span class="muted" style="font-size:10px">${esc(posLabel(posCode(e)))}</span></td>
       ${stCnt('D',cD(s))}${stCnt('N',cN(s))}${stCnt('O',cO(s))}${stCnt('R',s.cnt.R)}
       ${stCnt('AL8',s.cnt.AL8)}${stCnt('AL4',s.cnt.AL4)}${stCnt('NP',s.cnt.NP)}${stCnt('OFF',s.cnt.OFF)}
       ${stCnt('OTD',otShifts(s))}

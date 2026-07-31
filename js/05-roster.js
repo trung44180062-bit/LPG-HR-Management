@@ -45,7 +45,7 @@ function memberRow(e){
      <option value="eng"${sel('eng',e.role)}>Kỹ sư</option>
      <option value="oper"${sel('oper',e.role)}>Operator</option>
      <option value="other"${sel('other',e.role)}>Khác</option></select></td>
-   <td><input class="inp sm" value="${esc(e.pos||'')}" style="min-width:120px" placeholder="VD: Field Engineer" onchange="updEmp('${e.id}','pos',this.value)"></td>
+   <td>${posSelectHtml(e,'min-width:150px')}</td>
    <td><input class="inp sm" value="${esc(e.id)}" style="width:100px;font-family:var(--mono)" onchange="changeId('${e.id}',this.value)"></td>
    <td><input class="inp sm" value="${esc(e.name)}" style="min-width:140px" placeholder="Họ tên" onchange="updEmp('${e.id}','name',this.value)"></td>
    <td><select class="inp sm" onchange="updType('${e.id}',this.value)">

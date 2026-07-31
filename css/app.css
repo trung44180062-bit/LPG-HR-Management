@@ -138,6 +138,19 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
 .st.approved{background:#D1FAE5;color:#065F46}
 .st.rejected{background:#FEE2E2;color:#991B1B}
 .st.cancelled{background:#E5E7EB;color:#374151}
+/* Tạm duyệt (Hoàng Trung đã duyệt, chờ Quản lý người Hàn chốt) */
+.st.prov{background:#DBEAFE;color:#1E40AF}
+/* Dải tiến trình duyệt nhiều cấp */
+.appr-chain{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin:2px 0 8px}
+.appr-chain .chn{font-size:10.5px;font-weight:700;border-radius:99px;padding:2px 8px;white-space:nowrap}
+.appr-chain .chn.ok{background:#D1FAE5;color:#065F46}
+.appr-chain .chn.casc{background:#E0E7FF;color:#3730A3}
+.appr-chain .chn.wait{background:#F1F5F9;color:#64748B}
+.appr-chain .chn.rej{background:#FEE2E2;color:#991B1B}
+.appr-chain .chn-sep{color:#94A3B8;font-weight:700}
+/* Ô lịch thực tế đang TẠM duyệt: viền chấm xanh + góc nhấp nháy nhẹ */
+.cell.prov,.mtx td.prov{outline:2px dashed #3B82F6;outline-offset:-2px;position:relative}
+.cell.prov::after,.mtx td.prov::after{content:'~';position:absolute;top:0;right:2px;font-size:9px;color:#1D4ED8;font-weight:800}
 /* Đơn đã huỷ / bị từ chối: làm mờ cho đỡ rối, vẫn đọc được */
 .req.dead{background:#FAFAFA;border-style:dashed}
 .req.dead .body,.req.dead .who{opacity:.68}

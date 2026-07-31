@@ -22,7 +22,10 @@ function go(v,opts){
   if(v==='data')renderData();
 }
 function refreshBadge(){
-  const n=Object.values(S.requests).filter(r=>r.status==='pending').length;
+  const rs=Object.values(S.requests||{});
+  const n=(typeof reqNeedsMyAction==='function')
+    ? rs.filter(reqNeedsMyAction).length
+    : rs.filter(r=>r.status==='pending').length;
   [$('pendBdg'),$('pendBdgM')].forEach(b=>{if(!b)return;b.style.display=n?'':'none';b.textContent=n;});
   if(typeof refreshPrintBadge==='function')refreshPrintBadge();
 }

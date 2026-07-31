@@ -62,6 +62,36 @@ function reqWriter(r){return r.byId&&r.byId!==r.empId?r.byId:r.empId;}
    ============================================================ */
 const REQ_ST_LABEL={pending:'CHỜ DUYỆT',approved:'ĐÃ DUYỆT',rejected:'TỪ CHỐI'};
 const REQ_DEAD=st=>st==='rejected';
+/* Nhãn trạng thái có xét duyệt nhiều cấp: TẠM DUYỆT (chờ QL Hàn chốt),
+   CHỜ <cấp kế> khi mới qua Field Engineer. */
+function reqStatusLabel(r){
+  if(!r)return '';
+  if(r.status==='rejected')return t('TỪ CHỐI');
+  if(r.status==='approved')return reqIsProvisional(r)?t('TẠM DUYỆT'):t('ĐÃ DUYỆT');
+  const nx=typeof reqNextLevel==='function'?reqNextLevel(r):null;
+  const someDone=r.appr&&Object.keys(r.appr).some(k=>r.appr[k]&&!r.appr[k].reject);
+  if(nx&&someDone)return t('CHỜ')+' '+lvlLabel(nx);
+  return t('CHỜ DUYỆT');
+}
+function reqStatusClass(r){
+  if(!r)return '';
+  if(r.status==='approved'&&reqIsProvisional(r))return 'prov';
+  return r.status;
+}
+/* Dải các cấp trong chuỗi duyệt: ✓ đã duyệt (⤷ duyệt theo) · ⏳ đang chờ · ✕ từ chối */
+function apprChainHtml(r){
+  if(typeof reqChain!=='function')return '';
+  const ch=reqChain(r),ap=r.appr||{};
+  if(!ch.length)return '';
+  const parts=ch.map(k=>{
+    const a=ap[k];
+    let cls='wait',ic='⏳';
+    if(a&&a.reject){cls='rej';ic='✕';}
+    else if(a){cls=a.cascade?'casc':'ok';ic=a.cascade?'⤷':'✓';}
+    return `<span class="chn ${cls}" title="${a?(a.reject?t('từ chối'):(a.cascade?t('duyệt theo'):t('đã duyệt'))):t('đang chờ')}">${ic} ${esc(lvlLabel(k))}</span>`;
+  });
+  return `<div class="appr-chain">${parts.join('<span class="chn-sep">›</span>')}</div>`;
+}
 
 /* Gỡ mọi ô lịch do đơn này tạo ra. Trả về số ô đã hoàn tác. */
 function revertReqSchedule(rid){
@@ -86,12 +116,15 @@ function canCancelReq(r,who){
    Không giữ lại bản ghi "đã huỷ": mỗi đơn nằm lại là thêm dữ liệu phải đồng bộ
    qua Firebase, mà gói Spark tính băng thông — đơn đã huỷ thì không ai tra nữa.
    Nếu đơn đã duyệt thì gỡ luôn các ô lịch do nó tạo ra (đổi ca gỡ cho cả 2 người). */
-function cancelReq(rid){
+function cancelReq(rid,notify){
   const r=S.requests[rid];if(!r)return null;
   const reverted=(r.status==='approved')?revertReqSchedule(rid):0;
+  // Báo các bên liên quan TRƯỚC khi xoá (info notif không gắn dọn ở dưới)
+  if(notify&&typeof notifyReqParties==='function')notifyReqParties(r,'cancelled',meId());
   delete S.requests[rid];
-  // Dọn thông báo xác nhận đổi ca gắn với đơn này để không còn treo ở người B
-  if(S.notifs)for(const k in S.notifs){if(S.notifs[k].reqId===rid)delete S.notifs[k];}
+  // Dọn thông báo XÁC NHẬN (swapConfirm/schedChange) gắn đơn này — giữ lại info
+  if(S.notifs)for(const k in S.notifs){const n=S.notifs[k];
+    if(n.reqId===rid&&(n.kind==='swapConfirm'||n.kind==='schedChange'))delete S.notifs[k];}
   return{reverted};
 }
 /* Giữ tên cũ cho các chỗ đang gọi — nay cùng nghĩa với cancelReq */
@@ -245,8 +278,21 @@ function reqInRange(r,f,tt){
   if(r.type==='multi')return true;
   return reqDays(r).some(d=>d.iso>=f&&d.iso<=tt);
 }
+/* Đơn còn CHỜ chính người đang đăng nhập xử lý (theo cấp của họ) */
+function reqNeedsMyAction(r){
+  if(!r||r.status==='rejected')return false;
+  if(typeof apprLevelOf!=='function')return r.status==='pending';
+  const lvl=apprLevelOf(meId(),r);
+  if(!lvl)return false;
+  const ap=r.appr||{};
+  if(ap[lvl]&&!ap[lvl].reject)return false;               // mình đã duyệt cấp này rồi
+  if(r.status==='approved'&&!reqIsProvisional(r))return false; // đã chốt hẳn
+  return true;
+}
 /* Đơn khớp bộ lọc hiện tại */
 function apprMatch(r){
+  // Field Engineer (không phải quản lý) chỉ thấy đơn mình duyệt được (nhóm mình)
+  if(myFE&&!mgr&&!(typeof apprLevelOf==='function'&&apprLevelOf(meId(),r)==='fe'))return false;
   if(apprFilter.status!=='__all'&&r.status!==apprFilter.status)return false;
   if(apprFilter.print==='yes'&&!r.printedAt)return false;
   if(apprFilter.print==='no'&&(r.printedAt||r.noPrint))return false;   // chưa in = chưa in & vẫn cần in
@@ -288,17 +334,18 @@ function apprRow(r){
       <button type="button" class="ar-txt" onclick="apprToggleRow('${r.id}')">
         <span class="l1"><b>${esc(e?e.name:r.empId)}</b>
           <i class="typ">${esc(REQ_LABEL[r.type]||r.type)}</i>
-          <span class="st ${r.status}">${REQ_ST_LABEL[r.status]||r.status}</span>
+          <span class="st ${reqStatusClass(r)}">${reqStatusLabel(r)}</span>
           <span class="prt ${r.printedAt?'yes':(r.noPrint?'none':'no')}">${r.printedAt?'🖨️ '+t('đã in'):(r.noPrint?'🚫 '+t('không in'):'○ '+t('chưa in'))}</span>${cfBadge}${apprAdviceBadge(r)}</span>
         <span class="l2">${esc(sub.join(' · '))}</span>
       </button>
       <span class="ar-act">
-        ${r.status==='pending'?`<button class="btn ok sm" onclick="decide('${r.id}',true)" title="Duyệt">✓</button>
+        ${(r.status!=='rejected'&&!(r.status==='approved'&&!reqIsProvisional(r)))?`<button class="btn ok sm" onclick="decide('${r.id}',true)" title="Duyệt">✓</button>
         <button class="btn warn sm" onclick="decide('${r.id}',false)" title="Từ chối">✕</button>`:''}
         <button type="button" class="ar-more" onclick="apprToggleRow('${r.id}')" title="Chi tiết">▾</button>
       </span>
     </div>
     <div class="ar-d">
+      ${apprChainHtml(r)}
       ${reqDetail(r)}
       ${r.status==='pending'?apprWarnLine(r):''}
       ${open&&typeof reqAdviceHtml==='function'?reqAdviceHtml(r):''}
@@ -313,6 +360,7 @@ function apprRow(r){
       <div class="ar-more-act">
         <button class="btn sec sm pc-only" onclick="printOne('${r.id}')">🖨️ In</button>
         <button class="btn sec sm" onclick="apprToggleNoPrint('${r.id}')">${r.noPrint?'🖨️ Đưa vào ds in':'🚫 Đánh dấu không cần in'}</button>
+        ${r.status==='approved'?`<button class="btn warn sm" onclick="revokeApproval('${r.id}')">↩️ Huỷ duyệt</button>`:''}
         <button class="btn warn sm" onclick="cancelOneReq('${r.id}')">🚫 Huỷ đơn</button>
       </div>
     </div>
@@ -345,10 +393,15 @@ function apprSetTab(v){
 }
 function renderApprTabs(){
   const box=$('apprTabs');if(!box)return;
-  const nPend=Object.values(S.requests||{}).filter(r=>r&&r.status==='pending').length;
-  box.innerHTML=[['list','📋 '+t('Danh sách đơn'),nPend],
-                 ['sum','📊 '+t('Tổng quan'),0],
-                 ['otlog','🗂 '+t('Nhật ký tăng ca'),0]]
+  const feOnly=myFE&&!mgr;
+  const nPend=feOnly
+    ? Object.values(S.requests||{}).filter(reqNeedsMyAction).length
+    : Object.values(S.requests||{}).filter(r=>r&&r.status==='pending').length;
+  const tabs=feOnly?[['list','📋 '+t('Danh sách đơn'),nPend]]
+                   :[['list','📋 '+t('Danh sách đơn'),nPend],
+                     ['sum','📊 '+t('Tổng quan'),0],
+                     ['otlog','🗂 '+t('Nhật ký tăng ca'),0]];
+  box.innerHTML=tabs
     .map(([k,l,n])=>`<button class="aptab${apprTab===k?' on':''}" onclick="apprSetTab('${k}')">${l}${n?`<i>${n}</i>`:''}</button>`).join('');
   const set=(id,on)=>{const el=$(id);if(el)el.style.display=on?'':'none';};
   set('apprSum',   apprTab==='sum');
@@ -358,9 +411,12 @@ function renderApprTabs(){
 function renderAppr(){
   const lock=$('apprLock'),body=$('apprBody');
   if(!lock||!body)return;
-  lock.style.display=mgr?'none':'';
-  body.style.display=mgr?'':'none';
-  if(!mgr)return;
+  const ok=canAppr();
+  lock.style.display=ok?'none':'';
+  body.style.display=ok?'':'none';
+  if(!ok)return;
+  // Field Engineer (không phải quản lý) chỉ có Danh sách đơn của nhóm mình
+  if(myFE&&!mgr)apprTab='list';
   renderApprTabs();
   // Chỉ dựng đúng sub-tab đang mở — khỏi tính thừa
   if(apprTab==='sum'){if(typeof asRender==='function')asRender();return;}
@@ -475,17 +531,17 @@ function apprAfterChange(msg){
 }
 /* Duyệt / từ chối hàng loạt */
 function decidePickedReqs(ok){
-  const ids=apprPicked().filter(id=>S.requests[id]&&S.requests[id].status==='pending');
-  if(!ids.length){toast(t('Không có đơn nào đang chờ duyệt trong danh sách đã chọn'));return;}
+  const all=apprPicked().map(id=>S.requests[id]).filter(Boolean);
+  // Duyệt: bỏ qua đơn đã chốt hẳn (approved & không phải tạm duyệt). Từ chối: mọi đơn chưa bị từ chối.
+  const ids=all.filter(r=>ok
+      ?(r.status!=='rejected'&&!(r.status==='approved'&&!reqIsProvisional(r)))
+      :(r.status!=='rejected')).map(r=>r.id);
+  if(!ids.length){toast(t('Không có đơn phù hợp trong danh sách đã chọn'));return;}
   if(!confirm((ok?t('Duyệt'):t('Từ chối'))+' '+ids.length+' '+t('đơn đã chọn?')))return;
   let reason='';
   if(!ok)reason=prompt(t('Lý do từ chối (tuỳ chọn):'))||'';
-  ids.forEach(id=>{
-    const r=S.requests[id];if(!r||r.status!=='pending')return;
-    if(ok)decide(id,true,true);
-    else{r.status='rejected';r.reason=reason;r.decidedAt=Date.now();r.decidedBy=meId()||'manager';}
-  });
-  apprAfterChange((ok?t('Đã duyệt'):t('Đã từ chối'))+' '+ids.length+' '+t('đơn'));
+  ids.forEach(id=>decide(id,ok,true,reason));
+  apprAfterChange((ok?t('Đã xử lý duyệt'):t('Đã từ chối'))+' '+ids.length+' '+t('đơn'));
 }
 /* Câu xác nhận trước khi xoá */
 function cancelWarnText(list){
@@ -500,7 +556,7 @@ function cancelWarnText(list){
 function cancelOneReq(rid){
   const r=S.requests[rid];if(!r)return;
   if(!confirm(cancelWarnText([r])))return;
-  const x=cancelReq(rid);
+  const x=cancelReq(rid,true);
   apprAfterChange(t('Đã xoá đơn')+(x&&x.reverted?' · '+t('hoàn tác')+' '+x.reverted+' '+t('ô lịch'):''));
 }
 function purgeOneReq(rid){cancelOneReq(rid);}
@@ -520,49 +576,150 @@ function printPickedReqs(){
   printRequests(ids.map(id=>S.requests[id]).filter(Boolean),'a5');
 }
 function* dateRange(f,t){let d=new Date(f+'T00:00:00');const e=new Date(t+'T00:00:00');let g=0;while(d<=e&&g++<62){yield isoOf(d);d.setDate(d.getDate()+1);}}
-function decide(id,ok,bulk){
-  const r=S.requests[id];if(!r||r.status!=='pending')return;
-  if(!ok){
-    const reason=prompt(t('Lý do từ chối (tuỳ chọn):'))||'';
-    r.status='rejected';r.reason=reason;r.decidedAt=Date.now();r.decidedBy=meId()||'manager';
-    if(!bulk){save();renderAppr();toast(t('Đã từ chối'));}
-    return;
-  }
+/* Ghi kết quả duyệt vào LỊCH THỰC TẾ (S.over). prov=true → ô lịch đánh dấu
+   "tạm duyệt" (chờ cấp cuối chốt). Chỉ gọi MỘT lần khi đơn lần đầu đạt cấp
+   Trung; khi chốt cấp cuối thì gọi markReqScheduleFinal() để bỏ cờ tạm. */
+function writeReqToSchedule(r,prov){
+  const id=r.id;
+  const stamp=()=>({reqId:id,by:'approve',at:Date.now(),prov:!!prov});
   if(r.type==='swap'){
     for(const d of reqDays(r)){
       const iso=d.iso;
       const a=eff(r.empId,iso).code,b=eff(r.withId,iso).code;
       S.over[r.empId]=S.over[r.empId]||{};S.over[r.withId]=S.over[r.withId]||{};
-      S.over[r.empId][iso]={code:b||'',reqId:id,by:'approve',at:Date.now()};
-      S.over[r.withId][iso]={code:a||'',reqId:id,by:'approve',at:Date.now()};
+      S.over[r.empId][iso]=Object.assign({code:b||''},stamp());
+      S.over[r.withId][iso]=Object.assign({code:a||''},stamp());
     }
   }else if(r.type==='wt'||r.type==='late'||r.type==='multi'){
-    // Đơn giấy tờ thuần — KHÔNG ghi đè lịch ca (không tạo override)
+    // Đơn giấy tờ thuần — KHÔNG ghi đè lịch ca
   }else if(r.type==='ot'){
-    /* Một ngày có thể tăng ca nhiều lần → CỘNG giờ của các lần trong cùng ngày,
-       mã ca lấy theo lần dài nhất để ô lịch hiện cho dễ nhìn. */
     const byDay={};
     reqDays(r).forEach(d=>{
       if(!d.code)return;
       const h=d.hours||otHours(d.iso,d.timeIn,d.isoEnd,d.timeOut)||getHours(d.code);
       const g=byDay[d.iso]||(byDay[d.iso]={hours:0,code:d.code,best:0});
-      g.hours+=h;
-      if(h>g.best){g.best=h;g.code=d.code;}
+      g.hours+=h;if(h>g.best){g.best=h;g.code=d.code;}
     });
     S.over[r.empId]=S.over[r.empId]||{};
-    for(const iso in byDay){
-      S.over[r.empId][iso]={code:byDay[iso].code,hours:Math.round(byDay[iso].hours*10)/10,
-                            reqId:id,by:'approve',at:Date.now()};
-    }
+    for(const iso in byDay)
+      S.over[r.empId][iso]=Object.assign({code:byDay[iso].code,hours:Math.round(byDay[iso].hours*10)/10},stamp());
   }else{
     for(const d of reqDays(r)){
       if(!d.code)continue;
       S.over[r.empId]=S.over[r.empId]||{};
-      S.over[r.empId][d.iso]={code:d.code,reqId:id,by:'approve',at:Date.now()};
+      S.over[r.empId][d.iso]=Object.assign({code:d.code},stamp());
     }
   }
-  r.status='approved';r.decidedAt=Date.now();r.decidedBy=meId()||'manager';
+}
+/* Bỏ cờ tạm ở mọi ô lịch do đơn này sinh ra (đã được cấp cuối chốt) */
+function markReqScheduleFinal(id){
+  for(const empId in S.over){const m=S.over[empId]||{};
+    for(const iso in m)if(m[iso]&&m[iso].reqId===id)m[iso].prov=false;}
+}
+/* Các bên liên quan tới một đơn — để gửi thông báo */
+function apprPartyIds(r){
+  const s=new Set();
+  if(r.empId)s.add(r.empId);
+  if(r.byId)s.add(r.byId);
+  if(r.withId)s.add(r.withId);
+  return [...s];
+}
+function notifyReqParties(r,kind,byId,lvl,extra){
+  if(typeof newNotif!=='function')return;
+  const label={leave:'nghỉ phép',swap:'đổi ca',ot:'tăng ca',change:'đổi mã ca',
+               wt:'bổ sung công',late:'đi trễ/về sớm',multi:'làm liên tục'}[r.type]||r.type;
+  const head={
+    approved:'✅ Đơn '+label+' đã được DUYỆT chính thức',
+    provapproved:'🕒 Đơn '+label+' đã được '+lvlLabel('trung')+' TẠM DUYỆT (chờ Quản lý người Hàn chốt)',
+    fe:'☑️ Đơn '+label+' đã được Field Engineer duyệt (chờ cấp trên)',
+    rejected:'❌ Đơn '+label+' bị TỪ CHỐI',
+    revoked:'↩️ Đơn '+label+' đã bị HUỶ DUYỆT',
+    cancelled:'🗑️ Đơn '+label+' đã bị HUỶ'
+  }[kind]||('Cập nhật đơn '+label);
+  const txt=head+' · '+fmtVN(r.from)+(extra?(' · '+extra):'');
+  apprPartyIds(r).forEach(pid=>{
+    if(pid===byId)return;
+    newNotif({kind:'info',to:pid,from:byId||'',reqId:r.id,text:txt});
+  });
+}
+
+/* ============================================================
+   DUYỆT NHIỀU CẤP
+   Xem chuỗi cấp ở js/01-core.js (reqChain / apprLevelOf / LVL_*).
+   - Cấp cao duyệt → cấp dưới tự "duyệt theo" (cascade).
+   - Đạt cấp Trung (Hoàng Trung) → TẠM ghi lịch (provisional).
+   - Đạt cấp cuối (Quản lý người Hàn) → CHỐT lịch chính thức.
+   - Từ chối ở bất kỳ cấp nào → cả đơn bị từ chối, gỡ ô lịch tạm nếu có.
+   Đơn CŨ không có chuỗi vẫn chạy: reqChain suy ra động, apprLevelOf mặc
+   định coi admin/appr là cấp Trung nên hành xử như trước.
+   ============================================================ */
+function decide(id,ok,bulk,reasonArg){
+  const r=S.requests[id];if(!r)return;
+  if(r.status==='rejected'){if(!bulk)toast(t('Đơn đã bị từ chối'));return;}
+  const me=meId();
+  const lvl=apprLevelOf(me,r);
+  if(!lvl){if(!bulk)toast(t('Bạn không có quyền duyệt đơn này'));return;}
+  const chain=reqChain(r);
+  r.appr=r.appr||{};
+
+  if(!ok){
+    const reason=bulk?(reasonArg||''):(prompt(t('Lý do từ chối (tuỳ chọn):'))||'');
+    if(r.status==='approved')revertReqSchedule(id);        // gỡ ô lịch tạm/đã ghi
+    r.status='rejected';r.reason=reason;r.decidedAt=Date.now();r.decidedBy=me||'manager';
+    r.provisional=false;r.appr[lvl]={by:me,at:Date.now(),reject:true};
+    notifyReqParties(r,'rejected',me,lvl,reason);
+    if(!bulk){save();renderAppr();if(typeof renderReal==='function')renderReal();
+      if(typeof renderMe==='function')renderMe(true);if(typeof refreshBadge==='function')refreshBadge();
+      toast(t('Đã từ chối'));}
+    return;
+  }
+
+  // DUYỆT ở cấp lvl — cascade các cấp thấp hơn thành "duyệt theo"
+  const ord=LVL_ORD[lvl];
+  chain.forEach(k=>{if(LVL_ORD[k]<ord&&(!r.appr[k]||r.appr[k].reject))r.appr[k]={by:me,at:Date.now(),cascade:true};});
+  r.appr[lvl]={by:me,at:Date.now()};
+
+  const hasFinal=!!r.appr[LVL_FINAL]&&!r.appr[LVL_FINAL].reject;
+  const hasProv =!!r.appr[LVL_PROV]&&!r.appr[LVL_PROV].reject;
+  const wasApproved=r.status==='approved';
+
+  let kind='fe';
+  if(hasFinal||hasProv){
+    if(!wasApproved)writeReqToSchedule(r,!hasFinal);
+    else if(hasFinal)markReqScheduleFinal(id);
+    r.status='approved';r.decidedAt=Date.now();r.decidedBy=me||'manager';
+    r.provisional=!hasFinal;
+    kind=hasFinal?'approved':'provapproved';
+  }else{
+    r.status='pending';r.provisional=false;kind='fe';
+  }
+  notifyReqParties(r,kind,me,lvl);
   if(bulk)return;
-  save();renderAppr();renderReal();renderMe(true);refreshBadge();
-  toast(t('Đã duyệt & cập nhật lịch thực tế'));
+  save();renderAppr();
+  if(typeof renderReal==='function')renderReal();
+  if(typeof renderMe==='function')renderMe(true);
+  if(typeof refreshBadge==='function')refreshBadge();
+  toast(hasFinal?t('Đã duyệt & chốt lịch thực tế')
+       :hasProv?t('Đã tạm duyệt — chờ Quản lý người Hàn chốt')
+               :t('Đã duyệt cấp Field Engineer — chờ cấp trên'));
+}
+/* Huỷ DUYỆT một đơn đã duyệt (đưa về chờ duyệt), gỡ ô lịch, báo các bên.
+   Cho phép: admin / kmgr / người làm đơn. Khác với Huỷ đơn (xoá hẳn). */
+function revokeApproval(id){
+  const r=S.requests[id];if(!r)return;
+  const me=meId();
+  const canRevoke=adm||(apprLevelOf(me,r))||r.empId===me||r.byId===me;
+  if(!canRevoke){toast(t('Bạn không huỷ duyệt được đơn này'));return;}
+  if(r.status!=='approved'){toast(t('Đơn chưa ở trạng thái đã duyệt'));return;}
+  if(r.printedAt&&!adm){toast(t('Đơn đã in nộp nhân sự — nhờ quản lý xử lý'));return;}
+  if(!confirm(t('Huỷ duyệt đơn này? Lịch thực tế sẽ trả về ca chuẩn, đơn quay lại trạng thái chờ duyệt.')))return;
+  const rev=revertReqSchedule(id);
+  r.status='pending';r.provisional=false;r.appr={};
+  r.decidedAt=0;r.decidedBy='';
+  notifyReqParties(r,'revoked',me);
+  save();renderAppr();
+  if(typeof renderReal==='function')renderReal();
+  if(typeof renderMe==='function')renderMe(true);
+  if(typeof refreshBadge==='function')refreshBadge();
+  toast(t('Đã huỷ duyệt')+(rev?' · '+t('hoàn tác')+' '+rev+' '+t('ô lịch'):''));
 }

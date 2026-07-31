@@ -145,12 +145,12 @@ function renderMatrix(C){
         `<td class="c1" style="background:${col}">${esc(teamShort(tm))}</td>`+
         `<td class="c2">${esc(e.id)}</td>`+
         `<td class="c3">${esc(e.name||'(chưa đặt tên)')}</td>`+
-        `<td class="c4">${esc(e.pos||roleLbl)}</td>`;
+        `<td class="c4">${esc(posLabel(posCode(e))||roleLbl)}</td>`;
       days.forEach(iso=>{
         const r=getCode(e.id,iso);
         const editable=C.real&&mgr;
         const style=(diffOnly&&!r.ovr)?'':cellStyle(r.code);
-        h+=`<td class="cell${editable?' editable':''}${r.ovr?' ovr diff':''}${iso===tIso?' today':''}" style="${style}" ${editable?`onclick="openCell('${e.id}','${iso}')"`:''}>${r.code||''}</td>`;
+        h+=`<td class="cell${editable?' editable':''}${r.ovr?' ovr diff':''}${r.o&&r.o.prov?' prov':''}${iso===tIso?' today':''}" style="${style}" ${editable?`onclick="openCell('${e.id}','${iso}')"`:''}>${r.code||''}</td>`;
       });
       h+='</tr>';
     });

@@ -20,7 +20,7 @@ function exportStats(){
   const aoa=[['LPGT CAVERN — THỐNG KÊ CÔNG CA',p.label],[],
     ['Nhóm','Mã NV','Họ tên','Vị trí','Ca D','Ca N','Ca O','R','AL8','AL4','NP','OFF','Ca OT','Giờ công','Giờ OT','Giờ phép']];
   rows.forEach(({e,s})=>{
-    aoa.push([e.team||'',e.id,e.name||'',e.pos||'',cD(s),cN(s),cO(s),s.cnt.R||0,s.cnt.AL8||0,s.cnt.AL4||0,s.cnt.NP||0,s.cnt.OFF||0,otShifts(s),rnd1(s.hWork),rnd1(s.hOT),rnd1(s.hLeave)]);
+    aoa.push([e.team||'',e.id,e.name||'',posLabel(posCode(e)),cD(s),cN(s),cO(s),s.cnt.R||0,s.cnt.AL8||0,s.cnt.AL4||0,s.cnt.NP||0,s.cnt.OFF||0,otShifts(s),rnd1(s.hWork),rnd1(s.hOT),rnd1(s.hLeave)]);
   });
   aoa.push([]);
   aoa.push(['TỔNG','','','',
@@ -97,7 +97,7 @@ function renderAccTbl(){
       <td><input class="inp sm" style="width:110px;font-family:var(--mono)" value="${esc(e.id)}" onchange="changeId('${e.id}',this.value)"></td>
       <td><input class="inp sm" style="min-width:150px" value="${esc(e.name||'')}" placeholder="Họ tên" onchange="updEmp('${e.id}','name',this.value)"></td>
       <td><input class="inp sm" style="width:70px" value="${esc(e.team||'')}" placeholder="A" onchange="updEmp('${e.id}','team',this.value,true)"></td>
-      <td><input class="inp sm" style="min-width:120px" value="${esc(e.pos||'')}" placeholder="VD: Field Engineer" onchange="updEmp('${e.id}','pos',this.value)"></td>
+      <td>${posSelectHtml(e,'min-width:150px')}</td>
       <td><select class="inp sm" style="min-width:150px" onchange="updType('${e.id}',this.value)">
         <option value="type1"${sel('type1',e.shiftType)}>Ca 8 ngày (OODDNNRR)</option>
         <option value="type2"${sel('type2',e.shiftType)}>Ca 6 ngày (DDNNRR)</option>
@@ -186,7 +186,7 @@ function exportXlsx(){
   aoa.push(h2);
   activeEmps().forEach((e,i)=>{
     const role=e.role==='eng'?'Kỹ sư':e.role==='oper'?'Operator':'';
-    const row=[i+1,e.team||'',role,e.id,e.name,e.pos||''];
+    const row=[i+1,e.team||'',role,e.id,e.name,posLabel(posCode(e))];
     days.forEach(iso=>{const c=what==='eff'?eff(e.id,iso).code:(S.base[e.id]&&S.base[e.id][iso]||'');row.push(c);});
     aoa.push(row);
   });

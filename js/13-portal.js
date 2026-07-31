@@ -47,7 +47,7 @@ function togglePw(id,btn){
 /* Ẩn/hiện các nút theo quyền của người đang đăng nhập */
 function applyRoleUI(){
   applyPerm();
-  document.querySelectorAll('.mgr-only').forEach(el=>{el.style.display=mgr?'':'none';});
+  document.querySelectorAll('.mgr-only').forEach(el=>{el.style.display=(mgr||myFE)?'':'none';});
   document.querySelectorAll('.admin-only').forEach(el=>{el.style.display=adm?'':'none';});
   /* .self-only = mục chỉ có nghĩa với người đang được chấm công
      (Trang chính, Gửi đơn, Tăng ca của tôi, Đơn của tôi) */
@@ -449,6 +449,7 @@ function renderMe(force){
       <div class="ps">${e.team?'Nhóm '+esc(e.team)+' · ':''}${esc(e.id)}</div>
     </div>
     <button class="pv-icon pv-bell" onclick="openMyPanel('ntf')" title="Thông báo">🔔${bellN?`<span class="bell-bdg">${bellN>9?'9+':bellN}</span>`:''}</button>
+    <button class="pv-icon" onclick="openMyPanel('sum')" title="Bảng công (thống kê theo ngày/giờ)">📊</button>
     <button class="pv-icon" onclick="openMyPanel('acc')" title="Tài khoản">🔑</button>
     <button class="pv-icon" onclick="doLogout()" title="Đăng xuất">↪</button>
   </div>
@@ -663,13 +664,42 @@ function dsDelRow(i){
   dsRows.splice(i,1);dsRenderForm();
 }
 function dsSetRow(i,k,v){
-  if(!dsRows[i])return;
-  dsRows[i][k]=v;
+  const row=dsRows[i];if(!row)return;
+  // Chọn "Loại nghỉ khác…" → bật ô tự ghi rồi vẽ lại form
+  if(k==='code'&&v==='__other'){row.isCustom=true;row.code='__other';dsRenderForm();return;}
+  if(k==='code'){row.isCustom=false;row.code=v;}
+  else row[k]=v;                       // gồm 'custom' — không vẽ lại để giữ con trỏ
   if(k==='iso'){
     const cell=$('dsCur'+i);
-    if(cell)cell.innerHTML=dsRowCurHtml(pvSheetForm,dsRows[i]);
+    if(cell)cell.innerHTML=dsRowCurHtml(pvSheetForm,row);
   }
   dsFormUI();
+}
+/* Ô chọn mã cho đơn nghỉ phép / đổi mã ca. Riêng đơn nghỉ có thêm lựa chọn
+   "Loại nghỉ khác…" cho phép nhân viên tự đánh loại nghỉ ngoài danh sách. */
+function dsCodeCellHtml(t,row,i,codes){
+  if(t!=='leave'){
+    return `<select class="inp" onchange="dsSetRow(${i},'code',this.value)">
+      ${codes.map(c=>`<option value="${c.c}"${c.c===row.code?' selected':''}>${c.c} — ${esc(c.l)}</option>`).join('')}
+    </select>`;
+  }
+  const known=codes.some(c=>c.c===row.code);
+  const isOther=!!row.isCustom||(!!row.code&&row.code!=='__other'&&!known);
+  return `<select class="inp" onchange="dsSetRow(${i},'code',this.value)">
+      ${codes.map(c=>`<option value="${c.c}"${(!isOther&&c.c===row.code)?' selected':''}>${c.c} — ${esc(c.l)}</option>`).join('')}
+      <option value="__other"${isOther?' selected':''}>✎ Loại nghỉ khác…</option>
+    </select>${isOther?`
+    <input class="inp" style="margin-top:4px" placeholder="Tự ghi loại nghỉ (VD: Khám thai)"
+       value="${esc(row.custom||(row.code!=='__other'?row.code:'')||'')}" oninput="dsSetRow(${i},'custom',this.value)">`:''}`;
+}
+/* Chuẩn hoá loại nghỉ tự khai → mã ngắn + đăng ký vào customCodes để nơi khác nhận diện */
+function normCustomLeave(txt){
+  const raw=(txt||'').trim();if(!raw)return '';
+  let code=noAccent(raw).toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,6)||'LK';
+  S.settings=S.settings||{};S.settings.customCodes=S.settings.customCodes||[];
+  if(!allCodes().some(c=>c.c===code))
+    S.settings.customCodes.push({c:code,l:raw,col:'var(--cNP)',cat:'leave'});
+  return code;
 }
 /* Ca hiện tại của (các) người liên quan trong ngày của dòng */
 function dsRowCurHtml(t,row){
@@ -787,7 +817,7 @@ function renderDaySheet(){
           ${reqDays(x).length>1?`<i>(${reqDays(x).length} ngày)</i>`:''}
           ${x.withId?`<i>với ${esc((empById(x.withId)||{}).name||x.withId)}</i>`:''}
           ${x.reason?`<i>Lý do từ chối: ${esc(x.reason)}</i>`:''}</span>
-        <span class="st ${x.status}">${{pending:'CHỜ',approved:'DUYỆT',rejected:'TỪ CHỐI'}[x.status]}</span>
+        <span class="st ${reqStatusClass(x)}">${{pending:'CHỜ',approved:reqIsProvisional(x)?'TẠM DUYỆT':'DUYỆT',rejected:'TỪ CHỐI'}[x.status]||''}</span>
         ${canCancelReq(x,id)?`<button class="btn warn sm" onclick="cancelMyReq('${x.id}')">${x.status==='approved'?'Huỷ đơn đã duyệt':'Huỷ'}</button>`:''}
       </div>`).join('')}
    </div>`:''}
@@ -924,9 +954,7 @@ function dsFormHtml(t){
       </div>
       ${dsRows.map((row,i)=>`<div class="ds-row${needTime?' wt':''}">
         <span class="c1"><input type="date" class="inp" value="${row.iso}" onchange="dsSetRow(${i},'iso',this.value)"></span>
-        ${needCode?`<span class="c2"><select class="inp" onchange="dsSetRow(${i},'code',this.value)">
-          ${codes.map(c=>`<option value="${c.c}"${c.c===row.code?' selected':''}>${c.c} — ${esc(c.l)}</option>`).join('')}
-        </select></span>`:''}
+        ${needCode?`<span class="c2">${dsCodeCellHtml(t,row,i,codes)}</span>`:''}
         ${needTime?`<span class="c2"><input type="time" class="inp" value="${row.timeIn||''}" onchange="dsSetRow(${i},'timeIn',this.value)"></span>
         <span class="c2"><input type="time" class="inp" value="${row.timeOut||''}" onchange="dsSetRow(${i},'timeOut',this.value)"></span>`:''}
         <span class="c3" id="dsCur${i}">${dsRowCurHtml(t,row)}</span>
@@ -1063,7 +1091,11 @@ function dsSubmit(t){
       if(!row.iso)return;
       if(t!=='ot'){ if(seen.has(row.iso))return; seen.add(row.iso); }
       const d={iso:row.iso};
-      if(t==='leave'||t==='change')d.code=row.code||dsDefaultCode(t,row.iso);
+      if(t==='leave'){
+        let cd=row.isCustom?normCustomLeave(row.custom):row.code;
+        if(!cd||cd==='__other')cd=dsDefaultCode(t,row.iso);
+        d.code=cd;
+      }else if(t==='change')d.code=row.code||dsDefaultCode(t,row.iso);
       if(t==='ot'){
         const p=otPreset(row.preset||'');
         d.code=row.code||p.code||'OTD';
@@ -1143,7 +1175,7 @@ function cancelMyReq(rid){
   let msg=t('Huỷ đơn này? Đơn sẽ bị xoá hẳn.');
   if(r.status==='approved')msg+='\n'+t('Đơn đã duyệt — lịch thực tế sẽ trả về ca chuẩn.');
   if(!confirm(msg))return;
-  const x=cancelReq(rid);
+  const x=cancelReq(rid,true);
   save();
   renderDaySheet();renderMe(true);
   if(typeof renderAppr==='function')renderAppr();
@@ -1165,10 +1197,62 @@ function openMyPanel(tab){
 function closeMyPanel(){$('myPanelMask').classList.remove('on');}
 function myPanelGo(t){myPanelTab=t;renderMyPanel();if(t==='req'||t==='ntf'){markSeen(meId());renderMe(true);}}
 
+/* ---- 📊 Bảng công: thống kê theo ngày / theo giờ của chính người đăng nhập ----
+   Giúp người lao động rà soát bảng công cuối tháng: mỗi ngày một dòng kèm mã ca,
+   loại (ca làm / tăng ca / nghỉ phép) và số giờ; có tổng giờ công / OT / phép. */
+let myStatYm=null;
+function myStatPeriod(){return myStatYm||curSchedMonth();}
+function myStatShift(delta){
+  const ym=myStatPeriod();let a=ym.split('-').map(Number),y=a[0],m=a[1];
+  m+=delta;while(m<1){m+=12;y--;}while(m>12){m-=12;y++;}
+  myStatYm=y+'-'+pad(m);renderMyPanel();
+}
+function myPanelSum(id){
+  const ym=myStatPeriod(),per=periodFor(ym),days=daysOfPeriod(ym),today=todayIso();
+  const st=calcStats(id,days);
+  const leaveDays=Object.entries(st.cnt).filter(([c])=>codeInfo(c).cat==='leave')
+    .reduce((a,[c,n])=>a+(alDayValue(c)||1)*n,0);
+  const otShiftN=Object.entries(st.cnt).filter(([c])=>codeInfo(c).cat==='ot').reduce((a,[,n])=>a+n,0);
+  const catTxt={work:'Ca làm',swap:'Đổi ca',rest:'Nghỉ ca',ot:'Tăng ca',leave:'Nghỉ phép',other:'Khác'};
+  const rows=days.map(iso=>{
+    const r=eff(id,iso),c=r.code;if(!c)return '';
+    const ci=codeInfo(c),h=effHours(id,iso);
+    const hw=(ci.cat==='work'||ci.cat==='swap')?h:0, ho=ci.cat==='ot'?h:0, hl=ci.cat==='leave'?h:0;
+    const prov=r.o&&r.o.prov;
+    return `<tr class="${iso<=today?'':'fut'}">
+      <td>${fmtVN(iso)} <span class="muted">${dowOf(iso)}</span></td>
+      <td>${chip(c)}${prov?' <span class="mini-prov" title="Tạm duyệt, chờ Quản lý người Hàn chốt">~</span>':''}</td>
+      <td class="muted">${esc(t(catTxt[ci.cat]||ci.cat))}</td>
+      <td class="num">${hw?rnd1(hw):''}</td>
+      <td class="num ot">${ho?rnd1(ho):''}</td>
+      <td class="num lv">${hl?rnd1(hl):''}</td></tr>`;
+  }).filter(Boolean).join('');
+  return `<div class="mp-sum">
+    <div class="mp-sum-head">
+      <button class="btn sec sm" onclick="myStatShift(-1)">◀</button>
+      <b>${esc(per.label)}</b>
+      <button class="btn sec sm" onclick="myStatShift(1)">▶</button>
+      <span style="flex:1"></span>
+      <button class="btn sec sm" onclick="myStatYm=null;renderMyPanel()">${t('Kỳ hiện tại')}</button>
+    </div>
+    <p class="muted sm2">${t('Bảng công của bạn trong kỳ — rà soát trước khi chốt cuối tháng.')}</p>
+    <div class="mp-sum-kpi">
+      <div class="k"><div class="v">${rnd1(st.hWork)}<i>h</i></div><span>${t('Giờ công')}</span></div>
+      <div class="k ot"><div class="v">${rnd1(st.hOT)}<i>h</i></div><span>${t('Giờ tăng ca')} (${otShiftN})</span></div>
+      <div class="k lv"><div class="v">${rnd1(leaveDays)}<i>${t('ngày')}</i></div><span>${t('Nghỉ phép')}</span></div>
+    </div>
+    <div style="overflow:auto"><table class="tbl mp-sum-tbl"><thead><tr>
+      <th>${t('Ngày')}</th><th>${t('Mã')}</th><th>${t('Loại')}</th><th>${t('Công')}</th><th>OT</th><th>${t('Phép')}</th>
+    </tr></thead><tbody>${rows||`<tr><td colspan="6" class="muted">${t('Kỳ này chưa có dữ liệu.')}</td></tr>`}
+      <tr class="sum-total"><td colspan="3">${t('Tổng')}</td><td class="num">${rnd1(st.hWork)}</td><td class="num ot">${rnd1(st.hOT)}</td><td class="num lv">${rnd1(st.hLeave)}</td></tr>
+    </tbody></table></div>
+  </div>`;
+}
+
 function renderMyPanel(){
   const id=meId();const box=$('myPanelBody');if(!id||!box)return;
   const tabs=noSelf?[['acc','🔑 Tài khoản']]
-                   :[['ot','⚡ Tăng ca'],['req','📋 Đơn của tôi'],['al','🏖 Phép năm'],['acc','🔑 Tài khoản']];
+                   :[['ot','⚡ Tăng ca'],['req','📋 Đơn của tôi'],['sum','📊 Bảng công'],['al','🏖 Phép năm'],['acc','🔑 Tài khoản']];
   let h=`<div class="mp-tabs">${tabs.map(([k,l])=>
     `<button class="${myPanelTab===k?'on':''}" onclick="myPanelGo('${k}')">${l}</button>`).join('')}
     <button class="ds-x" onclick="closeMyPanel()">✕</button></div>`;
@@ -1176,6 +1260,7 @@ function renderMyPanel(){
   if(myPanelTab==='ot')      h+=myPanelOt(id);
   else if(myPanelTab==='req')h+=myPanelReq(id);
   else if(myPanelTab==='ntf')h+=myPanelNtf(id);
+  else if(myPanelTab==='sum')h+=myPanelSum(id);
   else if(myPanelTab==='al') h+=myPanelAl(id);
   else                       h+=myPanelAcc(id);
   box.innerHTML=h;
@@ -1210,7 +1295,8 @@ function myPanelNtf(id){
          <i class="tm">${fmtDateTime(n.createdAt)}</i></span></div>`).join('')}</div>`:'';
   const item=r=>{
     const fresh=(r.decidedAt||0)>seenAt;
-    const stTxt={approved:'✅ Đã duyệt',rejected:'❌ Bị từ chối'}[r.status]||r.status;
+    const stTxt=r.status==='approved'?(reqIsProvisional(r)?'🕒 Tạm duyệt (chờ QL Hàn)':'✅ Đã duyệt')
+               :r.status==='rejected'?'❌ Bị từ chối':r.status;
     return `<div class="ntf-item ${r.status}${fresh?' fresh':''}" onclick="closeMyPanel();openDaySheet('${r.from}')">
       <span class="ic">${REQ_ICON[r.type]||'📄'}</span>
       <span class="tx"><b>${stTxt}</b> · ${esc(REQ_LABEL[r.type]||r.type)}
@@ -1310,7 +1396,7 @@ function myPanelReq(id){
         ${r.withId?`<i>Đổi ca với ${esc((empById(r.withId)||{}).name||r.withId)}</i>`:''}
         ${r.byId&&r.byId!==r.empId?`<i>✍️ ${r.byId===id?'Bạn khai hộ '+esc((empById(r.empId)||{}).name||r.empId):'Khai hộ bởi '+esc((empById(r.byId)||{}).name||r.byId)}</i>`:''}
         ${r.note?`<i>${esc(r.note)}</i>`:''}${r.reason?`<i>Lý do: ${esc(r.reason)}</i>`:''}</span>
-      <span class="st ${r.status}">${{pending:'CHỜ',approved:'DUYỆT',rejected:'TỪ CHỐI'}[r.status]||esc(r.status)}</span>
+      <span class="st ${reqStatusClass(r)}">${{pending:'CHỜ',approved:reqIsProvisional(r)?'TẠM DUYỆT':'DUYỆT',rejected:'TỪ CHỐI'}[r.status]||esc(r.status)}</span>
       <span class="act">
         ${canCancelReq(r,id)?`<button class="btn warn sm" onclick="cancelMyReq('${r.id}');renderMyPanel()">${r.status==='approved'?'Huỷ đơn':'Huỷ'}</button>`:''}
         ${r.status==='approved'?`<button class="btn sec sm" onclick="printOne('${r.id}')">🖨️</button>`:''}
@@ -1429,7 +1515,7 @@ function myPanelAcc(id){
     <div><span>Họ tên</span><b>${esc(e.name||'—')}</b></div>
     <div><span>Tên đăng nhập</span><b style="font-family:var(--mono)">${esc(loginKey(id))}</b></div>
     ${loginKey(id)!==id?`<div><span>Mã NV trên hồ sơ</span><b style="font-family:var(--mono)">${esc(id)}</b></div>`:''}
-    <div><span>Vị trí</span><b>${esc(e.pos||'—')}</b></div>
+    <div><span>Vị trí</span><b>${esc(posLabel(posCode(e))||'—')}</b></div>
     <div><span>Nhóm</span><b>${esc(e.team||'—')}</b></div>
     <div><span>Mật khẩu</span><b>${usingDefaultPw(id)?'<span class="st pending">Đang dùng mặc định (= '+esc(loginKey(id))+')</span>':'<span class="st approved">Đã đổi</span>'}</b></div>
     ${acc.at?`<div><span>Cập nhật lần cuối</span><b>${fmtDateTime(acc.at)}</b></div>`:''}

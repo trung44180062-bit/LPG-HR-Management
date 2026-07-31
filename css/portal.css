@@ -395,6 +395,23 @@ i.d-ok{background:#0E9F6E}
 }
 .mp-tabs button.on{background:#0B3B5C;border-color:#0B3B5C;color:#fff}
 .mp-tabs .ds-x{margin-left:auto}
+/* Bảng công cá nhân */
+.mp-sum-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.mp-sum-kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
+.mp-sum-kpi .k{background:#F1F5F9;border-radius:12px;padding:10px 8px;text-align:center}
+.mp-sum-kpi .k.ot{background:#FFF7ED}
+.mp-sum-kpi .k.lv{background:#EFF6FF}
+.mp-sum-kpi .k .v{font-size:20px;font-weight:800;color:#0B3B5C}
+.mp-sum-kpi .k .v i{font-size:11px;font-weight:600;margin-left:2px}
+.mp-sum-kpi .k span{font-size:11px;color:#475569}
+.mp-sum-tbl{width:100%;font-size:12.5px}
+.mp-sum-tbl th,.mp-sum-tbl td{padding:5px 7px;border-bottom:1px solid var(--line);text-align:left}
+.mp-sum-tbl td.num{text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
+.mp-sum-tbl td.num.ot{color:#C2410C}
+.mp-sum-tbl td.num.lv{color:#1D4ED8}
+.mp-sum-tbl tr.fut td{opacity:.55}
+.mp-sum-tbl tr.sum-total td{border-top:2px solid #0B3B5C;font-weight:800;background:#F8FAFC}
+.mini-prov{color:#1D4ED8;font-weight:800}
 /* Hàng tab của bảng phụ cũng ghim để luôn bấm được nút ✕ */
 .mp-tabs{position:sticky;top:0;z-index:6;background:#fff;padding:10px 0 8px}
 .mp-tabs::before{content:'';position:absolute;left:-14px;right:-14px;top:0;bottom:0;

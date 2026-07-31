@@ -26,7 +26,12 @@ const DEFAULT_CODES=[
  {c:'AL8',l:'Phép năm 8h',   col:'var(--cAL)', cat:'leave'},
  {c:'AL4',l:'Phép năm 4h',   col:'var(--cAL)', cat:'leave'},
  {c:'NP', l:'Nghỉ không lương', col:'var(--cNP)', cat:'leave'},
- {c:'OFF',l:'Nghỉ bù / OFF', col:'var(--cNP)', cat:'leave'},
+ {c:'COM',l:'Nghỉ bù (comp)', col:'var(--cNP)', cat:'leave'},
+ {c:'OFF',l:'Nghỉ bù / OFF (cũ)', col:'var(--cNP)', cat:'leave', legacy:true},
+ {c:'WED',l:'Nghỉ cưới',      col:'var(--cAL)', cat:'leave'},
+ {c:'FUN',l:'Nghỉ tang',      col:'var(--cAL)', cat:'leave'},
+ {c:'MAT',l:'Nghỉ thai sản / đẻ', col:'var(--cAL)', cat:'leave'},
+ {c:'ALP',l:'Nghỉ phép năm thêm', col:'var(--cAL)', cat:'leave'},
  {c:'SD', l:'Đổi sang ca D', col:'var(--cSW)', cat:'swap'},
  {c:'SN', l:'Đổi sang ca N', col:'var(--cSW)', cat:'swap'},
  {c:'SO', l:'Đổi sang ca O', col:'var(--cSW)', cat:'swap'},
@@ -39,7 +44,8 @@ const DEFAULT_CODES=[
     trong danh sách chọn. Ô lịch cũ (nếu còn) sẽ hiện như mã lạ, không tính giờ OT. */
 ];
 // Giờ công mặc định theo mã ca (chỉnh / thêm ở tab Dữ liệu)
-const DEFAULT_HOURS={O:8,D:12,N:12,R:0,AL8:8,AL4:4,NP:0,OFF:0,SD:12,SN:12,SO:8,
+const DEFAULT_HOURS={O:8,D:12,N:12,R:0,AL8:8,AL4:4,NP:0,COM:0,OFF:0,
+                     WED:8,FUN:8,MAT:8,ALP:8,SD:12,SN:12,SO:8,
                      OTD:12,OTN:12,OTL:1,OT2:2,OT3:3};
 
 /* ============================================================
@@ -85,7 +91,9 @@ let S={
    noSelf = KHÔNG thuộc đối tượng chấm công (thư ký / quản lý người Hàn /
             người đặt Kiểu ca = Không xếp lịch) → bỏ hẳn Trang chính cá nhân,
             đăng nhập vào là vào thẳng Lịch thực tế. Xem homeView(). */
-let mgr=false, adm=false, secr=false, noSelf=false, fb=null, fbRef=null, applyingRemote=false, curCell=null, curView='cal';
+let mgr=false, adm=false, secr=false, noSelf=false, myFE=false, fb=null, fbRef=null, applyingRemote=false, curCell=null, curView='cal';
+/* Được vào màn Duyệt: quản lý (mgr) hoặc Field Engineer duyệt cấp 1 của nhóm */
+function canAppr(){return mgr||myFE;}
 /* Màn hình đầu tiên sau khi đăng nhập */
 function homeView(){return noSelf?'real':'me';}
 /* v4 mobile cal state */
@@ -190,6 +198,116 @@ function minOfShift(sh){
   return 0;
 }
 function maxOffTeam(){const v=S.settings&&S.settings.maxOffTeam;return (v===''||v==null)?1:(+v||0);}
+
+/* ============================================================
+   VỊ TRÍ CHUẨN (position)
+   ------------------------------------------------------------
+   Trước đây "Vị trí" là ô chữ tự do. Nay chuẩn hoá thành danh sách
+   để phần mềm HIỂU được vai trò — đặc biệt để xác định Field Engineer
+   của nhóm (người duyệt cấp 1 khối sản xuất). posCode() suy mã chuẩn
+   từ dữ liệu cũ (chữ tự do) nên KHÔNG cần chuyển đổi thủ công.
+   ============================================================ */
+const POSITIONS=[
+  {v:'operator',   l:'Operator',                    pool:POOL_PROD},
+  {v:'field_eng',  l:'Field Engineer',              pool:POOL_PROD},
+  {v:'boardman',   l:'DCS Boardman',                pool:POOL_PROD},
+  {v:'check_booth', l:'Check booth (Trạm cân)',     pool:POOL_OFF},
+  {v:'office',     l:'Office (Kỹ sư văn phòng)',    pool:POOL_OFF},
+  {v:'supervisor', l:'Supervisor (Giám sát – Hàn)', pool:POOL_OFF},
+  {v:'pm',         l:'PM (Giám đốc nhà máy – Hàn)', pool:POOL_OFF}
+];
+function posInfo(v){return POSITIONS.find(p=>p.v===v)||null;}
+function posLabel(v){const p=posInfo(v);return p?p.l:(v||'');}
+/* Suy mã vị trí chuẩn từ e.pos (đã là mã thì giữ nguyên, còn là chữ tự do
+   thì đoán theo từ khoá; cuối cùng rơi về role). KHÔNG ghi đè dữ liệu —
+   khi người dùng chọn lại ở dropdown mới lưu mã chuẩn vào e.pos. */
+function posCode(e){
+  if(!e)return '';
+  const raw=e.pos||'';
+  if(posInfo(raw))return raw;
+  const s=noAccent(raw).replace(/\s+/g,' ').trim();
+  if(s){
+    if(/field|hien truong|\bfe\b/.test(s))return 'field_eng';
+    if(/board|dcs/.test(s))return 'boardman';
+    if(/check|booth|tram can/.test(s))return 'check_booth';
+    if(/supervisor|giam sat/.test(s))return 'supervisor';
+    if(/\bpm\b|giam doc|plant manager|director/.test(s))return 'pm';
+    if(/office|van phong/.test(s))return 'office';
+    if(/operator|van hanh|\boper\b/.test(s))return 'operator';
+  }
+  return e.role==='eng'?'field_eng':(e.role==='oper'?'operator':'');
+}
+function posCodeOfId(id){return posCode(empById(id));}
+/* Dropdown chọn vị trí — value đã chuẩn hoá qua posCode() */
+function posSelectHtml(e,extraStyle){
+  const cur=posCode(e);
+  return `<select class="inp sm" style="${extraStyle||'min-width:150px'}" onchange="updEmp('${e.id}','pos',this.value,true)">`
+    +`<option value=""${cur?'':' selected'}>—</option>`
+    +POSITIONS.map(p=>`<option value="${p.v}"${p.v===cur?' selected':''}>${esc(p.l)}</option>`).join('')
+    +`</select>`;
+}
+/* Field Engineer của một nhóm sản xuất — người duyệt cấp 1.
+   Ưu tiên người đã điền tên (có tài khoản). Trả về mã NV hoặc ''. */
+function teamFieldEngId(team){
+  if(!team)return '';
+  const list=activeEmps().filter(e=>(e.team||'')===team&&posCode(e)==='field_eng');
+  const named=list.find(e=>String(e.name||'').trim());
+  return (named||list[0]||{}).id||'';
+}
+
+/* ============================================================
+   CHUỖI DUYỆT NHIỀU CẤP
+   ------------------------------------------------------------
+   Khối SẢN XUẤT (A/B/C/D): Field Engineer nhóm → Hoàng Trung → QL người Hàn.
+   Khối VĂN PHÒNG:                       Hoàng Trung → QL người Hàn.
+   - Cấp cao duyệt thì cấp dưới tự động "duyệt theo" (cascade).
+   - Hoàng Trung (trung) duyệt → TẠM ghi vào lịch thực tế (provisional),
+     vì lãnh đạo người Hàn đôi khi bận / đi công tác chưa kịp duyệt.
+   - QL người Hàn (kmgr) duyệt = CHỐT chính thức.
+   Bậc: fe(1) < trung(2) < kmgr(3). Cấp cuối luôn là 'kmgr'.
+   ============================================================ */
+const LVL_ORD={fe:1,trung:2,kmgr:3};
+const LVL_FINAL='kmgr', LVL_PROV='trung';
+function lvlLabel(k){
+  if(k==='fe')return 'Field Engineer';
+  if(k==='trung'){const e=empById(ROOT_ADMIN);return (e&&e.name)||'Quản trị';}
+  if(k==='kmgr')return 'Quản lý người Hàn';
+  return k;
+}
+/* Chuỗi cấp cần duyệt cho một đơn — suy từ khối & nhóm của người đứng đơn */
+function reqChain(r){
+  const emp=empById(r&&r.empId);
+  const pool=poolOfId(r&&r.empId);
+  if(pool===POOL_PROD && emp && teamFieldEngId(emp.team) && teamFieldEngId(emp.team)!==r.empId)
+    return ['fe','trung','kmgr'];
+  return ['trung','kmgr'];
+}
+/* Cấp mà 'who' được phép duyệt cho đơn r (null nếu không có quyền) */
+function apprLevelOf(who,r){
+  if(!who||!r)return null;
+  const p=(typeof permOf==='function')?permOf(who):'staff';
+  if(p==='kmgr')return 'kmgr';
+  if((typeof isRootAdmin==='function'&&isRootAdmin(who))||p==='admin')return 'trung';
+  const e=empById(who);
+  if(e&&posCode(e)==='field_eng'){
+    const emp=empById(r.empId);
+    if(reqChain(r).includes('fe')&&emp&&emp.team&&emp.team===e.team)return 'fe';
+  }
+  if(p==='appr')return 'trung';   // tương thích: quyền "Duyệt đơn" cũ = cấp Trung
+  return null;
+}
+/* Cấp thấp nhất trong chuỗi CHƯA được duyệt (đơn đang chờ ai) */
+function reqNextLevel(r){
+  const ap=(r&&r.appr)||{};
+  for(const k of reqChain(r))if(!ap[k]||ap[k].reject)return k;
+  return null;   // đã đủ mọi cấp
+}
+/* Đơn đã có cấp Trung duyệt nhưng chưa tới cấp cuối → đang TẠM DUYỆT */
+function reqIsProvisional(r){
+  if(!r||r.status!=='approved')return false;
+  const ap=r.appr||{};const ch=reqChain(r);
+  return ch.includes(LVL_FINAL)&&(!ap[LVL_FINAL])&&!!ap[LVL_PROV];
+}
 
 function firstOfMonthIso(){const d=new Date();return isoOf(new Date(d.getFullYear(),d.getMonth(),1));}
 function lastOfMonthIso(){const d=new Date();return isoOf(new Date(d.getFullYear(),d.getMonth()+1,0));}
