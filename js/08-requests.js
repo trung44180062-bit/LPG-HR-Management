@@ -401,7 +401,7 @@ function apprToggleNoPrint(id){
      'otlog' = Nhật ký tăng ca (chuyển từ tab Báo cáo sang, js/15-report.js)
    Nhật ký tăng ca vốn nằm ở tab Báo cáo nhưng bản chất là hồ sơ phê duyệt
    tăng ca, để chung với màn Duyệt thì người duyệt tra cứu liền tay hơn. */
-const APPR_TABS=['list','sum','stats','chart','otlog'];
+const APPR_TABS=['list','otlog','sum','stats','chart'];
 let apprTab=(()=>{try{const v=localStorage.getItem(LS+'_apprtab');return APPR_TABS.includes(v)?v:'list';}catch(e){return 'list';}})();
 function apprSetTab(v){
   apprTab=APPR_TABS.includes(v)?v:'list';
@@ -417,10 +417,10 @@ function renderApprTabs(){
     : Object.values(S.requests||{}).filter(r=>r&&r.status==='pending').length;
   const tabs=feOnly?[['list','📋 '+t('Danh sách đơn'),nPend]]
                    :[['list','📋 '+t('Danh sách đơn'),nPend],
+                     ['otlog','🗂 '+t('Nhật ký tăng ca'),0],
                      ['sum','📊 '+t('Tổng quan'),0],
                      ['stats','🧾 '+t('Bảng công tổng hợp'),0],
-                     ['chart','📈 '+t('Biểu đồ'),0],
-                     ['otlog','🗂 '+t('Nhật ký tăng ca'),0]];
+                     ['chart','📈 '+t('Biểu đồ'),0]];
   box.innerHTML=tabs
     .map(([k,l,n])=>`<button class="aptab${apprTab===k?' on':''}" onclick="apprSetTab('${k}')">${l}${n?`<i>${n}</i>`:''}</button>`).join('');
   const set=(id,on)=>{const el=$(id);if(el)el.style.display=on?'':'none';};

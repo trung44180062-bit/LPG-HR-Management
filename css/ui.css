@@ -31,7 +31,8 @@ button .ici--ok,button .ici--rd,button .ici--wr,.btn .ici,.aptab.on .ici,
 .ic{display:inline-flex;align-items:center;justify-content:center}
 
 /* ============ HEADER ============ */
-.hdr{background:var(--brand);box-shadow:none;padding:10px 14px;gap:10px}
+.hdr{background:linear-gradient(120deg,#0A3350 0%,#12557F 55%,#1B6E9E 100%);
+  box-shadow:0 2px 12px rgba(11,59,92,.22);padding:10px 14px;gap:10px}
 .hdr .logo{width:36px;height:36px;border-radius:11px;background:rgba(255,255,255,.13)}
 .hdr .logo .ici{width:19px;height:19px;color:#fff}
 .hdr h1{font-size:14.5px;font-weight:700;letter-spacing:.1px}
@@ -56,8 +57,14 @@ button .ici--ok,button .ici--rd,button .ici--wr,.btn .ici,.aptab.on .ici,
   .topbar{gap:4px;padding:6px 10px;justify-content:center}
   .topbar .tab{flex:0 1 auto;flex-direction:row;gap:7px;font-size:13px;
     border-bottom:none;border-radius:10px;padding:9px 18px;position:relative}
-  .topbar .tab.on{background:#EAF2F8;color:var(--brand)}
+  .topbar .tab:hover{background:#F1F5F9;color:var(--brand)}
+  .topbar .tab.on{background:var(--brand);color:#fff}
+  .topbar .tab.on .ici{color:#fff}
   .topbar .tab .ic{font-size:16px}
+  /* badge số đơn chờ: nổi ra góc trên phải của cả nút, không đè lên icon */
+  .topbar .tab .bdg{position:absolute;top:1px;right:4px;transform:none;
+    box-shadow:0 0 0 2px #fff;line-height:1.35}
+  .topbar .tab.on .bdg{box-shadow:0 0 0 2px var(--brand)}
 }
 
 /* ============ NÚT ============ */
@@ -74,9 +81,15 @@ button .ici--ok,button .ici--rd,button .ici--wr,.btn .ici,.aptab.on .ici,
 
 /* ============ THẺ / CARD ============ */
 .card{border-radius:16px;border-color:#E9EEF3;box-shadow:var(--shadow-sm);padding:14px}
-.card h3{font-size:13.5px;font-weight:800;color:#243240}
-.card h3 .ici{color:var(--brand);width:1.2em;height:1.2em}
-.hint{font-size:11.5px;border-radius:10px;background:#F3F6FA;line-height:1.55}
+/* tiêu đề khối: gạch màu bên trái + icon màu thương hiệu → nhìn ra ngay đầu mục */
+.card h3,.rep-h3{font-size:13.5px;font-weight:800;color:#1F3B57;
+  padding-left:10px;border-left:3px solid var(--accent);line-height:1.35}
+.card h3 .ici,.rep-h3 .ici{color:var(--brand);width:1.2em;height:1.2em}
+.as-sec h4,.ds-block h4{position:relative;padding-left:9px}
+.as-sec h4::before,.ds-block h4::before{content:'';position:absolute;left:0;top:.15em;bottom:.15em;
+  width:3px;border-radius:2px;background:var(--brand2)}
+.hint{font-size:11.5px;border-radius:10px;background:#F1F7FC;border:1px solid #DCE9F4;
+  color:#3F5261;line-height:1.55}
 .muted{font-size:12px}
 
 /* ============ INPUT ============ */
@@ -97,6 +110,9 @@ button .ici--ok,button .ici--rd,button .ici--wr,.btn .ici,.aptab.on .ici,
   -webkit-overflow-scrolling:touch;border-radius:14px;padding:4px;gap:4px}
 .appr-tabs::-webkit-scrollbar{display:none}
 .aptab{flex:0 0 auto;white-space:nowrap;border-radius:10px;padding:8px 14px;font-size:12.5px}
+.aptab .ici{color:var(--brand2)}
+.aptab.on .ici{color:#fff}
+.aptab:hover .ici{color:var(--brand)}
 
 /* chip lọc trạng thái: 1 hàng cuộn ngang */
 .ab-chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
@@ -113,29 +129,41 @@ button .ici--ok,button .ici--rd,button .ici--wr,.btn .ici,.aptab.on .ici,
 .ab-period .ab-per-lbl{font-size:12.5px}
 .ab-period .btn.sec.sm,.ab-period .fchip{font-size:11px;padding:4px 10px}
 
-/* ============ Ô SỐ LIỆU — ĐỒNG BỘ MỘT KIỂU ============ */
-/* bỏ viền trái nhiều màu, thay bằng chấm màu trước nhãn */
-.pv-stats .sbox{border-left:1px solid #E9EEF3;border-radius:14px;box-shadow:var(--shadow-sm)}
+/* ============ Ô SỐ LIỆU — CÙNG KIỂU, KHÁC MÀU ============
+   Mỗi ô: nền pha màu nhạt + viền cùng tông + số và chấm nhãn đúng màu.
+   Nhìn lướt là phân biệt được Giờ công / Tăng ca / Phép / Đơn chờ. */
+.pv-stats .sbox{border-radius:14px;box-shadow:var(--shadow-sm);
+  border:1px solid #D6E4F0;border-left:4px solid var(--brand);background:#F4F9FD}
 .pv-stats .sbox:hover{transform:none;box-shadow:var(--shadow-md)}
-.pv-stats .v{font-size:21px;letter-spacing:-.3px}
+.pv-stats .v{font-size:21px;letter-spacing:-.3px;color:var(--brand)}
 .pv-stats .k{display:flex;align-items:center;gap:5px;flex-wrap:wrap;font-size:10px;
-  text-transform:uppercase;letter-spacing:.03em}
+  color:#4A5A69;text-transform:uppercase;letter-spacing:.03em}
 .pv-stats .k::before{content:'';width:7px;height:7px;border-radius:99px;background:var(--brand);flex:none}
+.pv-stats .sbox.ot{background:#FFF8F0;border-color:#F6DCBC;border-left-color:#D97706}
+.pv-stats .sbox.ot .v{color:#B45309}
 .pv-stats .sbox.ot .k::before{background:var(--warnc)}
+.pv-stats .sbox.al{background:#F1FBF6;border-color:#C7EBD9;border-left-color:var(--ok)}
+.pv-stats .sbox.al .v{color:#047857}
 .pv-stats .sbox.al .k::before{background:var(--ok)}
+.pv-stats .sbox.rq{background:#F7F4FE;border-color:#DDD3F5;border-left-color:#7C3AED}
+.pv-stats .sbox.rq .v{color:#6D28D9}
 .pv-stats .sbox.rq .k::before{background:#7C3AED}
 
-.as-kpi{border-left:1px solid var(--line);border-radius:14px}
+.as-kpi{border-radius:14px;border-left-width:4px;background:#F6F9FC}
 .as-kpi .k{display:flex;align-items:center;gap:5px}
-.as-kpi .k::before{content:'';width:7px;height:7px;border-radius:99px;background:#CBD5E1;flex:none}
+.as-kpi .k::before{content:'';width:7px;height:7px;border-radius:99px;background:#94A3B8;flex:none}
 .as-kpi.hot .k::before{background:var(--danger)}
 .as-kpi.warn .k::before{background:#EAB308}
-.as-kpi.ok .k::before{background:var(--ok)}
-.as-kpi.ot .k::before{background:#F97316}
-.as-kpi.lv .k::before{background:#3B82F6}
+.as-kpi.ok{background:#F1FBF6}.as-kpi.ok .k::before{background:var(--ok)}
+.as-kpi.ot{background:#FFF8F0}.as-kpi.ot .k::before{background:#F97316}
+.as-kpi.lv{background:#F2F7FE}.as-kpi.lv .k::before{background:#3B82F6}
 
 .stat-box{border-radius:13px}
-.mp-sum-kpi .k{border-radius:13px}
+.mp-sum-kpi .k{border-radius:13px;border:1px solid #D6E4F0;background:#F4F9FD}
+.mp-sum-kpi .k.ot{border-color:#F6DCBC;background:#FFF8F0}
+.mp-sum-kpi .k.ot .v{color:#B45309}
+.mp-sum-kpi .k.lv{border-color:#C7DFF8;background:#F2F7FE}
+.mp-sum-kpi .k.lv .v{color:#1D4ED8}
 .as-tcard{border-radius:14px}
 
 /* ============ TRANG CHÍNH CÁ NHÂN ============ */
@@ -146,9 +174,19 @@ button .ici--ok,button .ici--rd,button .ici--wr,.btn .ici,.aptab.on .ici,
 .pv-alert{border-radius:12px}
 .today-card,.me-head{border-radius:16px}
 
-/* lịch cá nhân */
+/* lịch cá nhân — thanh điều khiển và ngày cuối tuần có màu cho dễ nhìn */
 .pv-d{border-radius:11px}
 .pv-d .cc{border-radius:6px}
+.pv-cal-card{border-top:3px solid var(--brand)}
+.pv-range{color:var(--brand)}
+.pv-cal-head .nav{color:var(--brand);border-color:#CFE0EE}
+.pv-cal-head .nav:hover{background:#E8F1F8}
+.pv-d.we{background:#FDF6F7;border-color:#F0DFE2}
+.pv-d.today{background:#EFF7FE;box-shadow:0 0 0 1px var(--brand) inset}
+.pv-foot{border-top-color:#E3EAF1}
+.tipdot i.d-ovr{box-shadow:0 0 0 2px #FDE7CF}
+.tipdot i.d-pend{box-shadow:0 0 0 2px #FBF0C8}
+.tipdot i.d-ok{box-shadow:0 0 0 2px #CFEDE0}
 
 /* ============ SHEET / MODAL ============ */
 .sheet,.modal{border-radius:22px 22px 0 0}
@@ -182,7 +220,7 @@ button .ici--ok,button .ici--rd,button .ici--wr,.btn .ici,.aptab.on .ici,
 .ar{border-radius:13px}
 .ar.pending{border-left-width:3px}
 .appr-bulk.on{border-radius:13px}
-.as-head{background:var(--brand)}
+.as-head{background:linear-gradient(120deg,#0A3350,#12557F 60%,#1B6E9E)}
 .as-panel{border-radius:16px}
 
 /* ============ CHÚ GIẢI / GHI CHÚ GỌN ============ */
@@ -216,8 +254,33 @@ details.xp .xp-b{font-size:11.5px;color:#5F6E7D;line-height:1.6;margin-top:7px}
 /* ============ TOAST ============ */
 .toast{border-radius:13px;box-shadow:0 10px 30px rgba(0,0,0,.28)}
 
-/* ============ BẢNG ============ */
-.tbl th{font-size:10.5px}
+/* ============ BẢNG — CÓ MÀU, DỄ DÓNG DÒNG ============ */
+.tbl th{font-size:10.5px;background:#E9F1F8;color:#1F3B57;font-weight:800;
+  text-transform:uppercase;letter-spacing:.03em}
+.tbl tbody tr:nth-child(even) td{background:#FAFCFE}
+.stbl th,.stbl-fix th,.as-mx th,.as-emp th,.mp-sum-tbl th{background:#E9F1F8;color:#1F3B57}
+.stbl tbody tr:hover td,.as-emp tbody tr:hover td,.as-mx tbody tr:hover td{background:#EFF6FF}
+
+/* bảng nhật ký tăng ca / bảng thường trong card: bo góc + kẻ vằn */
+.card>div>table.tbl,.card>table.tbl{border-radius:11px;overflow:hidden}
+
+/* ---- BẢNG CÔNG CÁ NHÂN: vừa khít màn hình điện thoại ---- */
+.mp-sum-tbl{min-width:0;width:100%;table-layout:fixed}
+.mp-sum-tbl th,.mp-sum-tbl td{padding:6px 5px}
+.mp-sum-tbl td:first-child{font-size:12px}
+.mp-sum-tbl td:first-child .muted{font-size:10.5px}
+.mp-sum-tbl td.num{padding-right:7px}
+.mp-sum-tbl td.num.ot{color:#B45309;background:#FFF9F2}
+.mp-sum-tbl td.num.lv{color:#1D4ED8;background:#F4F8FE}
+.mp-sum-tbl th.num{padding-right:7px}
+.mp-sum-tbl tbody tr:nth-child(even) td{background:#FAFCFE}
+.mp-sum-tbl tbody tr:nth-child(even) td.num.ot{background:#FDF4E9}
+.mp-sum-tbl tbody tr:nth-child(even) td.num.lv{background:#EDF3FD}
+.mp-sum-tbl tr.sum-total td{background:#E9F1F8;border-top:2px solid var(--brand)}
+@media(max-width:400px){
+  .mp-sum-tbl th,.mp-sum-tbl td{padding:6px 3px;font-size:11.5px}
+  .mp-sum-tbl .cc{min-width:26px;height:21px;font-size:10.5px}
+}
 
 /* Nút điều hướng tam giác cũ giờ là chevron svg — canh giữa */
 .pv-cal-head .nav,.as-nav,.ar-more,.chev,.chevS{display:inline-flex;align-items:center;justify-content:center}
@@ -226,6 +289,49 @@ details.xp .xp-b{font-size:11.5px;color:#5F6E7D;line-height:1.6;margin-top:7px}
 /* ô chọn mã ca trong modal sửa ca */
 .codepick button{border-radius:12px}
 .codepick button:hover{border-color:var(--brand2)}
+
+/* ============ MÀU THEO TRẠNG THÁI ============
+   Chip lọc và dòng đơn mang đúng màu trạng thái — nhìn là biết, khỏi đọc chữ. */
+.abc[onclick*="'pending'"]{border-color:#F5DFA6;color:#92400E;background:#FFFDF5}
+.abc[onclick*="'pending'"] i{background:#FDF0CF;color:#92400E}
+.abc[onclick*="'approved'"]{border-color:#B7E4CB;color:#0B6244;background:#F5FDF8}
+.abc[onclick*="'approved'"] i{background:#D6F2E2;color:#0B6244}
+.abc[onclick*="'rejected'"]{border-color:#F6C7C7;color:#A72020;background:#FFF8F8}
+.abc[onclick*="'rejected'"] i{background:#FBDEDE;color:#A72020}
+.abc.on,.abc[onclick*="'pending'"].on,.abc[onclick*="'approved'"].on,
+.abc[onclick*="'rejected'"].on{background:var(--brand);border-color:var(--brand);color:#fff}
+.abc.on i{background:rgba(255,255,255,.24);color:#fff}
+.req-flt .fchip[onclick*="'pending'"]{border-color:#F5DFA6;color:#92400E}
+.req-flt .fchip[onclick*="'approved'"]{border-color:#B7E4CB;color:#0B6244}
+.req-flt .fchip[onclick*="'rejected'"]{border-color:#F6C7C7;color:#A72020}
+.req-flt .fchip.on{background:var(--brand);border-color:var(--brand);color:#fff}
+
+/* dòng đơn: nền pha rất nhạt theo trạng thái */
+.ar.pending{background:#FFFDF7}
+.ar.approved{background:#F9FDFB}
+.ar.rejected{background:#FFFAFA}
+.ds-req.pending{background:#FFFDF7;border-color:#F1E3C2}
+.ds-req.approved{background:#F7FCFA;border-color:#D5EDE1}
+.ds-req.rejected{background:#FFF9F9;border-color:#F3D8D8}
+.ds-req .ic .ici,.ntf-item .ic .ici,.ar-ic .ici{color:var(--brand2)}
+.ds-req.approved .ic .ici,.ntf-item.approved .ic .ici{color:var(--ok)}
+.ds-req.rejected .ic .ici,.ntf-item.rejected .ic .ici{color:var(--danger)}
+.ds-req.pending .ic .ici{color:var(--warnc)}
+.st.pending{background:#FDF0CF;color:#92400E}
+.st.approved{background:#D6F2E2;color:#0B6244}
+.st.rejected{background:#FBDEDE;color:#A72020}
+
+/* danh sách tăng ca / thông báo: sọc màu cho dễ đọc */
+.ot-row:nth-child(odd){background:#F8FBFE}
+.ot-row .h{color:#B45309;font-weight:800}
+.ot-list{border-color:#DDE7F0}
+
+/* nút phụ trong nhóm hành động mang màu ngữ nghĩa */
+.btn.ok .ici{color:#fff}
+.pv-alert.warn .ici{color:var(--warnc)}
+.pv-alert.info .ici{color:var(--brand2)}
+.pv-confirm{border-color:#F3D6AE}
+.pv-confirm-h .ici{color:var(--warnc)}
 
 /* ============ TINH CHỈNH MOBILE ============ */
 @media(max-width:767px){
@@ -237,4 +343,17 @@ details.xp .xp-b{font-size:11.5px;color:#5F6E7D;line-height:1.6;margin-top:7px}
   .ab-tools .inp.sm{height:36px}
   /* bảng chọn kỳ: chip nhỏ */
   .ab-period .ab-per-lbl{min-width:0;flex:1}
+  /* sheet cá nhân: bớt lề để bảng công dùng hết bề ngang */
+  .sheet{padding-left:11px;padding-right:11px}
+  .sheet .bar{margin:7px auto 8px}
+  #myPanelBody>h3{font-size:15px;margin:2px 0 8px!important}
+  .mp-tabs{padding:8px 0 7px}
+  .mp-sum-head{gap:6px}
+  .mp-sum-head b{font-size:12.5px}
+  .mp-sum-kpi{gap:6px;margin:8px 0}
+  .mp-sum-kpi .k{padding:8px 4px}
+  .mp-sum-kpi .k .v{font-size:17px}
+  .mp-sum-kpi .k span{font-size:10px}
+  /* các đoạn dẫn dắt trong sheet: nhỏ lại, không chiếm chỗ của bảng */
+  .mp-sum>.muted.sm2{font-size:10.5px;line-height:1.45;margin-bottom:2px}
 }

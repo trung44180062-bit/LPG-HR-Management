@@ -1233,10 +1233,9 @@ function myPanelSum(id){
     const ci=codeInfo(c),h=effHours(id,iso);
     const hw=(ci.cat==='work'||ci.cat==='swap')?h:0, ho=ci.cat==='ot'?h:0, hl=ci.cat==='leave'?h:0;
     const prov=r.o&&r.o.prov;
-    return `<tr class="${iso<=today?'':'fut'}">
+    return `<tr class="${iso<=today?'':'fut'}" title="${esc(t(catTxt[ci.cat]||ci.cat))}">
       <td>${fmtVN(iso)} <span class="muted">${dowOf(iso)}</span></td>
       <td>${chip(c)}${prov?' <span class="mini-prov" title="Tạm duyệt, chờ Quản lý người Hàn chốt">~</span>':''}</td>
-      <td class="muted">${esc(t(catTxt[ci.cat]||ci.cat))}</td>
       <td class="num">${hw?rnd1(hw):''}</td>
       <td class="num ot">${ho?rnd1(ho):''}</td>
       <td class="num lv">${hl?rnd1(hl):''}</td></tr>`;
@@ -1255,13 +1254,13 @@ function myPanelSum(id){
       <div class="k ot"><div class="v">${rnd1(st.hOT)}<i>h</i></div><span>${t('Giờ tăng ca')} (${otShiftN})</span></div>
       <div class="k lv"><div class="v">${rnd1(leaveDays)}<i>${t('ngày')}</i></div><span>${t('Nghỉ phép')}</span></div>
     </div>
-    <div style="overflow:auto"><table class="tbl mp-sum-tbl">
-      <colgroup><col style="width:96px"><col style="width:58px"><col><col style="width:56px"><col style="width:48px"><col style="width:52px"></colgroup>
+    <table class="tbl mp-sum-tbl">
+      <colgroup><col><col style="width:52px"><col style="width:19%"><col style="width:17%"><col style="width:19%"></colgroup>
       <thead><tr>
-      <th>${t('Ngày')}</th><th>${t('Mã')}</th><th>${t('Loại')}</th><th class="num">${t('Công')}</th><th class="num">OT</th><th class="num">${t('Phép')}</th>
-    </tr></thead><tbody>${rows||`<tr><td colspan="6" class="muted">${t('Kỳ này chưa có dữ liệu.')}</td></tr>`}
-      <tr class="sum-total"><td colspan="3">${t('Tổng')}</td><td class="num">${rnd1(st.hWork)}</td><td class="num ot">${rnd1(st.hOT)}</td><td class="num lv">${rnd1(st.hLeave)}</td></tr>
-    </tbody></table></div>
+      <th>${t('Ngày')}</th><th>${t('Mã')}</th><th class="num">${t('Công')}</th><th class="num">OT</th><th class="num">${t('Phép')}</th>
+    </tr></thead><tbody>${rows||`<tr><td colspan="5" class="muted">${t('Kỳ này chưa có dữ liệu.')}</td></tr>`}
+      <tr class="sum-total"><td colspan="2">${t('Tổng')}</td><td class="num">${rnd1(st.hWork)}</td><td class="num ot">${rnd1(st.hOT)}</td><td class="num lv">${rnd1(st.hLeave)}</td></tr>
+    </tbody></table>
   </div>`;
 }
 
