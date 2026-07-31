@@ -51,6 +51,10 @@ const REAL={real:true,  box:'mtxBox', month:'calMonth', range:'calRange', grp:'c
    Nhân lực: mỗi ngày một dòng gọn, chạm mới bung tên người. Máy tính
    giữ nguyên ma trận đầy đủ.
    ------------------------------------------------------------ */
+/* Sub-tab của tab Lịch: 'sched' = bảng lịch ca · 'mp' = Nhân lực theo ngày
+   (chuyển từ tab Báo cáo sang — quản lý xem quân số từng ngày ngay cạnh lịch). */
+let calTab='sched';
+function setCalTab(v){calTab=(v==='mp')?'mp':'sched';renderCal();}
 function renderCal(opts){
   opts=opts||{};
   if(opts.mode)calMode=opts.mode;
@@ -58,11 +62,26 @@ function renderCal(opts){
   if(opts.date)calDate=opts.date;
   if(!calDate)calDate=todayIso();
   if(!$('calMonth').options.length)fillMonthSelects();
+  document.querySelectorAll('#calTabSeg button').forEach(b=>b.classList.toggle('on',b.dataset.ct===calTab));
   document.querySelectorAll('#calSeg button').forEach(b=>b.classList.toggle('on',b.dataset.m===calMode));
   const real=calMode==='real';
   $('calDiffWrap').style.display=real?'':'none';
   const mob=isMobile();
   const show=(id,on)=>{const el=$(id);if(el)el.style.display=on?'':'none';};
+
+  /* --- Sub-tab NHÂN LỰC: chỉ dựng panel nhân lực, ẩn mọi bố cục lịch.
+     Thanh cal-bar chuyển sang chế độ gọn (class mp-on ẩn control của lịch). */
+  const bar=$('calBar');
+  if(bar)bar.classList.toggle('mp-on',calTab==='mp');
+  if(calTab==='mp'){
+    show('calWeekBox',false);show('calDayBox',false);show('calMpBox',false);
+    const sw=document.querySelector('#v-cal .sched-wrap');if(sw)sw.style.display='none';
+    const p=$('calMpPanel');
+    if(p){p.style.display='';p.innerHTML=(typeof repMpPanel==='function')?repMpPanel():'';}
+    return;
+  }
+  {const p=$('calMpPanel');if(p)p.style.display='none';
+   const sw=document.querySelector('#v-cal .sched-wrap');if(sw)sw.style.display='';}
 
   if(mob){
     /* Điện thoại: chỉ một danh sách theo ngày, bỏ hẳn ma trận & thẻ tuần

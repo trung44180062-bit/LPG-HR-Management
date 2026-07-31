@@ -399,7 +399,7 @@ function apprToggleNoPrint(id){
      'otlog' = Nhật ký tăng ca (chuyển từ tab Báo cáo sang, js/15-report.js)
    Nhật ký tăng ca vốn nằm ở tab Báo cáo nhưng bản chất là hồ sơ phê duyệt
    tăng ca, để chung với màn Duyệt thì người duyệt tra cứu liền tay hơn. */
-const APPR_TABS=['list','sum','otlog'];
+const APPR_TABS=['list','sum','stats','chart','otlog'];
 let apprTab=(()=>{try{const v=localStorage.getItem(LS+'_apprtab');return APPR_TABS.includes(v)?v:'list';}catch(e){return 'list';}})();
 function apprSetTab(v){
   apprTab=APPR_TABS.includes(v)?v:'list';
@@ -416,11 +416,15 @@ function renderApprTabs(){
   const tabs=feOnly?[['list','📋 '+t('Danh sách đơn'),nPend]]
                    :[['list','📋 '+t('Danh sách đơn'),nPend],
                      ['sum','📊 '+t('Tổng quan'),0],
+                     ['stats','🧾 '+t('Bảng công tổng hợp'),0],
+                     ['chart','📈 '+t('Biểu đồ'),0],
                      ['otlog','🗂 '+t('Nhật ký tăng ca'),0]];
   box.innerHTML=tabs
     .map(([k,l,n])=>`<button class="aptab${apprTab===k?' on':''}" onclick="apprSetTab('${k}')">${l}${n?`<i>${n}</i>`:''}</button>`).join('');
   const set=(id,on)=>{const el=$(id);if(el)el.style.display=on?'':'none';};
   set('apprSum',   apprTab==='sum');
+  set('apprStats', apprTab==='stats');
+  set('apprChart', apprTab==='chart');
   set('apprOtlog', apprTab==='otlog');
   set('apprListWrap', apprTab==='list');
 }
@@ -436,6 +440,16 @@ function renderAppr(){
   renderApprTabs();
   // Chỉ dựng đúng sub-tab đang mở — khỏi tính thừa
   if(apprTab==='sum'){if(typeof asRender==='function')asRender();return;}
+  if(apprTab==='stats'){
+    const box=$('apprStats');
+    if(box&&typeof repStatsPanel==='function')box.innerHTML=repStatsPanel();
+    return;
+  }
+  if(apprTab==='chart'){
+    const box=$('apprChart');
+    if(box&&typeof repChartPanel==='function')box.innerHTML=repChartPanel();
+    return;
+  }
   if(apprTab==='otlog'){
     const box=$('apprOtlog');
     if(box&&typeof repOtLog==='function')box.innerHTML=repOtLog();

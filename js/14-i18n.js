@@ -1238,6 +1238,9 @@ const I18N_EN={
 /* ---- v4.8: vị trí chuẩn, mã nghỉ mới, duyệt nhiều cấp, bảng công ---- */
 'Check booth (Trạm cân)':'Check booth (Weighbridge)',
 'Phiên dịch kiêm thư ký':'Interpreter & Secretary',
+'Bảng công tổng hợp':'Period timesheet',
+'công':'work',
+'phép':'leave',
 'Tất cả các kỳ':'All periods',
 'Tải thêm':'Load more',
 'Kỳ này + kỳ trước':'This + previous period',

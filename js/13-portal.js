@@ -49,6 +49,9 @@ function applyRoleUI(){
   applyPerm();
   document.querySelectorAll('.mgr-only').forEach(el=>{el.style.display=(mgr||myFE)?'':'none';});
   document.querySelectorAll('.admin-only').forEach(el=>{el.style.display=adm?'':'none';});
+  /* Tab Báo cáo giờ chỉ dành cho nhân viên (số liệu/biểu đồ CỦA MÌNH);
+     quản lý xem Nhân lực ở tab Lịch, Bảng công tổng hợp + Biểu đồ ở tab Duyệt */
+  document.querySelectorAll('.rep-tab').forEach(el=>{el.style.display=mgr?'none':'';});
   /* .self-only = mục chỉ có nghĩa với người đang được chấm công
      (Trang chính, Gửi đơn, Tăng ca của tôi, Đơn của tôi) */
   document.querySelectorAll('.self-only').forEach(el=>{el.style.display=noSelf?'none':'';});

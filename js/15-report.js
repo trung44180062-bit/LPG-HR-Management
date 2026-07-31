@@ -34,19 +34,33 @@ function repDefaults(){
   if(!repTo){const d=new Date();d.setDate(d.getDate()+6);repTo=isoOf(d);}
 }
 function repSetMode(m){repMode=m;renderReport();}
+/* Nhân lực / Thống kê / Biểu đồ nay được nhúng ở nhiều tab (Lịch, Duyệt,
+   Báo cáo cá nhân) → đổi bộ lọc phải vẽ lại ĐÚNG tab đang mở. */
+function repRefresh(){
+  if(curView==='appr'&&typeof renderAppr==='function')renderAppr();
+  else if(curView==='cal'&&typeof renderCal==='function')renderCal();
+  else renderReport();
+}
 function repSet(k,v){
   if(k==='ym')repYm=v; else if(k==='group')repGroup=v;
   else if(k==='from')repFrom=v; else if(k==='to')repTo=v;
   else if(k==='low')repOnlyLow=!!v;
-  renderReport();
+  repRefresh();
 }
 function repShiftYm(d){
   const ms=monthsAvailable();
   let i=ms.indexOf(repYm);
   if(i<0){const[y,m]=repYm.split('-').map(Number);const a=new Date(y,m-1+d,1);repYm=a.getFullYear()+'-'+pad(a.getMonth()+1);}
   else if(i+d>=0&&i+d<ms.length)repYm=ms[i+d];
-  renderReport();
+  repRefresh();
 }
+/* ---- Panel đóng gói (bộ lọc + thân) để nhúng vào tab khác ----
+   repMpPanel   → sub-tab "Nhân lực" của tab LỊCH
+   repStatsPanel→ sub-tab "Bảng công tổng hợp" của tab DUYỆT
+   repChartPanel→ sub-tab "Biểu đồ" của tab DUYỆT */
+function repMpPanel(){repDefaults();return `<div class="card rep-bar">${repCtlHtml('mp')}</div>`+repManpower();}
+function repStatsPanel(){repDefaults();return `<div class="card rep-bar">${repCtlHtml('stats')}</div>`+(repSeeAll()?repStatsAll():repStatsMe());}
+function repChartPanel(){repDefaults();return repCharts();}
 
 /* =================== KHUNG =================== */
 function renderReport(){
@@ -64,8 +78,9 @@ function renderReport(){
   else                      body.innerHTML=repCharts();
 }
 
-/* Thanh điều khiển đổi theo chế độ đang xem */
-function repCtlHtml(){
+/* Thanh điều khiển đổi theo chế độ đang xem (mode truyền vào khi nhúng ở tab khác) */
+function repCtlHtml(mode){
+  const repModeCur=mode||repMode;
   const grpSel=()=>{
     const teams=teamList();
     return `<select class="inp sm" onchange="repSet('group',this.value)">
@@ -82,7 +97,7 @@ function repCtlHtml(){
       </select>
       <button class="btn sec sm" onclick="repShiftYm(1)">▶</button>`;
   };
-  if(repMode==='mp'){
+  if(repModeCur==='mp'){
     return `<div class="rep-ctl">
       <label class="fl2">Từ</label><input type="date" class="inp sm" value="${repFrom}" onchange="repSet('from',this.value)">
       <label class="fl2">Đến</label><input type="date" class="inp sm" value="${repTo}" onchange="repSet('to',this.value)">
@@ -91,18 +106,18 @@ function repCtlHtml(){
       <span class="muted sm2">Định mức: D ≥ <b>${S.settings.minD}</b> · N ≥ <b>${S.settings.minN}</b></span>
     </div>`;
   }
-  if(repMode==='otlog'){
+  if(repModeCur==='otlog'){
     // Nhật ký tăng ca có bộ lọc riêng ngay trong thân bảng
     return '';
   }
-  if(repMode==='stats'&&repSeeAll()){
+  if(repModeCur==='stats'&&repSeeAll()){
     return `<div class="rep-ctl">${ymSel()}${grpSel()}
       <span class="sp"></span>
       <button class="btn sm" onclick="openMailReport()">✉️ Gửi email báo cáo</button>
       <button class="btn ok sm" onclick="exportStats()">📤 Xuất Excel</button></div>`;
   }
   // Biểu đồ dùng bộ chọn phạm vi riêng bên trong (tháng/quý/năm) nên không cần thanh kỳ ở đây
-  if(repMode==='chart')return '';
+  if(repModeCur==='chart')return '';
   return `<div class="rep-ctl">${ymSel()}</div>`;
 }
 
@@ -211,6 +226,29 @@ function repStatsAll(){
     <div class="stat-box"><div class="v">${sum(s=>s.hLeave)}</div><div class="k">TỔNG GIỜ PHÉP</div></div>
     <div class="stat-box"><div class="v">${rows.length}</div><div class="k">NHÂN SỰ</div></div>
   </div>`;
+  /* ĐIỆN THOẠI: bảng 15 cột không nhét vừa màn hình → mỗi người MỘT THẺ:
+     3 số giờ to (Công/OT/Phép) + dải chip đếm ca (chỉ mã có số > 0). */
+  if(isMobile()){
+    const cards=rows.map(({e,s})=>{
+      const cnts=[['D',cD(s)],['N',cN(s)],['O',cO(s)],['R',s.cnt.R||0],
+        ['AL8',s.cnt.AL8||0],['AL4',s.cnt.AL4||0],['NP',s.cnt.NP||0],['OFF',s.cnt.OFF||0],['COM',s.cnt.COM||0]]
+        .filter(([,n])=>n>0)
+        .map(([c,n])=>`<span class="cnt" style="background:${(typeof SCHEDBG!=='undefined'&&SCHEDBG[c])||'#E2E8F0'};color:${(typeof SCHEDTXT!=='undefined'&&SCHEDTXT[c])||'#334155'}">${c}×${n}</span>`).join('');
+      const ot=otShifts(s);
+      return `<div class="st-card">
+        <div class="h">${teamChip(e.team)}<b>${esc(e.name||e.id)}</b><i>${esc(posLabel(posCode(e)))}</i></div>
+        <div class="nums">
+          <span class="n hl">${rnd1(s.hWork)}<small>h ${t('công')}</small></span>
+          <span class="n hl-ot">${rnd1(s.hOT)}<small>h OT${ot?' ('+ot+')':''}</small></span>
+          <span class="n hl-lv">${rnd1(s.hLeave)}<small>h ${t('phép')}</small></span>
+        </div>
+        ${cnts?`<div class="cnts">${cnts}</div>`:''}
+      </div>`;
+    }).join('');
+    h+=`<div class="st-cards">${cards}</div>
+      <p class="muted sm2" style="margin-top:8px">${t('Tính theo lịch thực tế (chuẩn + điều chỉnh + đơn đã duyệt). Số giờ mỗi mã ca khai ở tab Dữ liệu.')}</p>`;
+    return h;
+  }
   /* ============================================================
      BẢNG CỘT KHOÁ CỨNG — tiêu đề và thân sinh từ CÙNG một mảng ST_COLS,
      colgroup + table-layout:fixed ép mọi hàng đúng độ rộng từng cột.
