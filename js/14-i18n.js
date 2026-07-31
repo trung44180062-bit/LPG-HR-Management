@@ -106,6 +106,8 @@ const I18N_EN={
 'Đang kết nối…':'Connecting…',
 'Hiện/ẩn mật khẩu':'Show / hide password',
 'Trạng thái đồng bộ':'Sync status',
+'Giải thích':'What is this?',
+'Bộ lọc khác':'More filters',
 'Nhập cả mã nhân viên và mật khẩu.':'Enter both employee ID and password.',
 'Xin chào':'Welcome',
 'Đã đăng xuất':'Signed out',

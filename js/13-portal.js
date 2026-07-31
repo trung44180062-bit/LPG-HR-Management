@@ -852,10 +852,11 @@ function renderDaySheet(){
             </span>`).join('')}</div>
         </div>`;}).join('')}
      </div>
-     <p class="crew-note">Xếp theo <b>ca thực tế</b> — ai đổi ca đã nằm sẵn ở nhóm mình đi làm hôm đó.</p>
-     <p class="crew-note">${nChanged
+     <details class="xp"><summary>${t('Giải thích')}</summary><div class="xp-b">
+       <p class="crew-note">Xếp theo <b>ca thực tế</b> — ai đổi ca đã nằm sẵn ở nhóm mình đi làm hôm đó.</p>
+       <p class="crew-note">${nChanged
         ?'Ô viền cam là người khác lịch chuẩn; dấu ⇄ ghi ca chuẩn cũ của họ.'
-        :'Ngày này chưa có ai đổi so với lịch chuẩn.'}</p>
+        :'Ngày này chưa có ai đổi so với lịch chuẩn.'}</p></div></details>
    </div>`:''}
 
    <div class="ds-block">

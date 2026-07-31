@@ -440,7 +440,7 @@ function repPersonal(){
       ${repPIds.length?`<div class="repp-row wrap"><span class="lbl">Đã chọn:</span>
         ${repPIds.map(id=>{const e=empById(id)||{};return `<button type="button" class="fchip on" onclick="repPToggleId('${id}')">${esc(shortName(e.name)||id)} ✕</button>`;}).join('')}
       </div>`:''}
-      <p class="muted sm2">Không tích gì = xem cả tổ. Tích nhóm và / hoặc từng người để gộp số liệu đúng phạm vi cần xem.</p>
+      <details class="xp"><summary>${t('Giải thích')}</summary><div class="xp-b">Không tích gì = xem cả tổ. Tích nhóm và / hoặc từng người để gộp số liệu đúng phạm vi cần xem.</div></details>
     </div>`;
   }
 
@@ -878,7 +878,6 @@ function repOtLog(){
   const allOn=otlogSel.length>=all.length;
   return `<div class="card repp">
     <h3 class="rep-h3">🗂 ${t('Nhật ký tăng ca')} ${repSeeAll()?t('(toàn bộ)'):t('của tôi')}</h3>
-    <p class="muted sm2" style="margin-bottom:8px">${t('Kỳ có sẵn từ Excel hiện dữ liệu gốc; kỳ mới tổng hợp thẳng từ đơn tăng ca đã duyệt trong phần mềm. Mặc định chỉ tải kỳ hiện tại cho nhẹ — bấm chọn thêm kỳ hoặc tải toàn bộ.')}</p>
     <div class="repp-row wrap"><span class="lbl">${t('Kỳ công')}:</span>
       <div class="dd" id="otlogDD">
         <button type="button" class="dd-btn" id="otlogDDBtn" onclick="otlogDDToggle()">${otlogDDLabel()}</button>
@@ -894,7 +893,7 @@ function repOtLog(){
       ${repSeeAll()?`<input class="inp sm" style="min-width:180px;margin-left:auto" placeholder="${t('Tìm tên / lý do…')}"
         value="${esc(otlogQuery)}" oninput="otlogFilterName(this.value)">`:''}
     </div>
-    <p class="muted sm2" style="margin-top:4px">${t('Dấu • là kỳ tổng hợp từ phần mềm (chưa có trong Excel).')}</p>
+    <details class="xp"><summary>${t('Giải thích')}</summary><div class="xp-b">${t('Kỳ có sẵn từ Excel hiện dữ liệu gốc; kỳ mới tổng hợp thẳng từ đơn tăng ca đã duyệt trong phần mềm. Mặc định chỉ tải kỳ hiện tại cho nhẹ — bấm chọn thêm kỳ hoặc tải toàn bộ.')} ${t('Dấu • là kỳ tổng hợp từ phần mềm (chưa có trong Excel).')}</div></details>
   </div>
   <div id="otlogBox">${otlogTableHtml()}</div>`;
 }

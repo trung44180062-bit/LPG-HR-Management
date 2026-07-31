@@ -247,6 +247,8 @@ function apprAdviceBadge(r){
    ============================================================ */
 let apprFilter={status:'pending',print:'__all',type:'__all',q:'',
   ym:(typeof curSchedMonth==='function'?curSchedMonth():'__all'),from:'',to:'',flag:''};
+/* Mở/đóng khối bộ lọc nâng cao (mặc định gập cho gọn màn hình điện thoại) */
+let apprAdvOpen=false;
 /* Dời kỳ đang xem ở màn Duyệt (◀ ▶) */
 function apprPeriodShift(delta){
   const base=/^\d{4}-\d{2}$/.test(apprFilter.ym)?apprFilter.ym:curSchedMonth();
@@ -483,33 +485,44 @@ function renderAppr(){
       <b class="ab-per-lbl">${apprFilter.ym==='__range'?t('Khoảng ngày')+(apprFilter.from?' '+fmtVN(apprFilter.from)+'→'+fmtVN(apprFilter.to||apprFilter.from):''):apprFilter.ym==='__all'?t('Tất cả các kỳ'):periodFor(apprFilter.ym).label}</b>
       <button class="btn sec sm" onclick="apprPeriodShift(1)" title="${t('Kỳ sau')}">▶</button>
       <button class="btn sec sm" onclick="apprSetFilter('ym','${curSchedMonth()}')">${t('Kỳ hiện tại')}</button>
-      <span class="sp"></span>
-      <span class="muted sm2">${t('Tải thêm')}:</span>
-      <button class="btn sec sm" onclick="apprScopeRecent()">${t('Kỳ này + kỳ trước')}</button>
-      <button class="btn sec sm" onclick="apprScopeYear()">${t('Cả năm nay')}</button>
-      <button class="btn sec sm" onclick="apprScopeAll()">${t('Tất cả các kỳ')}</button>
     </div>
     <div class="ab-tools">
       <input class="inp sm" id="apprSearchBox" placeholder="Tìm theo tên nhân viên…" value="${esc(apprFilter.q)}"
              oninput="apprFilter.q=this.value;clearTimeout(window._abT);window._abT=setTimeout(renderApprList,200)">
-      <select class="inp sm" onchange="apprSetFilter('type',this.value)">
-        <option value="__all">Mọi loại đơn</option>
-        ${Object.keys(REQ_LABEL).map(k=>`<option value="${k}"${apprFilter.type===k?' selected':''}>${esc(REQ_LABEL[k])}</option>`).join('')}
-      </select>
-      <select class="inp sm" onchange="apprSetFilter('ym',this.value)">
-        <option value="__all"${apprFilter.ym==='__all'?' selected':''}>Mọi kỳ công</option>
-        ${ms.map(m=>`<option value="${m}"${apprFilter.ym===m?' selected':''}>${periodFor(m).label}</option>`).join('')}
-        <option value="__range"${apprFilter.ym==='__range'?' selected':''}>Khoảng ngày tự chọn…</option>
-      </select>
-      ${apprFilter.ym==='__range'?`
-        <label class="fl2">Từ</label><input type="date" class="inp sm" value="${apprFilter.from}" onchange="apprSetFilter('from',this.value)">
-        <label class="fl2">Đến</label><input type="date" class="inp sm" value="${apprFilter.to}" onchange="apprSetFilter('to',this.value)">`:''}
-      <button class="btn sec sm" onclick="apprResetFilter()">↺ Bỏ lọc</button>
+      <button class="btn sec sm${(apprAdvOpen||apprFilter.print!=='__all'||apprFilter.type!=='__all')?' on-adv':''}" onclick="apprAdvOpen=!apprAdvOpen;renderAppr()">⚙ ${t('Bộ lọc khác')}</button>
       <span class="sp"></span>
       <button class="btn sm pc-only" style="position:relative" onclick="openPrintBulk()">🖨️ In đơn<span class="bdg" id="printBdgAppr" style="display:none;position:static;margin-left:6px">0</span></button>
-      <button class="btn sec sm admin-only" onclick="exportRequests(Object.values(S.requests).filter(apprMatch),'LPGT_SaoLuuDon_'+todayIso()+'.xlsx')" title="${t('Chỉ xuất Excel, không xoá')}">⬇️ ${t('Xuất Excel đơn đang lọc')}</button>
-      <button class="btn warn sm admin-only" onclick="apprPurgeFiltered()" title="${t('Xuất Excel sao lưu rồi xoá')}">🗑️ ${t('Xuất Excel & xoá (đang lọc)')}</button>
-      <button class="btn warn sm admin-only" onclick="apprPurgeYear()" title="${t('Xuất Excel sao lưu rồi xoá')}">🗑️ ${t('Xoá theo năm…')}</button>
+    </div>
+    <div class="ab-adv" style="${(apprAdvOpen||apprFilter.print!=='__all'||apprFilter.type!=='__all'||apprFilter.ym==='__range')?'':'display:none'}">
+      <div class="ab-chips">${prChips.map(([k,l])=>
+        `<button class="abc sm${apprFilter.print===k?' on':''}" onclick="apprSetFilter('print','${k}')">${l}<i>${countWith('print',k)}</i></button>`).join('')}
+      </div>
+      <div class="ab-tools">
+        <span class="muted sm2">${t('Tải thêm')}:</span>
+        <button class="btn sec sm" onclick="apprScopeRecent()">${t('Kỳ này + kỳ trước')}</button>
+        <button class="btn sec sm" onclick="apprScopeYear()">${t('Cả năm nay')}</button>
+        <button class="btn sec sm" onclick="apprScopeAll()">${t('Tất cả các kỳ')}</button>
+      </div>
+      <div class="ab-tools">
+        <select class="inp sm" onchange="apprSetFilter('type',this.value)">
+          <option value="__all">Mọi loại đơn</option>
+          ${Object.keys(REQ_LABEL).map(k=>`<option value="${k}"${apprFilter.type===k?' selected':''}>${esc(REQ_LABEL[k])}</option>`).join('')}
+        </select>
+        <select class="inp sm" onchange="apprSetFilter('ym',this.value)">
+          <option value="__all"${apprFilter.ym==='__all'?' selected':''}>Mọi kỳ công</option>
+          ${ms.map(m=>`<option value="${m}"${apprFilter.ym===m?' selected':''}>${periodFor(m).label}</option>`).join('')}
+          <option value="__range"${apprFilter.ym==='__range'?' selected':''}>Khoảng ngày tự chọn…</option>
+        </select>
+        ${apprFilter.ym==='__range'?`
+          <label class="fl2">Từ</label><input type="date" class="inp sm" value="${apprFilter.from}" onchange="apprSetFilter('from',this.value)">
+          <label class="fl2">Đến</label><input type="date" class="inp sm" value="${apprFilter.to}" onchange="apprSetFilter('to',this.value)">`:''}
+        <button class="btn sec sm" onclick="apprResetFilter()">↺ Bỏ lọc</button>
+      </div>
+      <div class="ab-tools">
+        <button class="btn sec sm admin-only" onclick="exportRequests(Object.values(S.requests).filter(apprMatch),'LPGT_SaoLuuDon_'+todayIso()+'.xlsx')" title="${t('Chỉ xuất Excel, không xoá')}">⬇️ ${t('Xuất Excel đơn đang lọc')}</button>
+        <button class="btn warn sm admin-only" onclick="apprPurgeFiltered()" title="${t('Xuất Excel sao lưu rồi xoá')}">🗑️ ${t('Xuất Excel & xoá (đang lọc)')}</button>
+        <button class="btn warn sm admin-only" onclick="apprPurgeYear()" title="${t('Xuất Excel sao lưu rồi xoá')}">🗑️ ${t('Xoá theo năm…')}</button>
+      </div>
     </div>`;
 
   renderApprList();

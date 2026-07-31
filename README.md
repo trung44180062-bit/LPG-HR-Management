@@ -34,7 +34,8 @@ LPGT-CongCa-Web/
 ├── css/
 │   ├── app.css             # Giao diện chính: biến màu, layout, các tab
 │   ├── portal.css          # Cổng đăng nhập + trang chính nhân viên
-│   └── print.css           # Module in đơn (A5 ngang / 2up A4 dọc)
+│   ├── print.css           # Module in đơn (A5 ngang / 2up A4 dọc)
+│   └── ui.css              # v5: lớp thiết kế mới (nạp CUỐI, ghi đè 2 file trên)
 ├── js/
 │   ├── config.example.js   # MẪU cấu hình — copy thành config.js
 │   ├── config.js           # ❌ Cấu hình thật (gitignored)
@@ -51,6 +52,7 @@ LPGT-CongCa-Web/
 │   ├── 11-stats-data.js    # Thống kê, khai báo giờ, export XLSX, cài đặt
 │   ├── 13-portal.js        # Trang chính nhân viên (lịch tuần/tháng, sheet theo ngày)
 │   ├── 14-i18n.js          # Song ngữ Việt/Anh — nạp NGAY SAU 01-core.js
+│   ├── 00-icons.js         # v5: icon SVG thay emoji (nạp NGAY SAU 14-i18n.js)
 │   ├── 15-report.js        # Tab Báo cáo: Nhân lực · Thống kê · Biểu đồ (SVG thuần)
 │   ├── 16-otlog-data.js    # Nhật ký tăng ca lấy từ file Excel của công ty
 │   ├── 17-appr-sum.js      # Sub-tab Tổng quan trong tab Duyệt (bảng cho giám đốc)
@@ -67,6 +69,17 @@ LPGT-CongCa-Web/
 **Thứ tự nạp script rất quan trọng** — các file dùng biến toàn cục dùng chung, không phải ES module.
 `12-main.js` phải nằm cuối vì nó gọi hàm của mọi file khác.
 Khi thêm file mới, chèn thẻ `<script>` vào trước `12-main.js`.
+
+### Giao diện v5 (2026-07-31) — icon SVG + lớp `ui.css`
+
+- **`js/00-icons.js`**: template và i18n vẫn viết emoji như cũ; script này quét DOM
+  (MutationObserver, giống cơ chế i18n) và thay emoji đã khai trong `IC_MAP` bằng
+  icon SVG nét mảnh kiểu Lucide (`.ici`, màu theo `currentColor`). `#printRoot`,
+  `data-noic`, script/style/input/svg luôn được bỏ qua — biểu mẫu in giữ nguyên.
+  Thêm emoji mới → khai thêm vào `IC_MAP` (+ `IC_SVG` nếu cần icon mới).
+- **`css/ui.css`**: lớp ghi đè thiết kế (token màu, nút, thẻ, bottom nav, chip lọc,
+  ô số liệu đồng bộ, `details.xp` cho đoạn giải thích gập). Nạp SAU app/portal/print.
+- Màn Duyệt: bộ lọc nâng cao gập vào nút "⚙ Bộ lọc khác" (`apprAdvOpen`, 08-requests.js).
 
 ---
 
