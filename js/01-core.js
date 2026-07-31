@@ -212,6 +212,7 @@ const POSITIONS=[
   {v:'field_eng',  l:'Field Engineer',              pool:POOL_PROD},
   {v:'boardman',   l:'DCS Boardman',                pool:POOL_PROD},
   {v:'check_booth', l:'Check booth (Trạm cân)',     pool:POOL_OFF},
+  {v:'interpreter', l:'Phiên dịch kiêm thư ký',     pool:POOL_OFF},
   {v:'office',     l:'Office (Kỹ sư văn phòng)',    pool:POOL_OFF},
   {v:'supervisor', l:'Supervisor (Giám sát – Hàn)', pool:POOL_OFF},
   {v:'pm',         l:'PM (Giám đốc nhà máy – Hàn)', pool:POOL_OFF}
@@ -230,6 +231,7 @@ function posCode(e){
     if(/field|hien truong|\bfe\b/.test(s))return 'field_eng';
     if(/board|dcs/.test(s))return 'boardman';
     if(/check|booth|tram can/.test(s))return 'check_booth';
+    if(/phien dich|thu ky|interpreter|secretary/.test(s))return 'interpreter';
     if(/supervisor|giam sat/.test(s))return 'supervisor';
     if(/\bpm\b|giam doc|plant manager|director/.test(s))return 'pm';
     if(/office|van phong/.test(s))return 'office';

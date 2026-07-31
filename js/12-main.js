@@ -16,6 +16,7 @@ load();
 applyPerm();                      // quyền lấy từ cột Quyền của người đang đăng nhập
 fillMonthSelects();
 syncAccounts();
+if(typeof pruneOldNotifs==='function'){const _pn=pruneOldNotifs();if(_pn)save();}  // dọn thông báo cũ (>~2 kỳ)
 renderAll();
 initFb();
 

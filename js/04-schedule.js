@@ -23,6 +23,14 @@ function schedMonthOf(iso){
 }
 function curSchedMonth(){return schedMonthOf(todayIso());}
 function daysOfPeriod(ym){const p=periodFor(ym);const a=[];let d=new Date(p.from+'T00:00:00'),end=new Date(p.to+'T00:00:00');while(d<=end){a.push(isoOf(d));d.setDate(d.getDate()+1);}return a;}
+/* Dời kỳ công 'YYYY-MM' đi delta kỳ (±). */
+function schedYmShift(ym,delta){
+  let a=String(ym).split('-').map(Number),y=a[0],m=a[1];
+  m+=delta;while(m<1){m+=12;y--;}while(m>12){m-=12;y++;}
+  return y+'-'+pad(m);
+}
+/* Khoảng ngày của cả một NĂM DƯƠNG (dùng để xoá/xuất theo năm). */
+function yearRange(y){return {from:y+'-01-01',to:y+'-12-31'};}
 
 /* =================== MONTH LIST =================== */
 function monthsAvailable(){

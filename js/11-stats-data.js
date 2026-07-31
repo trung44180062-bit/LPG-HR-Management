@@ -113,9 +113,9 @@ function renderAccTbl(){
       <td>${dflt?'<span class="st pending" title="Mật khẩu đang là mã số — nhắc nhân viên đổi">Mặc định</span>'
                 :'<span class="st approved" title="'+esc(acc.at?fmtDateTime(acc.at):'')+'">Đã đặt riêng</span>'}</td>
       <td class="emp-act">
-        <button class="btn sec sm" onclick="setPass('${e.id}')">🔑 Đặt lại MK</button>
-        ${dflt?'':`<button class="btn sec sm" onclick="resetToDefaultPw('${e.id}')" title="Đưa về mật khẩu = mã số">↺ Về mặc định</button>`}
-        ${root?'':`<button class="btn warn sm" onclick="delEmp('${e.id}')" title="Xoá khỏi danh sách">✕</button>`}
+        <button class="btn sec sm ico" onclick="setPass('${e.id}')" title="${t('Đặt lại mật khẩu')}">🔑</button>
+        ${dflt?'':`<button class="btn sec sm ico" onclick="resetToDefaultPw('${e.id}')" title="${t('Đưa về mật khẩu = mã số')}">↺</button>`}
+        ${root?'':`<button class="btn warn sm ico" onclick="delEmp('${e.id}')" title="${t('Xoá khỏi danh sách')}">✕</button>`}
       </td></tr>`;
   });
   tb.innerHTML=h+'</tbody>';

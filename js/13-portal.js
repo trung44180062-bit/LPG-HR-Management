@@ -98,6 +98,16 @@ function newNotif(o){
   S.notifs[id]=Object.assign({id,status:'pending',createdAt:Date.now()},o);
   return id;
 }
+/* Chỉ GIỮ thông báo trong ~2 kỳ ca gần đây để nhẹ Firebase (gói Spark).
+   Việc đang CHỜ xác nhận (pending) luôn giữ lại dù cũ. Trả về số đã dọn. */
+const NOTIF_KEEP_DAYS=62;                 // ~2 kỳ công (mỗi kỳ ~1 tháng)
+function pruneOldNotifs(){
+  if(!S.notifs)return 0;
+  const cutoff=Date.now()-NOTIF_KEEP_DAYS*86400000;let n=0;
+  for(const k in S.notifs){const x=S.notifs[k];
+    if(x&&x.status!=='pending'&&(x.createdAt||0)<cutoff){delete S.notifs[k];n++;}}
+  return n;
+}
 /* Việc chờ nhân viên xác nhận */
 function pendingConfirms(id){
   return Object.values(S.notifs||{})
@@ -1241,8 +1251,10 @@ function myPanelSum(id){
       <div class="k ot"><div class="v">${rnd1(st.hOT)}<i>h</i></div><span>${t('Giờ tăng ca')} (${otShiftN})</span></div>
       <div class="k lv"><div class="v">${rnd1(leaveDays)}<i>${t('ngày')}</i></div><span>${t('Nghỉ phép')}</span></div>
     </div>
-    <div style="overflow:auto"><table class="tbl mp-sum-tbl"><thead><tr>
-      <th>${t('Ngày')}</th><th>${t('Mã')}</th><th>${t('Loại')}</th><th>${t('Công')}</th><th>OT</th><th>${t('Phép')}</th>
+    <div style="overflow:auto"><table class="tbl mp-sum-tbl">
+      <colgroup><col style="width:96px"><col style="width:58px"><col><col style="width:56px"><col style="width:48px"><col style="width:52px"></colgroup>
+      <thead><tr>
+      <th>${t('Ngày')}</th><th>${t('Mã')}</th><th>${t('Loại')}</th><th class="num">${t('Công')}</th><th class="num">OT</th><th class="num">${t('Phép')}</th>
     </tr></thead><tbody>${rows||`<tr><td colspan="6" class="muted">${t('Kỳ này chưa có dữ liệu.')}</td></tr>`}
       <tr class="sum-total"><td colspan="3">${t('Tổng')}</td><td class="num">${rnd1(st.hWork)}</td><td class="num ot">${rnd1(st.hOT)}</td><td class="num lv">${rnd1(st.hLeave)}</td></tr>
     </tbody></table></div>

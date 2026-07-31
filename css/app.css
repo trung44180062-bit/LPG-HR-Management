@@ -193,6 +193,9 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
   .hdr .sub{display:none}
 }
 .emp-act{display:flex;gap:6px}
+.btn.ico{padding:5px 8px;min-width:0;font-size:14px;line-height:1}
+/* Bảng tài khoản: cho biết còn cuộn ngang + cột mã NV luôn thấy */
+#accTbl{min-width:720px}
 
 /* ===== Của tôi (employee portal) ===== */
 .login-card{max-width:420px;margin:26px auto}
@@ -264,8 +267,32 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
 .stbl th.g-sh{background:#E8EEF6}
 .stbl th.g-lv{background:#FBEDF2}
 .stbl th.g-ot{background:#E4F5EC}
-.stbl-col td:nth-child(2),.stbl-col th:nth-child(2){border-right:2px solid #E2E8F0}
-.stbl-col tbody tr:hover td{outline:1px solid #93C5FD;outline-offset:-1px}
+/* ============ BẢNG THỐNG KÊ CỘT KHOÁ CỨNG (.stbl-fix) ============
+   table-layout:fixed + colgroup: độ rộng cột do <col> quyết định, giống
+   hệt nhau ở tiêu đề / thân / dòng tổng — không thể lệch. Không dùng
+   position:sticky trong bảng này (sticky + border-collapse là nguồn lỗi
+   lệch render trên Chrome). */
+.stbl-fix table{table-layout:fixed;border-collapse:separate;border-spacing:0;width:auto;min-width:100%}
+.stbl-fix th{position:static;background:#EEF3F8;font-size:10px;padding:7px 4px;
+  border-bottom:1.5px solid var(--line);border-right:1px solid #E3E9F0;text-align:center;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stbl-fix td{padding:5px 4px;border-bottom:1px solid var(--line);border-right:1px solid #F0F3F7;
+  text-align:center;font-family:var(--mono);font-weight:600;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stbl-fix td.l,.stbl-fix th.l{text-align:left;font-family:'Be Vietnam Pro',sans-serif;padding-left:9px}
+.stbl-fix td.pos{font-size:11px;color:var(--mut)}
+.stbl-fix th:nth-child(3),.stbl-fix td:nth-child(3){border-right:2px solid #CBD5E1}
+.stbl-fix tfoot td{background:#EEF3F8;font-weight:800}
+.stbl-fix tbody tr:hover td{background:#EFF6FF!important}
+/* stCnt() trả <td class="cc"> — .cc toàn cục là inline-flex (chip), trong bảng
+   fixed phải trả về display:table-cell để không phá lưới cột */
+.stbl-fix td.cc{display:table-cell;min-width:0;height:auto;border-radius:0;
+  font-size:12px;font-weight:800;letter-spacing:.2px}
+.stbl-fix td.z,.stbl-fix td.z0{color:#CBD5E1}
+.stbl-fix .hl{background:#F0FDF4;color:#065F46;font-weight:800}
+.stbl-fix .hl-ot{background:#FFF7ED;color:#9A3412;font-weight:800}
+.stbl-fix .hl-lv{background:#EFF6FF;color:#1E40AF;font-weight:800}
+.stbl-fix th.hl{background:#DCFCE7}.stbl-fix th.hl-ot{background:#FFEDD5}.stbl-fix th.hl-lv{background:#DBEAFE}
 .team-chip{display:inline-block;padding:1px 9px;border-radius:99px;font-size:10.5px;font-weight:800;letter-spacing:.2px}
 .stbl-key{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:8px;font-size:11px}
 .stbl-key .lbl{color:var(--mut);font-weight:700;margin-right:2px}
@@ -387,6 +414,10 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
 .abc:hover{border-color:var(--brand);color:var(--brand)}
 .abc.on{background:var(--brand);border-color:var(--brand);color:#fff}
 .abc.on i{background:rgba(255,255,255,.22);color:#fff}
+.ab-period{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:8px 0;
+  padding:8px;background:#F8FAFC;border:1px solid var(--line);border-radius:10px}
+.ab-period .ab-per-lbl{min-width:170px;text-align:center;font-size:13px;color:var(--brand)}
+.ab-period .sp{flex:1}
 .ab-tools{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
 .ab-tools .inp.sm{height:34px;padding:0 9px;font-size:12.5px;width:auto}
 .ab-tools .inp.sm:first-child{flex:1;min-width:150px}

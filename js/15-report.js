@@ -211,24 +211,41 @@ function repStatsAll(){
     <div class="stat-box"><div class="v">${sum(s=>s.hLeave)}</div><div class="k">TỔNG GIỜ PHÉP</div></div>
     <div class="stat-box"><div class="v">${rows.length}</div><div class="k">NHÂN SỰ</div></div>
   </div>`;
-  h+='<div class="card stbl stbl-col"><table><thead><tr><th class="l">Nhóm</th><th class="l">Họ tên</th>'
-    +'<th class="g-sh">D</th><th class="g-sh">N</th><th class="g-sh">O</th><th class="g-sh">R</th>'
-    +'<th class="g-lv">AL8</th><th class="g-lv">AL4</th><th class="g-lv">NP</th><th class="g-lv">OFF</th>'
-    +'<th class="g-ot">Ca OT</th>'
-    +'<th class="hl">Giờ công</th><th class="hl-ot">Giờ OT</th><th class="hl-lv">Giờ phép</th></tr></thead><tbody>';
-  rows.forEach(({e,s})=>{
-    h+=`<tr><td class="l">${teamChip(e.team)}</td>
-      <td class="l"><b>${esc(e.name||e.id)}</b> <span class="muted" style="font-size:10px">${esc(posLabel(posCode(e)))}</span></td>
-      ${stCnt('D',cD(s))}${stCnt('N',cN(s))}${stCnt('O',cO(s))}${stCnt('R',s.cnt.R)}
-      ${stCnt('AL8',s.cnt.AL8)}${stCnt('AL4',s.cnt.AL4)}${stCnt('NP',s.cnt.NP)}${stCnt('OFF',s.cnt.OFF)}
-      ${stCnt('OTD',otShifts(s))}
-      ${stHr('hl',s.hWork)}${stHr('hl-ot',s.hOT)}${stHr('hl-lv',s.hLeave)}</tr>`;
-  });
-  h+='</tbody><tfoot><tr><td class="l" colspan="2">TỔNG CỘNG</td>';
-  h+=`<td>${rows.reduce((a,r)=>a+cD(r.s),0)}</td><td>${rows.reduce((a,r)=>a+cN(r.s),0)}</td><td>${rows.reduce((a,r)=>a+cO(r.s),0)}</td>`;
-  ['R','AL8','AL4','NP','OFF'].forEach(c=>{h+=`<td>${rows.reduce((a,r)=>a+(r.s.cnt[c]||0),0)}</td>`;});
-  h+=`<td>${rows.reduce((a,r)=>a+otShifts(r.s),0)}</td>
-    <td class="hl">${sum(s=>s.hWork)}</td><td class="hl-ot">${sum(s=>s.hOT)}</td><td class="hl-lv">${sum(s=>s.hLeave)}</td></tr></tfoot></table></div>`;
+  /* ============================================================
+     BẢNG CỘT KHOÁ CỨNG — tiêu đề và thân sinh từ CÙNG một mảng ST_COLS,
+     colgroup + table-layout:fixed ép mọi hàng đúng độ rộng từng cột.
+     Trình duyệt không thể tự co giãn làm số lệch khỏi tiêu đề.
+     ============================================================ */
+  const ST_COLS=[
+    {l:'Nhóm',    w:64, cls:'l',   get:({e})=>teamChip(e.team)},
+    {l:'Họ tên',  w:170,cls:'l',   get:({e})=>`<b>${esc(e.name||e.id)}</b>`},
+    {l:'Vị trí',  w:135,cls:'l pos',get:({e})=>esc(posLabel(posCode(e))),
+                  tot:()=>'TỔNG CỘNG'},
+    {l:'D',   w:46,hd:'g-sh',get:({s})=>stCnt('D',cD(s)),  tot:()=>rows.reduce((a,r)=>a+cD(r.s),0)},
+    {l:'N',   w:46,hd:'g-sh',get:({s})=>stCnt('N',cN(s)),  tot:()=>rows.reduce((a,r)=>a+cN(r.s),0)},
+    {l:'O',   w:46,hd:'g-sh',get:({s})=>stCnt('O',cO(s)),  tot:()=>rows.reduce((a,r)=>a+cO(r.s),0)},
+    {l:'R',   w:46,hd:'g-sh',get:({s})=>stCnt('R',s.cnt.R),tot:()=>rows.reduce((a,r)=>a+(r.s.cnt.R||0),0)},
+    {l:'AL8', w:46,hd:'g-lv',get:({s})=>stCnt('AL8',s.cnt.AL8),tot:()=>rows.reduce((a,r)=>a+(r.s.cnt.AL8||0),0)},
+    {l:'AL4', w:46,hd:'g-lv',get:({s})=>stCnt('AL4',s.cnt.AL4),tot:()=>rows.reduce((a,r)=>a+(r.s.cnt.AL4||0),0)},
+    {l:'NP',  w:46,hd:'g-lv',get:({s})=>stCnt('NP',s.cnt.NP),  tot:()=>rows.reduce((a,r)=>a+(r.s.cnt.NP||0),0)},
+    {l:'OFF', w:46,hd:'g-lv',get:({s})=>stCnt('OFF',s.cnt.OFF),tot:()=>rows.reduce((a,r)=>a+(r.s.cnt.OFF||0),0)},
+    {l:'Ca OT',w:52,hd:'g-ot',get:({s})=>stCnt('OTD',otShifts(s)),tot:()=>rows.reduce((a,r)=>a+otShifts(r.s),0)},
+    {l:'Giờ công',w:74,hd:'hl',   get:({s})=>stHr('hl',s.hWork),    tot:()=>`<td class="hl">${sum(s=>s.hWork)}</td>`,raw:true},
+    {l:'Giờ OT', w:64,hd:'hl-ot', get:({s})=>stHr('hl-ot',s.hOT),   tot:()=>`<td class="hl-ot">${sum(s=>s.hOT)}</td>`,raw:true},
+    {l:'Giờ phép',w:70,hd:'hl-lv',get:({s})=>stHr('hl-lv',s.hLeave),tot:()=>`<td class="hl-lv">${sum(s=>s.hLeave)}</td>`,raw:true}
+  ];
+  /* stCnt/stHr trả sẵn <td>…</td>; cột chữ thì bọc ở đây — mỗi hàng LUÔN đúng ST_COLS.length ô */
+  const cellOf=(c,row)=>{const v=c.get(row);return v.startsWith('<td')?v:`<td class="${c.cls||''}">${v}</td>`;};
+  h+='<div class="card stbl stbl-fix"><table>'
+    +'<colgroup>'+ST_COLS.map(c=>`<col style="width:${c.w}px">`).join('')+'</colgroup>'
+    +'<thead><tr>'+ST_COLS.map(c=>`<th class="${c.hd||c.cls||''}">${c.l}</th>`).join('')+'</tr></thead><tbody>';
+  rows.forEach(row=>{h+='<tr>'+ST_COLS.map(c=>cellOf(c,row)).join('')+'</tr>';});
+  h+='</tbody><tfoot><tr>'+ST_COLS.map((c,i)=>{
+    if(i<2)return '<td class="l"></td>';
+    if(!c.tot)return '<td></td>';
+    const v=c.tot();
+    return (c.raw)?v:`<td class="${c.cls||''}">${v}</td>`;
+  }).join('')+'</tr></tfoot></table></div>';
   h+=`<div class="stbl-key"><span class="lbl">Chú giải màu:</span>
     ${['D','N','O','R'].map(c=>`<span class="k-it" style="background:${SCHEDBG[c]};color:${SCHEDTXT[c]}">${c}</span>`).join('')}
     <span class="k-sep"></span>

@@ -245,7 +245,23 @@ function apprAdviceBadge(r){
    Nay: 1 đơn = 1 dòng (ai · loại · ngày · trạng thái) + 2 nút chính;
    bấm vào dòng mới bung chi tiết từng ngày và các nút phụ.
    ============================================================ */
-let apprFilter={status:'pending',print:'__all',type:'__all',q:'',ym:'__all',from:'',to:'',flag:''};
+let apprFilter={status:'pending',print:'__all',type:'__all',q:'',
+  ym:(typeof curSchedMonth==='function'?curSchedMonth():'__all'),from:'',to:'',flag:''};
+/* Dời kỳ đang xem ở màn Duyệt (◀ ▶) */
+function apprPeriodShift(delta){
+  const base=/^\d{4}-\d{2}$/.test(apprFilter.ym)?apprFilter.ym:curSchedMonth();
+  apprSetFilter('ym',schedYmShift(base,delta));
+}
+/* Tải thêm phạm vi: kỳ này + kỳ trước / cả năm / tất cả */
+function apprScopeRecent(){
+  const cur=curSchedMonth(),prev=schedYmShift(cur,-1);
+  apprFilter.from=periodFor(prev).from;apprFilter.to=periodFor(cur).to;apprFilter.ym='__range';renderAppr();
+}
+function apprScopeYear(y){
+  const r=yearRange(+y||new Date().getFullYear());
+  apprFilter.from=r.from;apprFilter.to=r.to;apprFilter.ym='__range';renderAppr();
+}
+function apprScopeAll(){apprSetFilter('ym','__all');}
 let apprOpen={};                       // id đơn đang bung chi tiết
 
 function apprSetFilter(k,v){
@@ -256,7 +272,7 @@ function apprSetFilter(k,v){
 }
 function apprToggleRow(id){apprOpen[id]=!apprOpen[id];renderAppr();}
 function apprResetFilter(){
-  apprFilter={status:'__all',print:'__all',type:'__all',q:'',ym:'__all',from:'',to:'',flag:''};
+  apprFilter={status:'pending',print:'__all',type:'__all',q:'',ym:curSchedMonth(),from:'',to:'',flag:''};
   renderAppr();
 }
 /* Khoảng ngày đang lọc — trả về [from,to] hoặc null nếu không lọc theo ngày */
@@ -448,6 +464,17 @@ function renderAppr(){
     <div class="ab-chips">${prChips.map(([k,l])=>
       `<button class="abc sm${apprFilter.print===k?' on':''}" onclick="apprSetFilter('print','${k}')">${l}<i>${countWith('print',k)}</i></button>`).join('')}
     </div>
+    <div class="ab-period">
+      <button class="btn sec sm" onclick="apprPeriodShift(-1)" title="${t('Kỳ trước')}">◀</button>
+      <b class="ab-per-lbl">${apprFilter.ym==='__range'?t('Khoảng ngày')+(apprFilter.from?' '+fmtVN(apprFilter.from)+'→'+fmtVN(apprFilter.to||apprFilter.from):''):apprFilter.ym==='__all'?t('Tất cả các kỳ'):periodFor(apprFilter.ym).label}</b>
+      <button class="btn sec sm" onclick="apprPeriodShift(1)" title="${t('Kỳ sau')}">▶</button>
+      <button class="btn sec sm" onclick="apprSetFilter('ym','${curSchedMonth()}')">${t('Kỳ hiện tại')}</button>
+      <span class="sp"></span>
+      <span class="muted sm2">${t('Tải thêm')}:</span>
+      <button class="btn sec sm" onclick="apprScopeRecent()">${t('Kỳ này + kỳ trước')}</button>
+      <button class="btn sec sm" onclick="apprScopeYear()">${t('Cả năm nay')}</button>
+      <button class="btn sec sm" onclick="apprScopeAll()">${t('Tất cả các kỳ')}</button>
+    </div>
     <div class="ab-tools">
       <input class="inp sm" id="apprSearchBox" placeholder="Tìm theo tên nhân viên…" value="${esc(apprFilter.q)}"
              oninput="apprFilter.q=this.value;clearTimeout(window._abT);window._abT=setTimeout(renderApprList,200)">
@@ -466,7 +493,9 @@ function renderAppr(){
       <button class="btn sec sm" onclick="apprResetFilter()">↺ Bỏ lọc</button>
       <span class="sp"></span>
       <button class="btn sm pc-only" style="position:relative" onclick="openPrintBulk()">🖨️ In đơn<span class="bdg" id="printBdgAppr" style="display:none;position:static;margin-left:6px">0</span></button>
-      <button class="btn warn sm admin-only" onclick="apprPurgeFiltered()">🗑️ Dọn dữ liệu đang lọc</button>
+      <button class="btn sec sm admin-only" onclick="exportRequests(Object.values(S.requests).filter(apprMatch),'LPGT_SaoLuuDon_'+todayIso()+'.xlsx')" title="${t('Chỉ xuất Excel, không xoá')}">⬇️ ${t('Xuất Excel đơn đang lọc')}</button>
+      <button class="btn warn sm admin-only" onclick="apprPurgeFiltered()" title="${t('Xuất Excel sao lưu rồi xoá')}">🗑️ ${t('Xuất Excel & xoá (đang lọc)')}</button>
+      <button class="btn warn sm admin-only" onclick="apprPurgeYear()" title="${t('Xuất Excel sao lưu rồi xoá')}">🗑️ ${t('Xoá theo năm…')}</button>
     </div>`;
 
   renderApprList();
@@ -486,21 +515,62 @@ function renderApprList(){
   apprPickCount();
 }
 
-/* Dọn toàn bộ đơn đang khớp bộ lọc — dùng để xoá bớt dữ liệu cũ theo kỳ / khoảng ngày,
-   giữ dung lượng Firebase gói Spark ở mức thấp. */
-function apprPurgeFiltered(){
+/* ---- SAO LƯU EXCEL rồi mới XOÁ ----
+   Trước khi xoá đơn (theo kỳ / nhiều kỳ / năm) BẮT BUỘC xuất file Excel sao lưu.
+   Giữ dung lượng Firebase gói Spark thấp mà vẫn còn hồ sơ tra cứu offline. */
+function reqExcelRow(r){
+  const e=empById(r.empId),w=r.withId?empById(r.withId):null;
+  const days=(r.type==='multi')
+    ? fmtVNfull(r.from)+'→'+fmtVNfull(r.to)
+    : reqDays(r).map(d=>fmtVN(d.iso)+(d.code?'('+d.code+')':'')).join('; ');
+  const hrs=(typeof reqHours==='function')?rnd1(reqHours(r)):'';
+  return [schedMonthOf(r.from),(e&&e.name)||r.empId,r.empId,(e&&e.team)||'',
+    REQ_LABEL[r.type]||r.type,days,w?w.name:'',hrs,
+    (reqStatusLabel(r)||'').replace(/<[^>]*>/g,''),r.decidedBy||'',
+    r.createdAt?fmtDateTime(r.createdAt):'',r.decidedAt?fmtDateTime(r.decidedAt):'',
+    r.printedAt?fmtDateTime(r.printedAt):'',r.reason||'',r.note||''];
+}
+function exportRequests(list,fname){
+  if(typeof XLSX==='undefined'){toast(t('Thiếu thư viện Excel'));return false;}
+  const head=['Kỳ công','Họ tên','Mã NV','Nhóm','Loại đơn','Ngày (mã)','Đổi ca với','Giờ',
+              'Trạng thái','Người duyệt','Gửi lúc','Duyệt lúc','In lúc','Lý do','Ghi chú'];
+  const aoa=[['LPGT CAVERN — SAO LƯU ĐƠN',new Date().toLocaleString('vi-VN')],[],head];
+  list.slice().sort((a,b)=>(a.from<b.from?-1:1)).forEach(r=>aoa.push(reqExcelRow(r)));
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols']=[{wch:9},{wch:20},{wch:11},{wch:7},{wch:14},{wch:34},{wch:16},{wch:7},{wch:12},{wch:12},{wch:18},{wch:18},{wch:18},{wch:20},{wch:20}];
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Don');
+  XLSX.writeFile(wb,fname||('LPGT_SaoLuuDon_'+todayIso()+'.xlsx'));
+  return true;
+}
+function exportThenPurgeReqs(list,label){
   if(!adm){toast(t('Cần quyền quản trị'));return;}
-  const list=Object.values(S.requests).filter(apprMatch);
-  if(!list.length){toast(t('Không có đơn nào khớp bộ lọc.'));return;}
-  const rg=apprRange();
+  list=(list||[]).filter(Boolean);
+  if(!list.length){toast(t('Không có đơn nào trong phạm vi này.'));return;}
   const pend=list.filter(r=>r.status==='pending').length;
-  let m=t('Xoá hẳn')+' '+list.length+' '+t('đơn đang lọc?')
-       +(rg?`\n${t('Khoảng ngày')}: ${fmtVNfull(rg[0])} → ${fmtVNfull(rg[1])}`:'')
-       +(pend?`\n⚠️ ${t('Trong đó có')} ${pend} ${t('đơn đang chờ duyệt.')}`:'')
-       +'\n'+t('Đơn đã duyệt sẽ được hoàn tác khỏi lịch thực tế. Không tra lại được.');
-  if(!confirm(m))return;
+  if(!confirm(t('Sẽ XUẤT EXCEL sao lưu')+' '+list.length+' '+t('đơn')+' ('+label+') '+t('rồi XOÁ hẳn.')
+     +(pend?'\n⚠️ '+t('Trong đó có')+' '+pend+' '+t('đơn đang chờ duyệt.'):'')
+     +'\n'+t('Đơn đã duyệt sẽ được hoàn tác khỏi lịch thực tế. Không tra lại được.')))return;
+  const okX=exportRequests(list,'LPGT_SaoLuuDon_'+String(label).replace(/[^\w-]/g,'')+'_'+todayIso()+'.xlsx');
+  if(!okX&&!confirm(t('Không xuất được Excel. Vẫn tiếp tục xoá?')))return;
   let rev=0;list.forEach(r=>{rev+=purgeReq(r.id);});
-  apprAfterChange(t('Đã xoá')+' '+list.length+' '+t('đơn')+(rev?' · '+t('hoàn tác')+' '+rev+' '+t('ô lịch'):''));
+  apprAfterChange(t('Đã sao lưu Excel & xoá')+' '+list.length+' '+t('đơn')+(rev?' · '+t('hoàn tác')+' '+rev+' '+t('ô lịch'):''));
+}
+/* Xoá theo đúng bộ lọc đang xem (kỳ / nhiều kỳ / khoảng ngày) — xuất Excel trước */
+function apprPurgeFiltered(){
+  const list=Object.values(S.requests).filter(apprMatch);
+  const label=apprFilter.ym==='__all'?'MoiKy'
+    :apprFilter.ym==='__range'?((apprFilter.from||'')+'-'+(apprFilter.to||''))
+    :apprFilter.ym;
+  exportThenPurgeReqs(list,label);
+}
+/* Xoá theo NĂM DƯƠNG — nhập năm, xuất Excel trước */
+function apprPurgeYear(){
+  if(!adm){toast(t('Cần quyền quản trị'));return;}
+  const y=prompt(t('Xoá đơn theo NĂM (xuất Excel trước) — nhập năm, VD 2025:'),String(new Date().getFullYear()-1));
+  if(!y)return;
+  const r=yearRange(+y);
+  const list=Object.values(S.requests).filter(rq=>reqInRange(rq,r.from,r.to));
+  exportThenPurgeReqs(list,'Nam'+y);
 }
 
 /* ---- Chọn nhiều đơn để duyệt / từ chối / xoá hàng loạt (màn Duyệt) ---- */
