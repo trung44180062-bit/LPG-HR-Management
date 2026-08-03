@@ -23,6 +23,7 @@ let dsRows=[];               // [{iso, code, timeIn, timeOut}]
 let dsOwnerId='';            // người đứng đơn (đổi ca cho phép khai hộ người khác)
 let dsWithId='';             // người đổi ca cùng
 let dsGuarId='';             // người bảo lãnh (đơn bổ sung công)
+let dsCoverId='';            // người ở lại tăng ca gánh ca thay (đơn nghỉ phép)
 let dsNoteVal='';            // ghi chú (giữ trong state để không mất khi vẽ lại)
 let dsReasonCode='forgot_card', dsReasonOther='';   // đơn bổ sung công
 let dsLateType='come_late';                         // đơn đi trễ / về sớm
@@ -112,9 +113,10 @@ function pruneOldNotifs(){
   return n;
 }
 /* Việc chờ nhân viên xác nhận */
+const CONFIRM_KINDS=['schedChange','swapConfirm','coverConfirm'];
 function pendingConfirms(id){
   return Object.values(S.notifs||{})
-    .filter(n=>n.to===id&&n.status==='pending'&&(n.kind==='schedChange'||n.kind==='swapConfirm'))
+    .filter(n=>n.to===id&&n.status==='pending'&&CONFIRM_KINDS.includes(n.kind))
     .sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
 }
 /* Toàn bộ thông báo gửi tới id (cho tab Thông báo) */
@@ -123,10 +125,12 @@ function myNotifs(id){
     .filter(n=>n.to===id)
     .sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
 }
+/* Thông báo một chiều chưa xem: tin nhắn info + sự kiện trên lịch */
+const SEEN_KINDS=['info','event'];
 function notifUnseenCount(id){
   return pendingConfirms(id).length
     + unseenDecisions(id).length
-    + myNotifs(id).filter(n=>n.kind==='info'&&!n.seen).length;
+    + myNotifs(id).filter(n=>SEEN_KINDS.includes(n.kind)&&!n.seen).length;
 }
 
 /* ---- Suy ra loại đơn + số dòng từ một thay đổi lịch ----
@@ -135,6 +139,18 @@ function notifUnseenCount(id){
 function inferReqFromChange(empId,iso,oldCode,newCode){
   const oldCat=codeInfo(oldCode).cat, newCat=codeInfo(newCode).cat;
   const oldBase=baseShiftOf(oldCode), newBase=baseShiftOf(newCode);
+  /* CA KÉP (O+N, D+N): đã ghi sẵn "trực ca này + tăng ca ca kia" nên suy
+     thẳng ra đơn BỔ SUNG CÔNG 2 dòng — không cần đoán như trường hợp ô
+     chỉ có mã OT đơn lẻ bên dưới. */
+  const cb=comboOf(newCode);
+  if(cb){
+    const t1=SHIFT_HOURS[cb.work]||['08:00','17:00'];
+    const t2h=SHIFT_HOURS[baseShiftOf(cb.ot)||'N']||['20:00','08:00'];
+    return{type:'wt',rows:[
+      {iso,timeIn:t1[0],timeOut:t1[1]},
+      {iso,timeIn:t2h[0],timeOut:t2h[1]}
+    ],note:t2('Trực ca')+' '+cb.work+' '+t2('và tăng ca')+' '+cb.ot+' — '+t2('bổ sung công')};
+  }
   // Mã đổi ca SD/SN/SO → đơn Đổi mã ca sang ca tương ứng
   if(newCat==='swap'){
     const to={SD:'D',SN:'N',SO:'O'}[newCode]||newCode;
@@ -174,6 +190,43 @@ function openPrefilledReq(iso,inf){
   if(inf.note)dsNoteVal=inf.note;
   dsRows=inf.rows.map(r=>Object.assign(dsNewRow(inf.type,r.iso||iso),r));
   dsRenderForm();
+}
+
+/* ============================================================
+   THU HỒI THÔNG BÁO ĐỔI LỊCH
+   ------------------------------------------------------------
+   Quản lý đổi lịch của một người → nhân viên nhận thông báo xác nhận.
+   Nếu quản lý đổi ý và TRẢ Ô VỀ CA CHUẨN thì thông báo đó đã vô nghĩa,
+   phải gỡ đi — để lại chỉ khiến nhân viên xác nhận nhầm một thay đổi
+   không còn tồn tại.
+
+   Hai trường hợp khác nhau (theo yêu cầu nghiệp vụ):
+     · CHƯA xác nhận → thu hồi lặng lẽ, không làm phiền ai.
+     · ĐÃ xác nhận  → vẫn thu hồi, nhưng phải BÁO LẠI cho nhân viên, vì
+       họ có thể đã gửi đơn theo thay đổi đó và cần biết mà huỷ đơn.
+   Trả về số thông báo đã thu hồi. KHÔNG gọi save() — nơi gọi tự lưu.
+   ============================================================ */
+function revokeSchedChange(empId,iso,stdCode){
+  if(!S.notifs)return 0;
+  const by=meId()||'manager';
+  let n=0, hadConfirmed=false;
+  for(const k in S.notifs){
+    const x=S.notifs[k];
+    if(!x||x.kind!=='schedChange'||x.to!==empId||x.iso!==iso)continue;
+    if(x.status==='pending'){delete S.notifs[k];n++;continue;}
+    if(x.status==='confirmed'){
+      x.status='revoked';x.revokedAt=Date.now();x.revokedBy=by;
+      hadConfirmed=true;n++;
+    }
+  }
+  /* Đã xác nhận rồi mới bị thu hồi → phải báo, kèm nhắc kiểm tra đơn đã gửi */
+  if(hadConfirmed&&typeof newNotif==='function'){
+    newNotif({kind:'info',to:empId,from:by,iso,
+      text:t2('đã THU HỒI thay đổi lịch')+' '+fmtVN(iso)+' — '
+        +t2('lịch trả về ca chuẩn')+' '+(stdCode||'—')+'. '
+        +t2('Nếu bạn đã gửi đơn theo thay đổi này, hãy vào Đơn của tôi để huỷ.')});
+  }
+  return n;
 }
 
 /* Nhân viên XÁC NHẬN thay đổi lịch → mở đơn điền sẵn để gửi */
@@ -223,8 +276,97 @@ function declineSwap(nid){
   if(typeof renderApprList==='function'&&mgr)renderApprList();
   toast(t('Đã từ chối đổi ca'));
 }
+/* ---- Người được nhờ OT COVER: đồng ý / từ chối ----
+   Kết quả chỉ là CỜ trên đơn nghỉ phép, không tự sinh đơn tăng ca và không
+   chặn duyệt. Người cover muốn được tính giờ thì gửi đơn tăng ca như thường. */
+function confirmCover(nid){
+  const n=S.notifs[nid];if(!n||n.to!==meId())return;
+  const r=S.requests[n.reqId];
+  n.status='confirmed';n.decidedAt=Date.now();
+  if(r){
+    r.coverSt='confirmed';
+    newNotif({kind:'info',to:r.byId||r.empId,from:meId(),reqId:r.id,
+      text:t2('đã NHẬN OT cover cho bạn')+': '+fmtVN(r.from)});
+  }
+  save();renderMyPanel();renderMe(true);
+  if(typeof renderApprList==='function'&&(mgr||myFE))renderApprList();
+  toast(t('Đã nhận OT cover — nhớ gửi đơn tăng ca để được tính giờ'));
+}
+function declineCover(nid){
+  const n=S.notifs[nid];if(!n||n.to!==meId())return;
+  if(!confirm(t('Từ chối OT cover ngày này? Người làm đơn và người duyệt sẽ thấy để chọn người khác.')))return;
+  const r=S.requests[n.reqId];
+  n.status='cancelled';n.decidedAt=Date.now();
+  if(r){
+    r.coverSt='declined';
+    newNotif({kind:'info',to:r.byId||r.empId,from:meId(),reqId:r.id,
+      text:t2('đã TỪ CHỐI OT cover')+': '+fmtVN(r.from)+' — '+t2('hãy chọn người khác')});
+  }
+  save();renderMyPanel();renderMe(true);
+  if(typeof renderApprList==='function'&&(mgr||myFE))renderApprList();
+  toast(t('Đã từ chối OT cover'));
+}
+
+/* ---- Đổi người OT cover (người làm đơn hoặc người duyệt) ----
+   Mở hộp chọn người cùng khối; chọn xong thì người cũ được báo đã gỡ vai trò,
+   người mới nhận yêu cầu xác nhận. */
+let _cvRid='';
+function openCoverPicker(rid){
+  const r=S.requests[rid];if(!r){toast(t('Không tìm thấy đơn'));return;}
+  if(!canSetCover(r,meId())){toast(t('Bạn không đổi được người OT cover của đơn này'));return;}
+  _cvRid=rid;
+  const m=$('coverMask');if(!m)return;
+  m.classList.add('on');
+  renderCoverPicker();
+  setTimeout(()=>{const q=$('cvQ');if(q)q.focus();},60);
+}
+function closeCoverPicker(){const m=$('coverMask');if(m)m.classList.remove('on');_cvRid='';}
+function renderCoverPicker(){
+  const box=$('coverBody'),r=S.requests[_cvRid];
+  if(!box||!r)return;
+  const iso=(reqDays(r)[0]||{}).iso||r.from;
+  const own=r.empId, myPool=poolOfId(own);
+  const q=noAccent($('cvQ')?$('cvQ').value:'');
+  let list=activeEmps().filter(e=>e.id!==own&&poolOf(e)===myPool);
+  if(q)list=list.filter(e=>noAccent(e.name).includes(q)||noAccent(e.id).includes(q));
+  const restRank=e=>codeInfo(eff(e.id,iso).code||'').cat==='rest'?0:1;
+  list.sort((a,b)=>restRank(a)-restRank(b)||String(a.name||'').localeCompare(String(b.name||''),'vi'));
+  const items=list.slice(0,60).map(e=>{
+    const c=eff(e.id,iso).code, rest=codeInfo(c||'').cat==='rest';
+    return `<button type="button" class="pk-item${rest?' free':''}${e.id===r.coverId?' on':''}" onclick="coverPickSet('${e.id}')">
+      <span class="n">${rest?'🟢 ':''}${esc(e.name||e.id)}</span>
+      <span class="m">${e.team?t('Nhóm')+' '+esc(e.team)+' · ':''}${esc(e.id)}</span>
+      ${c?`<span class="cc" style="background:${codeInfo(c).col}">${esc(c)}</span>`:'<span class="cc" style="background:#94A3B8">—</span>'}
+    </button>`;}).join('');
+  box.innerHTML=`
+    <h3>🤝 ${t('Người OT cover')}</h3>
+    <p class="muted sm2">${esc((empById(own)||{}).name||own)} · ${esc(REQ_LABEL[r.type]||r.type)} · ${fmtVN(r.from)}${
+      r.to&&r.to!==r.from?' → '+fmtVN(r.to):''}</p>
+    ${r.coverId?`<div class="pv-alert info sm">${t('Hiện tại')}: <b>${esc(reqCoverName(r))}</b> · ${
+      t((COVER_ST[r.coverSt||'pending']||COVER_ST.pending).lb)}</div>`:''}
+    <input class="inp" id="cvQ" placeholder="${t('Gõ tên hoặc mã NV… (không cần dấu)')}" autocomplete="off"
+           value="${esc($('cvQ')?$('cvQ').value:'')}" oninput="renderCoverPicker()">
+    <p class="muted sm2" style="margin:6px 0 2px">${t('Chỉ hiện người CÙNG KHỐI; 🟢 là người đang nghỉ ca R ngày')} ${fmtVN(iso)}.</p>
+    <div class="pick-list" style="max-height:46vh">${items||`<p class="muted" style="padding:8px 4px">${t('Không tìm thấy ai khớp.')}</p>`}</div>
+    <div class="row" style="gap:8px;margin-top:10px">
+      ${r.coverId?`<button class="btn warn" style="flex:1" onclick="coverPickSet('')">✕ ${t('Bỏ người cover')}</button>`:''}
+      <button class="btn sec" style="flex:1" onclick="closeCoverPicker()">${t('Đóng')}</button>
+    </div>`;
+}
+function coverPickSet(id){
+  const rid=_cvRid,r=S.requests[rid];if(!r)return;
+  if(!canSetCover(r,meId())){toast(t('Bạn không đổi được người OT cover của đơn này'));return;}
+  if(!reqSetCover(rid,id,meId())){closeCoverPicker();return;}
+  save();closeCoverPicker();
+  if(typeof renderApprList==='function'&&(mgr||myFE))renderApprList();
+  if(typeof renderMyPanel==='function')renderMyPanel();
+  if(typeof renderMe==='function')renderMe(true);
+  if(typeof refreshBadge==='function')refreshBadge();
+  toast(id?t('Đã gửi yêu cầu OT cover tới')+' '+shortName((empById(id)||{}).name||id)
+          :t('Đã bỏ người OT cover'));
+}
 function markNotifSeen(id){
-  Object.values(S.notifs||{}).forEach(n=>{if(n.to===id&&n.kind==='info'&&!n.seen)n.seen=Date.now();});
+  Object.values(S.notifs||{}).forEach(n=>{if(n.to===id&&SEEN_KINDS.includes(n.kind)&&!n.seen)n.seen=Date.now();});
   save();
 }
 /* Trùng đơn: đã có đơn pending/approved nào phủ lên các ngày đang khai chưa */
@@ -242,7 +384,7 @@ function conflictReqs(id,isoList,type){
    Hiện LỊCH THỰC TẾ (base + điều chỉnh + đơn đã duyệt). Ai có ca thực tế khác
    lịch chuẩn thì đánh dấu và hiện luôn "chuẩn → thực tế" để người sắp làm đơn
    biết ngay hôm đó ai nghỉ, ai đã đổi ca. */
-const CREW_SHOW=c=>{const k=codeInfo(c).cat;return k==='work'||k==='swap'||k==='ot'||k==='rest'||k==='leave';};
+const CREW_SHOW=c=>{const k=codeInfo(c).cat;return k==='work'||k==='swap'||k==='ot'||k==='rest'||k==='leave'||k==='combo';};
 const CREW_ORDER=['O','OVP','D','N','OTD','OTN','R','LEAVE'];
 /* Nhóm hiển thị của một mã ca */
 function crewGroupOf(c){
@@ -347,7 +489,7 @@ function workStreak(id){
   for(let i=0;i<40;i++){
     const c=eff(id,addDaysIso(todayIso(),-i)).code;
     const cat=codeInfo(c).cat;
-    if(c&&(cat==='work'||cat==='swap'||cat==='ot'))n++;else break;
+    if(c&&(cat==='work'||cat==='swap'||cat==='ot'||cat==='combo'))n++;else break;
   }
   return n;
 }
@@ -410,8 +552,10 @@ function otSummary(id,ym){
   const days=daysOfPeriod(ym);
   let approved=0,pending=0;
   days.forEach(iso=>{
-    const c=eff(id,iso).code;
-    if(c&&codeInfo(c).cat==='ot')approved+=effHours(id,iso);
+    const c=eff(id,iso).code;if(!c)return;
+    const sp=comboSplitHours(c,effHours(id,iso));
+    if(sp)approved+=sp.ot;                       // ca kép chỉ tính phần tăng ca
+    else if(codeInfo(c).cat==='ot')approved+=effHours(id,iso);
   });
   Object.values(S.requests||{}).forEach(r=>{
     if(r.empId!==id||r.type!=='ot'||r.status!=='pending')return;
@@ -484,6 +628,8 @@ function renderMe(force){
            <button class="btn warn sm" onclick="declineSwap('${n.id}')">✕ Từ chối</button></div>
        </div>`).join('')}
   </div>`:''}
+
+  ${(typeof evBannerHtml==='function')?evBannerHtml(allDays.filter(iso=>iso>=todayIso())):''}
 
   <div class="card pv-cal-card">
     <div class="pv-cal-head">
@@ -562,6 +708,7 @@ function renderPvCal(){
   let h=`<div class="pv-cal ${pvMode}">`;
   for(let i=0;i<7;i++)h+=`<div class="hd${i>4?' we':''}">${dowShort(i)}</div>`;
   for(let k=0;k<lead;k++)h+='<div class="pd"></div>';
+  const evOn=typeof eventsOfDay==='function';
   days.forEach(iso=>{
     const r=eff(id,iso), f=pvDayFlags(id,iso);
     const dw=new Date(iso+'T00:00:00').getDay();
@@ -569,12 +716,15 @@ function renderPvCal(){
     const dd=+iso.slice(8), mm=+iso.slice(5,7);
     // Kỳ công vắt qua 2 tháng: ngày ≥21 là của tháng đầu kỳ → tô nhạt cho dễ phân biệt
     const head=pvMode==='month'&&dd>=21;
-    h+=`<button class="pv-d${iso===t?' today':''}${r.code?'':' empty'}${dw===0||dw===6?' we':''}${head?' pmo':''}"
-        onclick="openDaySheet('${iso}')" title="${fmtVNfull(iso)} ${dowOf(iso)}${info?' — '+esc(info.l):''}">
+    /* Ngày có sự kiện (nhập tàu, bảo dưỡng…) đổi màu — js/20-events.js */
+    const ev=evOn?eventsOfDay(iso):[];
+    h+=`<button class="pv-d${iso===t?' today':''}${r.code?'':' empty'}${dw===0||dw===6?' we':''}${head?' pmo':''}${ev.length?' evday':''}"
+        onclick="openDaySheet('${iso}')" title="${fmtVNfull(iso)} ${dowOf(iso)}${info?' — '+esc(info.l):''}${ev.length?' · 📌 '+esc(evTitleOfDay(iso)):''}">
       <span class="dn">${dd}${dd===1?`<i class="mo">/${mm}</i>`:''}</span>
       ${pvMode==='week'?`<span class="dw">${dowOf(iso)}</span>`:''}
-      <span class="cbox">${r.code?`<span class="cc" style="background:${info.col}">${r.code}</span>`:'<span class="dash">—</span>'}</span>
+      <span class="cbox">${r.code?chip(r.code):'<span class="dash">—</span>'}</span>
       ${pvMode==='week'&&info?`<span class="clbl">${esc(info.l)}</span>`:''}
+      ${ev.length?`<span class="evtag">📌 ${esc(ev[0].title||t('Sự kiện'))}</span>`:''}
       <span class="flags">
         ${r.ovr?'<i class="d-ovr"></i>':''}
         ${f.pend?'<i class="d-pend"></i>':''}
@@ -610,7 +760,10 @@ function dsForm(t){
   if(pvSheetForm===t){pvSheetForm=null;renderDaySheet();return;}
   pvSheetForm=t;
   const me=meId();
-  dsOwnerId=me;dsWithId='';dsGuarId='';dsNoteVal='';dsNoPrint=false;
+  dsOwnerId=me;dsWithId='';dsGuarId='';dsCoverId='';dsNoteVal='';
+  /* Chế độ in mặc định theo loại đơn (xem REQ_MUST_PRINT ở js/08-requests.js):
+     bổ sung công + đổi ca vào hàng chờ in, các loại còn lại không cần in. */
+  dsNoPrint=defaultNoPrint(t);
   dsReasonCode='forgot_card';dsReasonOther='';dsLateType='come_late';
   dsMultiFrom=pvSheetDate;dsMultiTo=pvSheetDate;dsMultiIn='08:00';dsMultiOut='17:00';
   dsRows=isRangeForm(t)?[]:[dsNewRow(t,pvSheetDate)];
@@ -760,6 +913,15 @@ function dsPickFilter(key){
   if(key==='with')list=list.filter(e=>e.id!==own);
   if(key==='owner')list=list.filter(e=>e.id!==dsWithId);
   if(key==='guar') list=list.filter(e=>e.id!==own);
+  /* Người OT cover: chỉ trong CÙNG KHỐI (sản xuất ⇄ văn phòng không gánh ca
+     cho nhau), ai đang nghỉ ca R hôm đó xếp lên đầu vì họ rảnh để tăng ca. */
+  if(key==='cover'){
+    const myPool=poolOfId(own);
+    list=list.filter(e=>e.id!==own&&poolOf(e)===myPool);
+    const restRank=e=>codeInfo(eff(e.id,iso).code||'').cat==='rest'?0:1;
+    list.sort((a,b)=>restRank(a)-restRank(b)
+      ||String(a.name||'').localeCompare(String(b.name||''),'vi'));
+  }
   if(q)list=list.filter(e=>noAccent(e.name).includes(q)||noAccent(e.id).includes(q));
   list=list.slice(0,60);
 
@@ -798,6 +960,7 @@ function dsPickFilter(key){
 function dsPickSet(key,id){
   if(key==='owner'){dsOwnerId=id;if(dsWithId===id)dsWithId='';}
   else if(key==='with')dsWithId=id;
+  else if(key==='cover')dsCoverId=(dsCoverId===id)?'':id;   // bấm lại = bỏ chọn
   else dsGuarId=id;
   dsRenderForm();
 }
@@ -822,6 +985,8 @@ function renderDaySheet(){
      <button class="ds-x" onclick="closeDaySheet()">✕</button>
    </div>
 
+   ${(typeof evBannerHtml==='function')?evBannerHtml([iso]):''}
+
    ${rs.length?`<div class="ds-block">
      <h4>📋 Đơn của ngày này</h4>
      ${rs.map(x=>`<div class="ds-req ${x.status}">
@@ -829,6 +994,7 @@ function renderDaySheet(){
         <span class="tx"><b>${esc(REQ_LABEL[x.type]||x.type)}</b>${x.code?' · '+esc(x.code):''}
           ${reqDays(x).length>1?`<i>(${reqDays(x).length} ngày)</i>`:''}
           ${x.withId?`<i>với ${esc((empById(x.withId)||{}).name||x.withId)}</i>`:''}
+          ${x.coverId?`<i>${reqCoverChip(x)}</i>`:''}
           ${x.reason?`<i>Lý do từ chối: ${esc(x.reason)}</i>`:''}</span>
         <span class="st ${reqStatusClass(x)}">${{pending:'CHỜ',approved:reqIsProvisional(x)?'TẠM DUYỆT':'DUYỆT',rejected:'TỪ CHỐI'}[x.status]||''}</span>
         ${canCancelReq(x,id)?`<button class="btn warn sm" onclick="cancelMyReq('${x.id}')">${x.status==='approved'?'Huỷ đơn đã duyệt':'Huỷ'}</button>`:''}
@@ -979,6 +1145,7 @@ function dsFormHtml(t){
     <p class="muted" style="margin-top:4px">Nghỉ nhiều ngày rời rạc thì bấm <b>Thêm ngày</b> cho từng ngày. Tối đa ${DS_MAX_ROWS} dòng / đơn.</p>
   </div>`;
 
+  if(t==='leave')h+=dsCoverHtml();
   if(t==='wt'){
     h+=`<div class="fg"><label class="fl">Lý do</label>
       <select class="inp" onchange="dsReasonCode=this.value;dsWtReasonUI()" id="dsWtReason">
@@ -1003,6 +1170,29 @@ function dsFormHtml(t){
   </div>`;
   return h;
 }
+/* ---- Người OT cover cho đơn nghỉ phép ----
+   Nghỉ là ca trống một chỗ, nên nhân viên chỉ luôn được ai ở lại tăng ca gánh
+   giúp thì người duyệt đỡ phải đi hỏi. Không bắt buộc. Người được chọn nhận
+   thông báo có nút Đồng ý / Từ chối; từ chối cũng không chặn duyệt, chỉ hiện
+   cờ để đổi sang người khác. */
+function dsCoverHtml(){
+  const own=dsOwnerId||meId();
+  const iso=(dsRows[0]&&dsRows[0].iso)||pvSheetDate;
+  /* Gợi ý nhanh: người CÙNG KHỐI đang nghỉ ca R đúng ngày đó (js/18-advice.js) */
+  let sug=[];
+  if(typeof leaveAdvice==='function'&&iso){
+    try{sug=(leaveAdvice(own,iso,'AL8').cover||[]).filter(e=>e.id!==own).slice(0,6);}catch(e){sug=[];}
+  }
+  return dsPersonPicker('cover','🤝 Người OT cover (không bắt buộc)',dsCoverId,
+      'Người ở lại <b>tăng ca gánh ca</b> thay bạn ngày đó. Người được chọn sẽ nhận thông báo để '
+     +'<b>đồng ý hoặc từ chối</b>; người duyệt nhìn đơn là thấy luôn ai cover.')
+   + (sug.length?`<div class="cv-sug"><span class="lb">${t('Đang nghỉ ca R ngày')} ${fmtVN(iso)} — ${t('gợi ý')}:</span>
+      ${sug.map(e=>`<button type="button" class="cv-s${dsCoverId===e.id?' on':''}"
+         onclick="dsPickSet('cover','${e.id}')">${esc(shortName(e.name)||e.id)}${
+         e.team?`<em>${esc(teamShort(e.team))}</em>`:''}</button>`).join('')}
+      ${dsCoverId?`<button type="button" class="cv-s clr" onclick="dsPickSet('cover','')">✕ ${t('Bỏ chọn')}</button>`:''}
+     </div>`:'');
+}
 function dsNoteHtml(){
   return `<div class="fg"><label class="fl">Lý do / ghi chú</label>
     <textarea class="inp" rows="2" placeholder="VD: việc gia đình, khám bệnh..."
@@ -1020,6 +1210,7 @@ function dsPrintToggleHtml(){
     <p class="muted" style="margin-top:4px">${dsNoPrint
       ?'Đơn này sẽ <b>không</b> xuất hiện trong danh sách chờ in. Có thể đổi lại sau ở màn Duyệt.'
       :'Đơn sau khi duyệt sẽ nằm trong danh sách <b>chờ in</b> để nhân sự in ra ký.'}</p>
+    <p class="muted sm2">Mặc định: đơn <b>bổ sung công</b> và <b>đổi ca</b> phải in nộp nhân sự, các loại còn lại không cần in.</p>
   </div>`;
 }
 function dsWtReasonUI(){const o=$('dsWtOther');if(o)o.style.display=dsReasonCode==='other'?'':'none';}
@@ -1167,6 +1358,14 @@ function dsSubmit(t){
     newNotif({kind:'swapConfirm',to:r.withId,from:me,reqId:r.id,iso:r.from});
   }
 
+  /* Đơn nghỉ phép có chỉ định người OT cover: ghi vào đơn để người duyệt thấy
+     và gửi thông báo cho người đó bấm Đồng ý / Từ chối. Từ chối không chặn
+     duyệt — người làm đơn hoặc người duyệt đổi sang người khác được. */
+  if(t==='leave'&&dsCoverId&&dsCoverId!==empId){
+    r.coverId=dsCoverId;r.coverSt='pending';
+    newNotif({kind:'coverConfirm',to:r.coverId,from:me,reqId:r.id,iso:r.from});
+  }
+
   S.requests[r.id]=r;
   save();
   pvSheetForm=null;
@@ -1226,12 +1425,15 @@ function myPanelSum(id){
   const st=calcStats(id,days);
   const leaveDays=Object.entries(st.cnt).filter(([c])=>codeInfo(c).cat==='leave')
     .reduce((a,[c,n])=>a+(alDayValue(c)||1)*n,0);
-  const otShiftN=Object.entries(st.cnt).filter(([c])=>codeInfo(c).cat==='ot').reduce((a,[,n])=>a+n,0);
-  const catTxt={work:'Ca làm',swap:'Đổi ca',rest:'Nghỉ ca',ot:'Tăng ca',leave:'Nghỉ phép',other:'Khác'};
+  const otShiftN=otShifts(st);
+  const catTxt={work:'Ca làm',swap:'Đổi ca',rest:'Nghỉ ca',ot:'Tăng ca',leave:'Nghỉ phép',combo:'Ca kép (trực + tăng ca)',other:'Khác'};
   const rows=days.map(iso=>{
     const r=eff(id,iso),c=r.code;if(!c)return '';
     const ci=codeInfo(c),h=effHours(id,iso);
-    const hw=(ci.cat==='work'||ci.cat==='swap')?h:0, ho=ci.cat==='ot'?h:0, hl=ci.cat==='leave'?h:0;
+    const sp=comboSplitHours(c,h);
+    const hw=sp?sp.work:((ci.cat==='work'||ci.cat==='swap')?h:0),
+          ho=sp?sp.ot:(ci.cat==='ot'?h:0),
+          hl=sp?0:(ci.cat==='leave'?h:0);
     const prov=r.o&&r.o.prov;
     return `<tr class="${iso<=today?'':'fut'}" title="${esc(t(catTxt[ci.cat]||ci.cat))}">
       <td>${fmtVN(iso)} <span class="muted">${dowOf(iso)}</span></td>
@@ -1287,22 +1489,45 @@ function myPanelNtf(id){
   const list=decidedList(id);
   const confirms=pendingConfirms(id);
   const infos=myNotifs(id).filter(n=>n.kind==='info');
-  const cfBlock=confirms.length?`<div class="ds-block"><h4>⚠️ Cần bạn xác nhận (${confirms.length})</h4>
-    ${confirms.map(n=>n.kind==='schedChange'
-      ?`<div class="ntf-item schedChange fresh">
+  const cfItem=n=>{
+    if(n.kind==='schedChange')
+      return `<div class="ntf-item schedChange fresh">
          <span class="ic">🗓️</span>
          <span class="tx"><b>Đổi lịch ${fmtVN(n.iso)}</b> bởi ${esc(shortName((empById(n.from)||{}).name||n.from))}
            <i>${chip(n.oldCode||'—')} → ${chip(n.newCode||'—')}</i>
            <span class="ntf-acts"><button class="btn ok sm" onclick="confirmSchedChange('${n.id}')">✓ Xác nhận & làm đơn</button>
              <button class="btn warn sm" onclick="declineSchedChange('${n.id}')">✕ Huỷ</button></span></span>
-       </div>`
-      :`<div class="ntf-item swapConfirm fresh">
+       </div>`;
+    if(n.kind==='coverConfirm'){
+      const r=S.requests[n.reqId]||{};
+      const dl=reqDays(r).map(d=>fmtVN(d.iso)).join(', ')||fmtVN(n.iso||r.from||'');
+      return `<div class="ntf-item coverConfirm fresh">
+         <span class="ic">🤝</span>
+         <span class="tx"><b>${esc(shortName((empById(n.from)||{}).name||n.from))} nhờ bạn OT cover</b>
+           <i>Ngày ${esc(dl)}${r.note?' · “'+esc(r.note)+'”':''}</i>
+           <i class="muted">Đồng ý nghĩa là bạn nhận tăng ca gánh ca giúp — nhớ gửi đơn tăng ca riêng để được tính giờ.</i>
+           <span class="ntf-acts"><button class="btn ok sm" onclick="confirmCover('${n.id}')">✓ Đồng ý</button>
+             <button class="btn warn sm" onclick="declineCover('${n.id}')">✕ Từ chối</button></span></span>
+       </div>`;
+    }
+    return `<div class="ntf-item swapConfirm fresh">
          <span class="ic">🔄</span>
          <span class="tx"><b>Đổi ca với ${esc(shortName((empById(n.from)||{}).name||n.from))}</b>
            <i>Ngày ${fmtVN(n.iso||(S.requests[n.reqId]||{}).from)}</i>
            <span class="ntf-acts"><button class="btn ok sm" onclick="confirmSwap('${n.id}')">✓ Đồng ý</button>
              <button class="btn warn sm" onclick="declineSwap('${n.id}')">✕ Từ chối</button></span></span>
-       </div>`).join('')}</div>`:'';
+       </div>`;
+  };
+  const cfBlock=confirms.length?`<div class="ds-block"><h4>⚠️ Cần bạn xác nhận (${confirms.length})</h4>
+    ${confirms.map(cfItem).join('')}</div>`:'';
+  /* Sự kiện trên lịch (nhập tàu, bảo dưỡng…) — bấm vào mở luôn ngày đó */
+  const evs=myNotifs(id).filter(n=>n.kind==='event');
+  const evBlock=evs.length?`<div class="ds-block"><h4>📌 ${t('Sự kiện')} (${evs.length})</h4>
+    ${evs.slice(0,15).map(n=>`<div class="ntf-item event${n.seen?'':' fresh'}"${
+       n.iso?` onclick="closeMyPanel();openDaySheet('${n.iso}')"`:''}>
+       <span class="ic">📌</span>
+       <span class="tx">${esc(n.text||'')}
+         <i class="tm">${fmtDateTime(n.createdAt)}</i></span></div>`).join('')}</div>`:'';
   const infoBlock=infos.length?`<div class="ds-block"><h4>📣 Thông báo (${infos.length})</h4>
     ${infos.slice(0,15).map(n=>`<div class="ntf-item info${n.seen?'':' fresh'}">
        <span class="ic">📣</span>
@@ -1326,7 +1551,7 @@ function myPanelNtf(id){
   setTimeout(()=>markNotifSeen(id),0);
   return `
   <h3 style="margin:4px 0 10px">🔔 Thông báo</h3>
-  ${cfBlock}${infoBlock}
+  ${cfBlock}${evBlock}${infoBlock}
   <div class="ds-block"><h4>📋 Kết quả đơn (${list.length})</h4>
   ${list.length?`<div class="ntf-list">${list.map(item).join('')}</div>`
     :'<p class="muted">Chưa có đơn nào được duyệt hay từ chối.</p>'}</div>
@@ -1341,8 +1566,10 @@ function myPanelOt(id){
 
   const done=[];
   days.forEach(iso=>{
-    const c=eff(id,iso).code;
-    if(c&&codeInfo(c).cat==='ot')done.push({iso,code:c,h:effHours(id,iso)});
+    const c=eff(id,iso).code;if(!c)return;
+    const sp=comboSplitHours(c,effHours(id,iso));
+    if(sp)done.push({iso,code:c,h:sp.ot});        // ca kép: chỉ phần tăng ca
+    else if(codeInfo(c).cat==='ot')done.push({iso,code:c,h:effHours(id,iso)});
   });
   const wait=Object.values(S.requests||{}).filter(r=>r.empId===id&&r.type==='ot'&&r.status==='pending');
   const rej =Object.values(S.requests||{}).filter(r=>r.empId===id&&r.type==='ot'&&r.status==='rejected').slice(0,5);
@@ -1355,8 +1582,10 @@ function myPanelOt(id){
   let hYear=0;const yr=String(new Date().getFullYear());
   ms.forEach(m=>daysOfPeriod(m).forEach(iso=>{
     if(iso.slice(0,4)!==yr||iso>tNow)return;
-    const c=eff(id,iso).code;
-    if(c&&codeInfo(c).cat==='ot')hYear+=effHours(id,iso);
+    const c=eff(id,iso).code;if(!c)return;
+    const sp=comboSplitHours(c,effHours(id,iso));
+    if(sp)hYear+=sp.ot;
+    else if(codeInfo(c).cat==='ot')hYear+=effHours(id,iso);
   }));
 
   return `
@@ -1410,9 +1639,11 @@ function myPanelReq(id){
              : reqDays(r).map(d=>fmtVN(d.iso)+(d.code?' ('+d.code+')':'')).join(' · ')}</i>
         ${r.withId?`<i>Đổi ca với ${esc((empById(r.withId)||{}).name||r.withId)}</i>`:''}
         ${r.byId&&r.byId!==r.empId?`<i>✍️ ${r.byId===id?'Bạn khai hộ '+esc((empById(r.empId)||{}).name||r.empId):'Khai hộ bởi '+esc((empById(r.byId)||{}).name||r.byId)}</i>`:''}
+        ${r.coverId?`<i>${reqCoverChip(r)}</i>`:''}
         ${r.note?`<i>${esc(r.note)}</i>`:''}${r.reason?`<i>Lý do: ${esc(r.reason)}</i>`:''}</span>
       <span class="st ${reqStatusClass(r)}">${{pending:'CHỜ',approved:reqIsProvisional(r)?'TẠM DUYỆT':'DUYỆT',rejected:'TỪ CHỐI'}[r.status]||esc(r.status)}</span>
       <span class="act">
+        ${canSetCover(r,id)?`<button class="btn sec sm" onclick="openCoverPicker('${r.id}')" title="${t('Người OT cover')}">🤝</button>`:''}
         ${canCancelReq(r,id)?`<button class="btn warn sm" onclick="cancelMyReq('${r.id}');renderMyPanel()">${r.status==='approved'?'Huỷ đơn':'Huỷ'}</button>`:''}
         ${r.status==='approved'?`<button class="btn sec sm" onclick="printOne('${r.id}')">🖨️</button>`:''}
       </span>

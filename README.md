@@ -656,3 +656,349 @@ bản ghi máy này còn giữ mà máy chủ đã bỏ (`_fbSeen`); máy này m
 | `save()` khi không có gì đổi | 344 KB | **0 KB** |
 
 100 lượt sửa/ngày × 8 máy: **269 MB/ngày → 0,26 MB/ngày** (chưa kể lần tải đầu).
+
+---
+
+## v5.4 — Người OT cover · thanh lọc màn Duyệt gộp lại · dòng đơn duyệt-ngay
+
+### 1. Chế độ in mặc định theo LOẠI ĐƠN
+`REQ_MUST_PRINT=['wt','swap']` + `defaultNoPrint(type)` ở `js/08-requests.js`.
+Chỉ **bổ sung công** và **đổi ca** là giấy tờ phải nộp nhân sự nên mặc định vào
+hàng **chờ in**; nghỉ phép / tăng ca / đổi mã ca / đi trễ / làm liên tục mặc
+định **không cần in**. `dsForm()` (13-portal) đặt `dsNoPrint=defaultNoPrint(t)`
+— người khai vẫn bấm đổi được ngay trong form, quản lý đổi ở màn Duyệt bằng
+`apprToggleNoPrint()` / `pbToggleNoPrint()`. Không đụng schema: vẫn là cờ
+`r.noPrint` như cũ.
+
+### 2. Thanh lọc màn Duyệt — hết trùng lặp
+Trước đây kỳ công khai ở **hai** chỗ (thanh ◀▶ và select trong "Bộ lọc khác"),
+chip lọc in cũng dựng **hai** lần. Nay:
+
+| Hàng | Nội dung |
+|---|---|
+| `.ab-period` | ◀ · **một** dropdown kỳ công (`.ab-per-sel`, có cả *Tất cả các kỳ* và *Khoảng ngày tự chọn…*) · ▶ · chip phạm vi (Kỳ hiện tại / Kỳ này + kỳ trước / Cả năm nay) |
+| `.ab-range` | chỉ hiện khi chọn *Khoảng ngày tự chọn…* |
+| `.ab-chips` | chip trạng thái (có đếm) |
+| `.ab-chips` | chip in: Mọi đơn / ○ Chờ in / 🚫 Không in / 🖨️ Đã in — **một lần duy nhất** |
+| `.ab-tools` | ô tìm tên · select loại đơn · ↺ Bỏ lọc (chỉ hiện khi đang lọc) · ⚙ Công cụ dữ liệu (admin) · 🖨️ In đơn |
+| `.ab-adv` | gập lại: xuất Excel / xuất & xoá / xoá theo năm |
+
+⚠️ **Đừng gắn `admin-only` lên `.ab-adv`** — `applyRoleUI()` ghi thẳng
+`el.style.display` nên panel gập sẽ bị bung ra với tài khoản quản trị. Gắn
+`admin-only` cho từng nút bên trong.
+
+### 3. Dòng đơn hiện sẵn thông tin quyết định (PC)
+`apprQuickHtml(r)` → khối `.ar-sum.pc-only` nằm **ngoài** `.ar-d`, nên trên máy
+tính nhìn vào là bấm ✓ được luôn:
+
+* `apprDayBrief()` — mỗi ngày một viên `.aq-d`: ngày + thứ + **ca cũ → ca mới**
+  (đổi ca là `A ⇄ B`, tăng ca kèm mốc giờ + số giờ). Quá `AQ_MAX_DAYS=4` ngày
+  thì gộp `+N ngày`.
+* `apprMetric()` — con số quyết định: `x ngày phép` (AL4 = 0,5) / `x h tăng ca`
+  / số ngày khai.
+* Lý do–ghi chú của nhân viên, lý do bổ sung công + người bảo lãnh, người OT cover.
+
+Bung `▾` giờ chỉ còn **thông tin phụ**: chuỗi duyệt nhiều cấp, chi tiết đầy đủ,
+cảnh báo quân số, Trợ lý duyệt đơn, mốc thời gian và các nút phụ.
+Điện thoại vẫn giữ dòng gọn như cũ (`.ar-sum` mang `pc-only`), chỉ thêm badge
+`🤝` nhỏ (`.mob-only`) khi đơn có người cover.
+
+### 4. Người OT cover cho đơn nghỉ phép
+Lưu trên đơn: **`r.coverId`** + **`r.coverSt`** = `pending | confirmed | declined`.
+
+* **Khai đơn**: form nghỉ phép có `dsCoverHtml()` — ô tìm người
+  (`dsPersonPicker('cover',…)`, chỉ **cùng khối**, ai đang nghỉ ca **R** hôm đó
+  xếp lên đầu) + dải gợi ý nhanh lấy từ `leaveAdvice(...).cover` (18-advice).
+  Không bắt buộc.
+* **Thông báo**: gửi `newNotif({kind:'coverConfirm'})`. `CONFIRM_KINDS` nay gồm
+  `schedChange · swapConfirm · coverConfirm` → tự vào mục *Cần bạn xác nhận* ở
+  chuông 🔔 và được `notifUnseenCount()` đếm.
+* **Xác nhận**: `confirmCover(nid)` / `declineCover(nid)` chỉ đặt cờ + báo lại
+  người làm đơn. **KHÔNG tự sinh đơn tăng ca** — người cover muốn được tính giờ
+  thì gửi đơn tăng ca như thường (đã ghi rõ trong lời nhắc).
+* **Từ chối KHÔNG chặn duyệt** — chỉ hiện cờ đỏ `.cvw.declined`. Người làm đơn
+  *hoặc* người duyệt bấm 🤝 mở `openCoverPicker()` đổi sang người khác:
+  `reqSetCover(rid,newId,byId)` gỡ yêu cầu đang chờ của người cũ, báo người cũ
+  đã được gỡ vai trò, gửi yêu cầu mới cho người mới. Quyền: `canSetCover()`.
+* **Hiển thị**: `reqCoverChip()` dùng chung ở dòng đơn màn Duyệt, chi tiết đơn
+  (`reqDetail`), *Đơn của tôi* và sheet theo ngày. Bảng Tổng quan thêm 2 cờ rủi
+  ro `cvw` (chờ xác nhận) và `cvno` (đã từ chối) trong `AS_FLAGS`/`asFlagMatch`.
+* `cancelReq()` dọn luôn thông báo `coverConfirm` của đơn bị xoá.
+
+Modal chọn người: `#coverMask` / `#coverBody` trong `index.html`.
+
+### 5. Ghi chú vận hành
+* i18n: +39 khoá EN cuối `I18N_EN`. 8 khoá trùng trong file là **tồn tại từ
+  trước**, không phải do bản này.
+* `00-icons.js`: thêm `🤝→users`, `🙅→hand`.
+* **Cache bump `?v=54`** trong `index.html` — mỗi lần sửa code phải tăng số này.
+* Verify: 2 harness Node (`defaultNoPrint`, vòng đời cover, `apprQuickHtml`,
+  bộ lọc in) — 50/50 kiểm tra đạt.
+
+---
+
+## v5.5 — Ẩn sub-tab Tổng quan/Biểu đồ · bấm tên xem tổng hợp cả kỳ
+
+### 1. Tab Duyệt chỉ còn 3 sub-tab
+`APPR_TABS_OFF=['sum','chart']` + `apprTabOn(v)` ở `js/08-requests.js`.
+📊 **Tổng quan** và 📈 **Biểu đồ** **hiện tại chưa sử dụng** nên đã ẩn khỏi thanh
+sub-tab; thanh còn *📋 Danh sách đơn · 🗂 Nhật ký tăng ca · 🧾 Bảng công tổng hợp*.
+
+* **Code vẫn giữ nguyên** — `js/17-appr-sum.js` (`asRender`, `AS_FLAGS`,
+  `asFlagMatch`) và `repChartPanel()` không bị xoá. **Bật lại = xoá tên khỏi
+  `APPR_TABS_OFF`**, không phải sửa gì thêm.
+* `apprTab` đọc từ localStorage cũng đi qua `apprTabOn()`, và `renderAppr()` tự
+  đẩy về `'list'` nếu tab đang lưu đã bị tắt → người dùng từng mở Tổng quan hôm
+  trước không bị màn trắng.
+* Thanh sub-tab để lại một ghi chú mờ `.aptab-off`
+  *"📊 Tổng quan · 📈 Biểu đồ: hiện tại chưa sử dụng"* (ẩn trên điện thoại).
+* Bộ lọc theo cờ rủi ro (`apprFilter.flag`) vẫn chạy bình thường.
+
+### 2. Bảng công tổng hợp — bấm tên mở tổng hợp cả kỳ của người đó
+`openEmpSum(id)` / `renderEmpSum()` / `closeEmpSum()` trong `js/15-report.js`,
+modal `#empSumMask` / `#empSumBody` (`.modal.wide`, 760px) trong `index.html`.
+Cột **Họ tên** ở bảng PC và tên trên **thẻ mobile** đều thành nút `.st-nm`.
+
+Nội dung popup (tất cả tính từ state đã có, **không tải thêm Firebase**):
+
+1. Đầu trang: nhóm · họ tên · vị trí · mã NV · ngày vào làm.
+2. Thanh kỳ công riêng `esYm` với ◀ ▶ + *Kỳ hiện tại* (`esShiftYm`,
+   `esPeriod()` rơi về `repYm` khi để trống) — **không đụng** bộ lọc của bảng.
+3. 4 thẻ: Giờ công · Giờ tăng ca (kèm số lần) · Nghỉ phép (ngày, AL4 = 0,5) ·
+   Phép năm còn lại.
+4. Bảng đếm ca D/N/O/R/AL8/AL4/NP/OFF/Ca OT + dải chip mọi mã ca xuất hiện.
+5. Nhắc số giờ tăng ca **đang chờ duyệt** (`otSummary`).
+6. Danh sách **các lần tăng ca** trong kỳ (ngày · mã · số giờ thật).
+7. **Đơn trong kỳ** — mọi loại, mọi trạng thái, kể cả đơn đứng tên người khác mà
+   người này là bên đổi ca; hiện cả người OT cover. Người duyệt có nút
+   *Mở trong Danh sách đơn ›* → `esGoRequests()` đặt `apprFilter.q` = tên,
+   `ym` = kỳ đang xem rồi nhảy sang sub-tab Danh sách.
+8. **Chi tiết từng ngày**: ngày · mã ca (ô `~` = tạm duyệt, `⇄X` = khác lịch
+   chuẩn) · giờ công / OT / phép + hàng tổng.
+
+Ghi chú kỹ thuật: `SCHEDBG` / `SCHEDTXT` đọc qua `typeof … !== 'undefined'` để
+hàm chạy được cả khi nạp thiếu `06-calendar.js` (harness test).
+
+### 3. Ghi chú vận hành
+* i18n: +12 khoá EN. 8 khoá trùng trong file vẫn là tồn tại từ trước.
+* **Cache bump `?v=55`**.
+* Verify: 3 harness Node — 80/80 kiểm tra đạt.
+
+## v5.6 — Tách Kỹ sư/Operator ở Nhân lực · Đặt cơm tăng ca
+
+### 1. Nhân lực theo ngày tách **Kỹ sư** và **Operator**
+
+Đủ đầu người chưa chắc đã đủ *đúng loại* người: một ca phải có kỹ sư (Field
+Engineer ngoài hiện trường + DCS Boardman trong phòng điều khiển) và operator
+vận hành — ba operator không thay được một kỹ sư. Nên bảng Nhân lực nay đếm
+tách hai nhóm này.
+
+* `js/01-core.js` — `POSG_ENG`/`POSG_OPER`/`POSG_OTHER`, `POSG_LABEL/FULL/ICON/COLOR`,
+  **`posGroupOf(e)`** (field_eng + boardman → `eng`, operator → `oper`, còn lại →
+  `other`; chưa khai vị trí thì rơi về `e.role` cũ) và **`splitEO(list)`** chia
+  một mảng nhân viên thành 3 rổ.
+* `js/15-report.js` `repManpower()` (PC) — pill quân số D/N/O khối sản xuất có
+  thêm `<em class="mpp-eo">🛠️n ⚙️n</em>`; bung chi tiết thì `lineEO()` xếp tên
+  thành 2 hàng con Kỹ sư / Operator thay vì một dãy tên liền.
+* `js/06-calendar.js` `renderCalMpList()` (điện thoại) — `calMpEoTag()` gắn chỉ
+  số vào pill, `calMpNamesEO()` tách tên theo nhóm vị trí.
+* CSS `.mpp-eo` `.mp-eo-sub` `.cmp-eot` `.cmp-eo` ở cuối `css/ui.css`.
+
+Ma trận lịch, Bảng công tổng hợp và Nhân sự trong ngày **giữ nguyên** — user chỉ
+yêu cầu tách ở Nhân lực theo ngày.
+
+### 2. Cơm phát sinh — `js/19-meal.js` (nạp sau 18-advice)
+
+Công ty nấu 4 bữa cố định: **06:00 sáng · 12:00 trưa · 18:00 tối · 22:00 khuya**.
+Nhà bếp đặt cơm **một lần từ đầu kỳ theo BẢNG LỊCH CHUẨN** (`S.base`):
+
+| Ca | Khung giờ | Suất bếp đã đặt |
+|----|-----------|-----------------|
+| D / SD | 08:00–20:00 | trưa + tối |
+| N / SN | 20:00–08:00 | khuya + **sáng NGÀY HÔM SAU** |
+| O / SO | 08:00–17:00 | trưa |
+| R, nghỉ phép | — | không có |
+
+Quy tắc gói gọn trong `SHIFT_WIN` + `mealsInWin()`: **một mốc bữa ăn nằm trong
+khung giờ ca thì có suất** (`abs >= start && abs < end` — chạm đúng giờ bắt đầu
+vẫn tính, kết thúc đúng mốc thì không).
+
+**Bài toán = so LỊCH CHUẨN với LỊCH THỰC TẾ.** Trong kỳ phát sinh tăng ca, đổi
+ca, nghỉ phép đột xuất, quản lý sửa tay ô lịch… nên lịch thực tế (`base + over`)
+khác lịch chuẩn. Chênh lệch chính là phần phải báo bếp — **hai chiều**:
+
+* thực tế CÓ mà chuẩn KHÔNG → **đặt thêm** (`d:+1`)
+* chuẩn CÓ mà thực tế KHÔNG → **báo bớt** (`d:-1`), bếp khỏi nấu
+
+Ví dụ: chuẩn ca D mà xin nghỉ phép cả ngày → **bớt 2 suất**; chuẩn nghỉ ca R mà
+vào trực thay ca D → **thêm 2 suất**; chuẩn ca D mà đổi sang ca N → **bớt trưa +
+tối, thêm khuya + sáng hôm sau**; đang ca O mà tăng ca 17–20 → **thêm 1 suất tối**.
+
+Các hàm chính:
+
+* `plannedMealsOf(empId,iso)` — suất theo **lịch chuẩn** (`S.base`, bếp đã đặt).
+* `actualMealsOf(empId,iso,inclPending)` — suất theo **lịch thực tế** (`eff()`)
+  **cộng** các lần tăng ca. Ô lịch bị mã OT ghi đè thì ca nền vẫn lấy ở `S.base`.
+* `otWinFromRow(d)` — khung giờ một dòng OT trong đơn (`timeIn/timeOut/isoEnd`;
+  bỏ trống ngày kết thúc mà giờ ra ≤ giờ vào thì hiểu là qua nửa đêm). Dòng
+  không có mốc giờ thì suy theo `OT_CODE_WIN` (OTL 12–13, OT2 18–20, OT3 17–20,
+  OTD 08–20, OTN 20–08).
+* `otIndex()` — **đánh chỉ mục `S.requests` theo khoá `mã NV|ngày`**, nhớ theo
+  `S.rev`. Không có chỉ mục thì badge (vẽ lại sau mỗi render) phải quét toàn bộ
+  đơn cho từng người từng ngày. **Dữ liệu về từ máy khác không đi qua `save()`
+  nên `S.rev` không đổi → `fbTouch()` trong `02-storage.js` gọi `mealResetCache()`.**
+* `mealDiffOf(empId,srcDays,inclPending)` — hợp hai tập trên rồi lấy phần chỉ
+  thuộc một bên. Mỗi dòng ghi kèm `planCode`/`realCode` để biết vì sao lệch.
+* `mealPlan({from,to,team,onlyMe,inclPending})` → `{days, byDay[iso][bữa], rows,
+  add, cut, nPend}`. Ngày **nguồn** quét thêm hôm trước `from` (bắt ca đêm vắt
+  sang) và hiện thêm ngày sau `to` nếu có suất rơi vào đó.
+* `mealCell(P,iso,v)` → `{list, add, cut, pend}`; `mealAddOf()` cộng cả phần sửa tay.
+
+**Popup**: nút `🍚 Cơm phát sinh` + badge `#mealBdg` (đếm cả thêm lẫn bớt) cuối
+thanh `.cal-bar` (tab Lịch, mọi quyền đều mở được) → modal `#mealMask`/`#mealBody`.
+Gồm thanh khoảng ngày (mặc định **từ hôm nay tới hết kỳ**, không lùi về quá khứ),
+lọc nhóm / *Chỉ mình tôi* / *Tính cả đơn chờ duyệt*, 5 thẻ tổng (số `+` xanh trên,
+số `−` đỏ dưới), bảng **ngày × 4 bữa** (bấm ngày bung danh sách ai thêm/bớt bữa
+nào, kèm `chuẩn → thực tế`), nút **＋ −** sửa tay từng ô, và **📋 Copy tóm tắt
+(2 mục CAN DAT THEM / CAN BOT) / 📤 Xuất Excel (2 sheet) / 🖨️ In**.
+
+> **KHÔNG ghi lên Firebase** — user chọn bản chỉ tính & xem, schema không đổi.
+> Số sửa tay (`mealAdj`) chỉ sống trong phiên, đóng app là mất; chốt xong phải
+> Copy / Xuất Excel gửi bếp.
+
+### 3. Icon & i18n
+
+`js/00-icons.js` thêm `sunrise/sun/sunset/moon/utensils/bowl` và map
+`🌅 🍚 🌆 🌙 🍽`. `js/14-i18n.js` thêm **32 khoá EN** (`Kỹ sư`, `Khác`,
+`chờ duyệt` đã có sẵn từ trước và dùng lại được). Cache bump **`?v=57`**.
+
+### 4. Kiểm thử
+
+3 harness Node (không cần trình duyệt, xem thư mục tạm của phiên làm việc):
+
+* `meal-harness.js` — **50 kiểm tra**: suất chuẩn theo ca; các kịch bản OT (ca O
+  + OT 17–20, ca D + OT 20–24, ngày nghỉ R + OT ca đêm, ca N hôm trước vắt sang,
+  chạm/không chạm mốc bữa); nhiều lần OT trong ngày; đơn chờ duyệt / bị từ chối;
+  ô lịch OT điền tay; **so chuẩn ↔ thực tế** (nghỉ phép → bớt, đổi ca D→N → vừa
+  bớt vừa thêm, trực thay ca R→D → thêm); `mealPlan` đếm hai chiều & lọc
+  nhóm/cá nhân; `posGroupOf`/`splitEO`.
+* `meal-render-smoke.js` — **24 kiểm tra** dựng HTML popup, bung chi tiết ngày,
+  sửa tay, tóm tắt văn bản 2 mục, bộ lọc, badge, chiều báo bớt.
+* `mp-render-smoke.js` — **7 kiểm tra** bảng Nhân lực có tách Kỹ sư/Operator.
+
+Sandbox vẫn không chạy được trình duyệt → phần hiển thị phải mở thật trên máy để
+mắt nhìn.
+
+---
+
+## v5.8 — Ca kép · lịch tuần trên điện thoại · sự kiện trên lịch · thu hồi thông báo
+
+Bốn việc trong một bản. Cache bump `?v=58` (nhớ tăng số này mỗi lần sửa code,
+nếu không trình duyệt vẫn giữ bản cũ).
+
+### 1. Mã ca kép `O+N` và `D+N`
+
+Trước đây người vừa trực ca O vừa tăng ca đêm chỉ ghi được `OTN` vào ô lịch —
+nhìn vào không biết hôm đó họ đã làm ca O. Nay có hai mã ghép:
+
+| Mã | Nghĩa | Giờ mặc định |
+|----|-------|--------------|
+| `O+N` | trực ca hành chính O rồi tăng ca đêm | 20h (8 công + 12 tăng ca) |
+| `D+N` | trực ca ngày D rồi tăng ca đêm | 24h (12 công + 12 tăng ca) |
+
+- **Nhìn ra ngay**: `chip()` vẽ chip **hai nửa** `O|N`, mỗi nửa giữ màu của ca
+  tương ứng; ô trong bảng lịch dùng nền `linear-gradient` chia đôi chéo
+  (`cellStyle`, `SCHEDBG['O+N']`). CSS ở `css/ui.css` mục `.cc.combo`.
+- **Loại mã riêng `cat:'combo'`** — cố ý KHÔNG dùng `'work'` cũng không dùng
+  `'ot'`, để mọi chỗ cộng giờ không nhầm cả 20h thành giờ công.
+  `comboSplitHours(code,total)` tách lại: phần công lấy trọn giờ ca chuẩn,
+  phần dôi ra tính tăng ca. Quản lý ghi tổng thực tế 14h → 8h công + 6h OT.
+- **Helper ở `01-core.js`**: `comboOf` · `isCombo` · `comboSplitHours` ·
+  `workCodeOf` (mã ca chuẩn của ô) · `otCodeOf` (mã tăng ca của ô) ·
+  `cntShift(cnt,'D'|'N'|'O')` (đếm ca, gộp `SD/SN/SO` và ca kép).
+- **Đã sửa theo ở**: `calcStats` + `otShifts` (10-account), `mpBuckets` /
+  `mpBucketsByPool` qua `mpPut()` — ca kép **đếm hai lần có chủ đích**: vẫn là
+  một đầu người ở ca chuẩn VÀ vẫn nằm trong danh sách tăng ca; `baseShiftOf`
+  (08-requests) trả nửa ca chuẩn; `otSummary` / `myPanelOt` / `myPanelSum`
+  (13-portal); `repStatsAll` / `esBody` / `otlogRowsForPeriod` (15-report);
+  `baseShiftWin` / `otBlocksOf` / `actualMealsOf` (19-meal — ca kép vẫn tính đủ
+  suất cơm của cả ca chuẩn lẫn ca tăng); tổng D/N/O ở chân ma trận và bản Excel.
+- **Không lọt vào form gửi đơn**: `dsCodesFor()` lọc theo `cat` nên `combo`
+  tự động bị loại — mã ghép chỉ quản lý chọn được ở hộp sửa ô lịch.
+- **Khi in**: biểu mẫu công ty không có ký hiệu ghép. Nhân viên bấm xác nhận ô
+  ca kép thì `inferReqFromChange()` sinh **đơn Bổ sung công 2 dòng** (một dòng
+  ca chuẩn, một dòng ca tăng) đúng như bản Excel gốc.
+
+> Thêm tổ hợp khác (VD `N+D`) chỉ cần thêm 1 dòng vào `COMBO_CODES`,
+> `DEFAULT_CODES`, `DEFAULT_HOURS` và `SCHEDBG`/`SCHEDTXT` — phần còn lại tự chạy.
+
+### 2. Lịch trên điện thoại đổi sang LỊCH TUẦN dạng lưới
+
+Bỏ hẳn danh sách theo ngày (`renderCalMpList`, `#calMpBox`) — quân số từng ngày
+đã có sub-tab **👥 Nhân lực** lo. Thay bằng `renderCalWeekGrid()` / `#calWkGrid`:
+
+- **Lưới người × 7 ngày**: hàng = từng người, cột = từng ngày. Nhìn ngang biết
+  lịch cả tuần của mình, nhìn dọc biết hôm đó cả nhóm ai trực ca gì.
+- **Mặc định đúng nhóm của người đăng nhập** (`calWkDefaultTeams()`); người
+  không có nhóm thì mở nhóm đầu danh sách.
+- **Chuyển tuần** `◀ ▶` + nút *Tuần này* (`calWkShift` / `calWkToday`,
+  state `calWkMon`).
+- **Xem thêm nhóm khác**: hàng chip nhóm cuộn ngang, chạm để thêm/bớt
+  (`calWkToggleTeam`, luôn chừa lại ít nhất 1 nhóm) + nút *Tất cả* / *Nhóm của tôi*.
+- Chạm ô: quản lý ở chế độ *Thực tế* → sửa ca; nhân viên → mở sheet ngày.
+- Thanh `cal-bar` **ẩn chọn kỳ / khoảng ngày / nhóm khi ở điện thoại**
+  (`calMonth`, `calRange`, `calGroupFilter`, `calPrevBtn`, `calNextBtn`) vì lưới
+  tuần đã có thanh điều hướng riêng — tránh hai chỗ điều khiển đá nhau.
+
+### 3. Sự kiện trên lịch — `js/20-events.js`, nhánh Firebase `events`
+
+Ngày đặc biệt (nhập tàu, bảo dưỡng, kiểm định…) đánh dấu thẳng trên lịch thay vì
+nhắn tay từng nhóm. Nút **📌 Sự kiện** (`admin-only`) ở thanh `cal-bar`.
+
+- **Chọn ngày bằng lịch nhỏ**: chạm ngày để chọn/bỏ chọn, nút *Chọn cả dải*
+  (bấm 2 ngày rồi lấp đầy khoảng giữa), *Bỏ chọn hết*. Ngày liên tục lưu gọn
+  bằng `from`/`to`; ngày rời rạc lưu mảng `days`.
+- **Một màu duy nhất** cho mọi sự kiện (`--evc`) — yêu cầu chỉ cần khác ngày
+  thường, không phân loại. Hiện ở: ma trận máy tính (`th.evday`), lưới tuần
+  điện thoại (`.cwg-row.hd .c.ev`), lịch trang chính nhân viên (`.pv-d.evday`
+  + nhãn tên sự kiện), dải nhắc `evBannerHtml()` ở trang chính và sheet ngày.
+- **Chọn người nhận từng lần** (`EV_SCOPE`): *Tất cả mọi người* / *Chỉ nhóm có
+  làm việc ngày đó* (`evIsWorkingCode` — có ca làm, kể cả tăng ca) / *Chọn nhóm
+  cụ thể*. Trước khi lưu, màn hình hiện luôn **sẽ gửi tới bao nhiêu người** và
+  nhóm nào đang có người làm việc trong khoảng ngày đó.
+- **Sửa & xoá thu hồi thông báo**: `evSendNotifs()` LUÔN gọi `evRevokeNotifs()`
+  trước, nên lưu lại không bao giờ đẻ ra hai thông báo lệch nhau; `evDelete()`
+  xoá sự kiện kèm toàn bộ thông báo của nó.
+- Thông báo mang `kind:'event'`, `status:'sent'` (không phải `'pending'`) để
+  `pruneOldNotifs()` dọn được sau ~2 kỳ. Chuông đếm qua `SEEN_KINDS`.
+- Bộ đệm `evIndex()` khoá theo `S.rev`; `evResetCache()` gọi trong `fbTouch()`.
+
+### 4. Thu hồi thông báo khi trả lịch về ca chuẩn
+
+Lỗi cũ: quản lý đổi ca của một người → nhân viên nhận thông báo xác nhận; quản
+lý đổi ý, trả ô về ca chuẩn → **thông báo vẫn nằm đó**, nhân viên xác nhận nhầm
+một thay đổi không còn tồn tại.
+
+`setCell()` nay so mã sau khi sửa với **ca chuẩn** (`S.base`), bằng nhau thì gọi
+`revokeSchedChange(empId,iso,stdCode)` ở `13-portal.js` — bắt cả hai đường:
+bấm *↩︎ Về ca chuẩn* lẫn gán tay đúng mã chuẩn.
+
+| Trạng thái thông báo | Xử lý |
+|---|---|
+| `pending` (chưa xác nhận) | **xoá hẳn, im lặng** — không làm phiền ai |
+| `confirmed` (đã xác nhận) | chuyển `revoked` + **gửi thông báo thu hồi**, nhắc nhân viên vào *Đơn của tôi* huỷ đơn đã gửi |
+
+### Kiểm thử
+
+* `_test/harness-v58.js` — **42 kiểm tra** logic: tách giờ ca kép, quân số theo
+  ngày, suất cơm, ngày/người nhận/thu hồi của sự kiện, hai nhánh thu hồi thông báo.
+* `_test/render-v58.js` — **23 kiểm tra** dựng HTML thật (DOM giả) cho chip ca
+  kép, lưới lịch tuần, ma trận có ngày sự kiện, màn quản lý sự kiện, `setCell`.
+
+```bash
+cd LPGT-CongCa-Web && node _test/harness-v58.js && node _test/render-v58.js
+```
+
+i18n: **+60 khoá EN** ở cuối `I18N_EN` (đã kiểm không trùng — 8 khoá trùng còn
+lại là tồn tại từ trước). Sandbox vẫn không chạy được trình duyệt → phần hiển thị
+phải mở thật trên máy để mắt nhìn.

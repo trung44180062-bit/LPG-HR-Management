@@ -16,7 +16,8 @@ function exportStats(){
   if(!ym){toast(t('Chưa có kỳ nào'));return;}
   const p=periodFor(ym);
   const rows=statRows(ym,(typeof repGroup!=='undefined')?repGroup:'__all');
-  const cD=s=>(s.cnt.D||0)+(s.cnt.SD||0),cN=s=>(s.cnt.N||0)+(s.cnt.SN||0),cO=s=>(s.cnt.O||0)+(s.cnt.SO||0);
+  /* Ca kép cộng vào đúng cột ca chuẩn của nó (O+N → cột Ca O, D+N → cột Ca D) */
+  const cD=s=>cntShift(s.cnt,'D'),cN=s=>cntShift(s.cnt,'N'),cO=s=>cntShift(s.cnt,'O');
   const aoa=[['LPGT CAVERN — THỐNG KÊ CÔNG CA',p.label],[],
     ['Nhóm','Mã NV','Họ tên','Vị trí','Ca D','Ca N','Ca O','R','AL8','AL4','NP','OFF','Ca OT','Giờ công','Giờ OT','Giờ phép']];
   rows.forEach(({e,s})=>{
@@ -38,7 +39,7 @@ function exportStats(){
 /* =================== KHAI BÁO GIỜ + TÀI KHOẢN (tab Dữ liệu) =================== */
 function renderHoursTbl(){
   const tb=$('hoursTbl');if(!tb)return;
-  const catName={work:'Ca làm việc',rest:'Nghỉ ca',leave:'Nghỉ phép',ot:'Tăng ca',swap:'Đổi ca',other:'Khác'};
+  const catName={work:'Ca làm việc',rest:'Nghỉ ca',leave:'Nghỉ phép',ot:'Tăng ca',swap:'Đổi ca',combo:'Ca kép',other:'Khác'};
   let h='<thead><tr><th>Mã</th><th>Diễn giải</th><th>Loại</th><th>Giờ/ngày</th><th></th></tr></thead><tbody>';
   allCodes().forEach(c=>{
     const cust=(S.settings.customCodes||[]).some(x=>x.c===c.c);
@@ -194,7 +195,7 @@ function exportXlsx(){
   const tD=['','','','','Σ Ca ngày (D)',''];const tN=['','','','','Σ Ca đêm (N)',''];const tO=['','','','','Σ Văn phòng (O)',''];
   days.forEach(iso=>{
     let cD=0,cN=0,cO=0;
-    activeEmps().forEach(e=>{const c=what==='eff'?eff(e.id,iso).code:(S.base[e.id]&&S.base[e.id][iso]||'');
+    activeEmps().forEach(e=>{const c=workCodeOf(what==='eff'?eff(e.id,iso).code:(S.base[e.id]&&S.base[e.id][iso]||''));
       if(c==='D'||c==='SD'||c==='OTD')cD++;else if(c==='N'||c==='SN'||c==='OTN')cN++;else if(c==='O'||c==='SO')cO++;});
     tD.push(cD);tN.push(cN);tO.push(cO);
   });

@@ -11,7 +11,20 @@ const WT_REASONS=[
   {v:'other',vn:'Lý do khác',en:'Others'}
 ];
 const SHIFT_HOURS={D:['08:00','20:00'],N:['20:00','08:00'],O:['08:00','17:00']};
+/* ------------------------------------------------------------
+   MẶC ĐỊNH CHẾ ĐỘ IN THEO LOẠI ĐƠN
+   Theo quy định nộp giấy tờ của công ty, chỉ hai loại đơn dưới đây bắt buộc
+   in biểu mẫu nộp nhân sự nên mặc định vào hàng CHỜ IN; các loại còn lại
+   mặc định "không cần in" (vẫn duyệt & ghi lịch bình thường).
+   Người khai luôn đổi lại được ngay trong form, quản lý đổi được ở màn Duyệt.
+   ------------------------------------------------------------ */
+const REQ_MUST_PRINT=['wt','swap'];
+function defaultNoPrint(type){return !REQ_MUST_PRINT.includes(type);}
 function baseShiftOf(code){
+  /* Ca kép lấy theo nửa CA CHUẨN — người trực O rồi tăng ca đêm thì
+     buổi làm chính của họ hôm đó vẫn là ca O. */
+  const cb=(typeof comboOf==='function')&&comboOf(code);
+  if(cb)code=cb.work;
   if(code==='D'||code==='SD'||code==='OTD')return 'D';
   if(code==='N'||code==='SN'||code==='OTN')return 'N';
   if(code==='O'||code==='SO')return 'O';
@@ -51,6 +64,55 @@ function reqDaySet(r){
 }
 /* Người đứng đơn thực sự (đơn khai hộ: r.byId là người bấm gửi) */
 function reqWriter(r){return r.byId&&r.byId!==r.empId?r.byId:r.empId;}
+
+/* ============================================================
+   NGƯỜI OT COVER (đơn nghỉ phép)
+   Nhân viên xin nghỉ có thể chỉ luôn người ở lại tăng ca gánh ca cho mình.
+   Lưu ở đơn: r.coverId (mã NV) + r.coverSt = pending | confirmed | declined.
+   Người được chọn nhận thông báo kind='coverConfirm' có nút Đồng ý / Từ chối.
+   Từ chối KHÔNG chặn duyệt — chỉ hiện cờ đỏ để người duyệt (hoặc người làm
+   đơn) đổi sang người khác bằng reqSetCover().
+   ============================================================ */
+const COVER_ST={pending:{ic:'⏳',lb:'chờ xác nhận',cls:'pending'},
+                confirmed:{ic:'✓',lb:'đã nhận cover',cls:'confirmed'},
+                declined:{ic:'✕',lb:'từ chối cover',cls:'declined'}};
+function reqCoverName(r){
+  if(!r||!r.coverId)return '';
+  const e=empById(r.coverId);
+  return shortName((e&&e.name)||r.coverId);
+}
+/* Chip trạng thái cover — dùng cả ở màn Duyệt lẫn "Đơn của tôi" */
+function reqCoverChip(r){
+  if(!r||!r.coverId)return '';
+  const s=COVER_ST[r.coverSt||'pending']||COVER_ST.pending;
+  return `<span class="cvw ${s.cls}" title="${t('Người ở lại tăng ca gánh ca thay')}">🤝 ${t('Cover')}: ${esc(reqCoverName(r))} · ${s.ic} ${t(s.lb)}</span>`;
+}
+/* Ai được đổi người cover: người duyệt, hoặc chính người làm đơn */
+function canSetCover(r,who){
+  if(!r||r.type!=='leave')return false;
+  if(REQ_DEAD(r.status))return false;
+  if(typeof canAppr==='function'&&canAppr())return true;
+  return r.empId===who||r.byId===who;
+}
+/* Đặt / đổi / gỡ người cover. newId rỗng = gỡ hẳn.
+   Gỡ thông báo chờ của người cũ, báo cho người cũ biết, gửi yêu cầu cho người mới. */
+function reqSetCover(rid,newId,byId){
+  const r=S.requests[rid];if(!r)return false;
+  const old=r.coverId||'';
+  if(old===newId)return false;
+  // dọn yêu cầu xác nhận đang chờ của người cũ
+  if(S.notifs)for(const k in S.notifs){const n=S.notifs[k];
+    if(n&&n.reqId===rid&&n.kind==='coverConfirm'&&n.status==='pending')delete S.notifs[k];}
+  if(old&&typeof newNotif==='function')
+    newNotif({kind:'info',to:old,from:byId||'',reqId:rid,
+      text:t2('đã gỡ bạn khỏi vai trò OT cover')+' · '+fmtVN(r.from)});
+  if(newId){
+    r.coverId=newId;r.coverSt='pending';
+    if(typeof newNotif==='function')
+      newNotif({kind:'coverConfirm',to:newId,from:byId||'',reqId:rid,iso:r.from});
+  }else{delete r.coverId;delete r.coverSt;}
+  return true;
+}
 
 /* ============================================================
    HUỶ / XOÁ ĐƠN
@@ -124,7 +186,7 @@ function cancelReq(rid,notify){
   delete S.requests[rid];
   // Dọn thông báo XÁC NHẬN (swapConfirm/schedChange) gắn đơn này — giữ lại info
   if(S.notifs)for(const k in S.notifs){const n=S.notifs[k];
-    if(n.reqId===rid&&(n.kind==='swapConfirm'||n.kind==='schedChange'))delete S.notifs[k];}
+    if(n.reqId===rid&&(n.kind==='swapConfirm'||n.kind==='schedChange'||n.kind==='coverConfirm'))delete S.notifs[k];}
   return{reverted};
 }
 /* Giữ tên cũ cho các chỗ đang gọi — nay cùng nghĩa với cancelReq */
@@ -178,6 +240,12 @@ function reqDetail(r){
       return `<div class="dt"><span class="dtd">${fmtVN(d.iso)} ${dowOf(d.iso)}</span>
         <span>${codeChip(cur)} → ${codeChip(d.code)}</span></div>`;
     }).join('');
+  }
+  if(r.coverId){
+    const cv=empById(r.coverId), s=COVER_ST[r.coverSt||'pending']||COVER_ST.pending;
+    rows+=`<div class="dt"><span>🤝 ${t('Người OT cover')}: <b>${esc((cv&&cv.name)||r.coverId)}</b>${
+      cv&&cv.team?` <i class="muted">${t('Nhóm')} ${esc(cv.team)}</i>`:''}</span>
+      <span class="cvw ${s.cls}">${s.ic} ${t(s.lb)}</span></div>`;
   }
   return `<div class="reqdt">${rows}</div>`;
 }
@@ -328,6 +396,67 @@ function apprMatch(r){
   }
   return true;
 }
+/* ------------------------------------------------------------
+   DÒNG TÓM TẮT NGAY TRÊN DÒNG ĐƠN (chỉ hiện trên PC)
+   Màn hình rộng còn dư chỗ, nên đưa thẳng ra ngoài đúng những gì cần để
+   BẤM DUYỆT ĐƯỢC LUÔN: từng ngày kèm ca cũ → ca mới, số giờ / số ngày phép,
+   lý do nhân viên ghi và người OT cover. Bung chi tiết chỉ còn dành cho
+   thông tin phụ (chuỗi duyệt, trợ lý duyệt đơn, mốc thời gian, nút phụ).
+   ------------------------------------------------------------ */
+const AQ_MAX_DAYS=4;                    // quá số ngày này thì gộp "+N ngày"
+function apprDayBrief(r,d){
+  const beA=iso=>(r.before&&r.before[iso]!==undefined)?r.before[iso]:eff(r.empId,iso).code;
+  const beB=iso=>(r.beforeW&&r.beforeW[iso]!==undefined)?r.beforeW[iso]:eff(r.withId,iso).code;
+  const dt=`<b>${fmtVN(d.iso)}</b><em>${dowOf(d.iso)}</em>`;
+  if(r.type==='swap')
+    return `<span class="aq-d">${dt}${codeChip(beA(d.iso))}<i>⇄</i>${codeChip(beB(d.iso))}</span>`;
+  if(r.type==='ot'){
+    const h=(typeof reqDayHours==='function')?reqDayHours(d):(d.hours||0);
+    const over=(d.isoEnd&&d.isoEnd!==d.iso)?'<i class="ovn">+1</i>':'';
+    return `<span class="aq-d">${dt}${codeChip(d.code)}<i>${esc(d.timeIn||'')}–${esc(d.timeOut||'')}${over}</i><u>${rnd1(h)}h</u></span>`;
+  }
+  if(r.type==='wt'||r.type==='late')
+    return `<span class="aq-d">${dt}<i>${esc(d.timeIn||'')}–${esc(d.timeOut||'')}</i></span>`;
+  return `<span class="aq-d">${dt}${codeChip(beA(d.iso))}<i>→</i>${codeChip(d.code)}</span>`;
+}
+/* Con số quyết định của đơn: giờ tăng ca / số ngày phép / số ngày khai */
+function apprMetric(r){
+  if(r.type==='leave'){
+    const n=(typeof reqLeaveDays==='function')?reqLeaveDays(r):reqDays(r).length;
+    return n?`<span class="aq-m lv">${rnd1(n)} ${t('ngày phép')}</span>`:'';
+  }
+  if(r.type==='ot'){
+    const h=(typeof reqHours==='function')?reqHours(r):0;
+    return h?`<span class="aq-m ot">${rnd1(h)}h ${t('tăng ca')}</span>`:'';
+  }
+  if(r.type==='multi')return '';
+  const n=reqDays(r).length;
+  return n>1?`<span class="aq-m">${n} ${t('ngày')}</span>`:'';
+}
+function apprQuickHtml(r){
+  let days='';
+  if(r.type==='multi'){
+    days=`<span class="aq-d"><b>${fmtVN(r.from)} → ${fmtVN(r.to)}</b>
+      <i>${esc(r.timeIn||'')}–${esc(r.timeOut||'')}</i></span>`;
+  }else{
+    const list=reqDays(r);
+    days=list.slice(0,AQ_MAX_DAYS).map(d=>apprDayBrief(r,d)).join('');
+    if(list.length>AQ_MAX_DAYS)days+=`<span class="aq-more">+${list.length-AQ_MAX_DAYS} ${t('ngày')}</span>`;
+  }
+  const bits=[];
+  if(r.type==='wt'&&typeof wtReasonLabel==='function'){
+    const wl=wtReasonLabel(r);
+    if(wl)bits.push(`<span class="aq-note">${esc(wl)}</span>`);
+    if(r.guarantorId){const g=empById(r.guarantorId);
+      bits.push(`<span class="aq-note">${t('Bảo lãnh')}: ${esc(shortName((g&&g.name)||r.guarantorId))}</span>`);}
+  }
+  if(r.note)bits.push(`<span class="aq-note">“${esc(r.note)}”</span>`);
+  if(r.reason)bits.push(`<span class="aq-note rej">${t('Lý do từ chối')}: ${esc(r.reason)}</span>`);
+  return `<div class="ar-sum pc-only">
+    <div class="aq-days">${days}</div>
+    <div class="aq-side">${apprMetric(r)}${reqCoverChip(r)}${bits.join('')}</div>
+  </div>`;
+}
 /* Một dòng đơn */
 function apprRow(r){
   const e=empById(r.empId), w=r.withId?empById(r.withId):null;
@@ -353,7 +482,8 @@ function apprRow(r){
         <span class="l1"><b>${esc(e?e.name:r.empId)}</b>
           <i class="typ">${esc(REQ_LABEL[r.type]||r.type)}</i>
           <span class="st ${reqStatusClass(r)}">${reqStatusLabel(r)}</span>
-          <span class="prt ${r.printedAt?'yes':(r.noPrint?'none':'no')}">${r.printedAt?'🖨️ '+t('đã in'):(r.noPrint?'🚫 '+t('không in'):'○ '+t('chưa in'))}</span>${cfBadge}${apprAdviceBadge(r)}</span>
+          <span class="prt ${r.printedAt?'yes':(r.noPrint?'none':'no')}">${r.printedAt?'🖨️ '+t('đã in'):(r.noPrint?'🚫 '+t('không in'):'○ '+t('chưa in'))}</span>${cfBadge}${
+            r.coverId?`<span class="cvw ${(COVER_ST[r.coverSt||'pending']||COVER_ST.pending).cls} mob-only">🤝</span>`:''}${apprAdviceBadge(r)}</span>
         <span class="l2">${esc(sub.join(' · '))}</span>
       </button>
       <span class="ar-act">
@@ -362,6 +492,7 @@ function apprRow(r){
         <button type="button" class="ar-more" onclick="apprToggleRow('${r.id}')" title="Chi tiết">▾</button>
       </span>
     </div>
+    ${apprQuickHtml(r)}
     <div class="ar-d">
       ${apprChainHtml(r)}
       ${reqDetail(r)}
@@ -378,6 +509,7 @@ function apprRow(r){
       <div class="ar-more-act">
         <button class="btn sec sm pc-only" onclick="printOne('${r.id}')">🖨️ In</button>
         <button class="btn sec sm" onclick="apprToggleNoPrint('${r.id}')">${r.noPrint?'🖨️ Đưa vào ds in':'🚫 Đánh dấu không cần in'}</button>
+        ${canSetCover(r,meId())?`<button class="btn sec sm" onclick="openCoverPicker('${r.id}')">🤝 ${r.coverId?t('Đổi người OT cover'):t('Chỉ định người OT cover')}</button>`:''}
         ${r.status==='approved'?`<button class="btn warn sm" onclick="revokeApproval('${r.id}')">↩️ Huỷ duyệt</button>`:''}
         <button class="btn warn sm" onclick="cancelOneReq('${r.id}')">🚫 Huỷ đơn</button>
       </div>
@@ -402,9 +534,20 @@ function apprToggleNoPrint(id){
    Nhật ký tăng ca vốn nằm ở tab Báo cáo nhưng bản chất là hồ sơ phê duyệt
    tăng ca, để chung với màn Duyệt thì người duyệt tra cứu liền tay hơn. */
 const APPR_TABS=['list','otlog','sum','stats','chart'];
-let apprTab=(()=>{try{const v=localStorage.getItem(LS+'_apprtab');return APPR_TABS.includes(v)?v:'list';}catch(e){return 'list';}})();
+/* ------------------------------------------------------------
+   SUB-TAB TẠM ẨN — HIỆN TẠI CHƯA SỬ DỤNG
+   'sum'   = 📊 Tổng quan phê duyệt (js/17-appr-sum.js)
+   'chart' = 📈 Biểu đồ (repChartPanel trong js/15-report.js)
+   Nghiệp vụ chưa dùng tới hai màn này nên ẩn khỏi thanh sub-tab cho gọn.
+   TOÀN BỘ CODE VẪN GIỮ NGUYÊN — muốn bật lại chỉ cần xoá tên khỏi mảng dưới
+   đây, không phải sửa gì thêm. Bộ lọc theo cờ rủi ro (apprFilter.flag) và các
+   hàm asFlagMatch/AS_FLAGS vẫn hoạt động bình thường.
+   ------------------------------------------------------------ */
+const APPR_TABS_OFF=['sum','chart'];
+const apprTabOn=v=>APPR_TABS.includes(v)&&!APPR_TABS_OFF.includes(v);
+let apprTab=(()=>{try{const v=localStorage.getItem(LS+'_apprtab');return apprTabOn(v)?v:'list';}catch(e){return 'list';}})();
 function apprSetTab(v){
-  apprTab=APPR_TABS.includes(v)?v:'list';
+  apprTab=apprTabOn(v)?v:'list';
   try{localStorage.setItem(LS+'_apprtab',apprTab);}catch(e){}
   renderAppr();
   window.scrollTo({top:0,behavior:'smooth'});
@@ -415,14 +558,16 @@ function renderApprTabs(){
   const nPend=feOnly
     ? Object.values(S.requests||{}).filter(reqNeedsMyAction).length
     : Object.values(S.requests||{}).filter(r=>r&&r.status==='pending').length;
-  const tabs=feOnly?[['list','📋 '+t('Danh sách đơn'),nPend]]
+  const tabs=(feOnly?[['list','📋 '+t('Danh sách đơn'),nPend]]
                    :[['list','📋 '+t('Danh sách đơn'),nPend],
                      ['otlog','🗂 '+t('Nhật ký tăng ca'),0],
                      ['sum','📊 '+t('Tổng quan'),0],
                      ['stats','🧾 '+t('Bảng công tổng hợp'),0],
-                     ['chart','📈 '+t('Biểu đồ'),0]];
+                     ['chart','📈 '+t('Biểu đồ'),0]])
+    .filter(([k])=>!APPR_TABS_OFF.includes(k));
   box.innerHTML=tabs
-    .map(([k,l,n])=>`<button class="aptab${apprTab===k?' on':''}" onclick="apprSetTab('${k}')">${l}${n?`<i>${n}</i>`:''}</button>`).join('');
+    .map(([k,l,n])=>`<button class="aptab${apprTab===k?' on':''}" onclick="apprSetTab('${k}')">${l}${n?`<i>${n}</i>`:''}</button>`).join('')
+    +(feOnly?'':`<span class="aptab-off" title="${t('Đã ẩn khỏi thanh sub-tab, code vẫn giữ để bật lại khi cần')}">📊 ${t('Tổng quan')} · 📈 ${t('Biểu đồ')}: ${t('hiện tại chưa sử dụng')}</span>`);
   const set=(id,on)=>{const el=$(id);if(el)el.style.display=on?'':'none';};
   set('apprSum',   apprTab==='sum');
   set('apprStats', apprTab==='stats');
@@ -439,6 +584,7 @@ function renderAppr(){
   if(!ok)return;
   // Field Engineer (không phải quản lý) chỉ có Danh sách đơn của nhóm mình
   if(myFE&&!mgr)apprTab='list';
+  if(!apprTabOn(apprTab))apprTab='list';        // sub-tab đã tắt (xem APPR_TABS_OFF)
   renderApprTabs();
   // Chỉ dựng đúng sub-tab đang mở — khỏi tính thừa
   if(apprTab==='sum'){if(typeof asRender==='function')asRender();return;}
@@ -464,8 +610,10 @@ function renderAppr(){
     const n=all.filter(apprMatch).length;apprFilter[k]=save;return n;
   };
   const stChips=[['pending','⏳ Chờ duyệt'],['approved','✅ Đã duyệt'],['rejected','❌ Từ chối'],['__all','Tất cả']];
-  const prChips=[['__all','Mọi đơn'],['no','○ Chưa in'],['none','🚫 Không in'],['yes','🖨️ Đã in']];
+  const prChips=[['__all','Mọi đơn'],['no','○ Chờ in'],['none','🚫 Không in'],['yes','🖨️ Đã in']];
   const ms=monthsAvailable();
+  const isRange=apprFilter.ym==='__range';
+  const curYm=curSchedMonth();
 
   // Đang lọc theo một cảnh báo của bảng Tổng quan → nói rõ, kèm nút gỡ
   const fl=apprFilter.flag&&typeof AS_FLAGS!=='undefined'
@@ -474,50 +622,45 @@ function renderAppr(){
   $('apprBar').innerHTML=`
     ${fl?`<div class="ab-flag">🔎 ${t('Đang xem riêng nhóm')}: <b>${fl[1]} ${t(fl[2])}</b>
         <button class="btn sec sm" onclick="apprSetFilter('flag','')">✕ ${t('Bỏ lọc này')}</button></div>`:''}
+    <div class="ab-period">
+      <button class="btn sec sm" onclick="apprPeriodShift(-1)" title="${t('Kỳ trước')}">◀</button>
+      <select class="inp sm ab-per-sel" onchange="apprSetFilter('ym',this.value)" title="${t('Kỳ công đang xem')}">
+        ${ms.map(m=>`<option value="${m}"${apprFilter.ym===m?' selected':''}>${periodFor(m).label}</option>`).join('')}
+        <option value="__all"${apprFilter.ym==='__all'?' selected':''}>${t('Tất cả các kỳ')}</option>
+        <option value="__range"${isRange?' selected':''}>${t('Khoảng ngày tự chọn…')}</option>
+      </select>
+      <button class="btn sec sm" onclick="apprPeriodShift(1)" title="${t('Kỳ sau')}">▶</button>
+      <span class="ab-scope">
+        ${apprFilter.ym!==curYm?`<button class="fchip" onclick="apprSetFilter('ym','${curYm}')">${t('Kỳ hiện tại')}</button>`:''}
+        <button class="fchip" onclick="apprScopeRecent()">${t('Kỳ này + kỳ trước')}</button>
+        <button class="fchip" onclick="apprScopeYear()">${t('Cả năm nay')}</button>
+      </span>
+    </div>
+    ${isRange?`<div class="ab-tools ab-range">
+      <label class="fl2">${t('Từ')}</label><input type="date" class="inp sm" value="${apprFilter.from}" onchange="apprSetFilter('from',this.value)">
+      <label class="fl2">${t('Đến')}</label><input type="date" class="inp sm" value="${apprFilter.to}" onchange="apprSetFilter('to',this.value)">
+    </div>`:''}
     <div class="ab-chips">${stChips.map(([k,l])=>
       `<button class="abc${apprFilter.status===k?' on':''}" onclick="apprSetFilter('status','${k}')">${l}<i>${countWith('status',k)}</i></button>`).join('')}
     </div>
     <div class="ab-chips">${prChips.map(([k,l])=>
       `<button class="abc sm${apprFilter.print===k?' on':''}" onclick="apprSetFilter('print','${k}')">${l}<i>${countWith('print',k)}</i></button>`).join('')}
     </div>
-    <div class="ab-period">
-      <button class="btn sec sm" onclick="apprPeriodShift(-1)" title="${t('Kỳ trước')}">◀</button>
-      <b class="ab-per-lbl">${apprFilter.ym==='__range'?t('Khoảng ngày')+(apprFilter.from?' '+fmtVN(apprFilter.from)+'→'+fmtVN(apprFilter.to||apprFilter.from):''):apprFilter.ym==='__all'?t('Tất cả các kỳ'):periodFor(apprFilter.ym).label}</b>
-      <button class="btn sec sm" onclick="apprPeriodShift(1)" title="${t('Kỳ sau')}">▶</button>
-      <button class="btn sec sm" onclick="apprSetFilter('ym','${curSchedMonth()}')">${t('Kỳ hiện tại')}</button>
-    </div>
     <div class="ab-tools">
       <input class="inp sm" id="apprSearchBox" placeholder="Tìm theo tên nhân viên…" value="${esc(apprFilter.q)}"
              oninput="apprFilter.q=this.value;clearTimeout(window._abT);window._abT=setTimeout(renderApprList,200)">
-      <button class="btn sec sm${(apprAdvOpen||apprFilter.print!=='__all'||apprFilter.type!=='__all')?' on-adv':''}" onclick="apprAdvOpen=!apprAdvOpen;renderAppr()">⚙ ${t('Bộ lọc khác')}</button>
+      <select class="inp sm" onchange="apprSetFilter('type',this.value)">
+        <option value="__all">${t('Mọi loại đơn')}</option>
+        ${Object.keys(REQ_LABEL).map(k=>`<option value="${k}"${apprFilter.type===k?' selected':''}>${esc(REQ_LABEL[k])}</option>`).join('')}
+      </select>
+      ${(apprFilter.status!=='pending'||apprFilter.print!=='__all'||apprFilter.type!=='__all'||apprFilter.q||apprFilter.flag||apprFilter.ym!==curYm)
+        ?`<button class="btn sec sm" onclick="apprResetFilter()">↺ ${t('Bỏ lọc')}</button>`:''}
       <span class="sp"></span>
+      <button class="btn sec sm admin-only${apprAdvOpen?' on-adv':''}" onclick="apprAdvOpen=!apprAdvOpen;renderAppr()">⚙ ${t('Công cụ dữ liệu')}</button>
       <button class="btn sm pc-only" style="position:relative" onclick="openPrintBulk()">🖨️ In đơn<span class="bdg" id="printBdgAppr" style="display:none;position:static;margin-left:6px">0</span></button>
     </div>
-    <div class="ab-adv" style="${(apprAdvOpen||apprFilter.print!=='__all'||apprFilter.type!=='__all'||apprFilter.ym==='__range')?'':'display:none'}">
-      <div class="ab-chips">${prChips.map(([k,l])=>
-        `<button class="abc sm${apprFilter.print===k?' on':''}" onclick="apprSetFilter('print','${k}')">${l}<i>${countWith('print',k)}</i></button>`).join('')}
-      </div>
-      <div class="ab-tools">
-        <span class="muted sm2">${t('Tải thêm')}:</span>
-        <button class="btn sec sm" onclick="apprScopeRecent()">${t('Kỳ này + kỳ trước')}</button>
-        <button class="btn sec sm" onclick="apprScopeYear()">${t('Cả năm nay')}</button>
-        <button class="btn sec sm" onclick="apprScopeAll()">${t('Tất cả các kỳ')}</button>
-      </div>
-      <div class="ab-tools">
-        <select class="inp sm" onchange="apprSetFilter('type',this.value)">
-          <option value="__all">Mọi loại đơn</option>
-          ${Object.keys(REQ_LABEL).map(k=>`<option value="${k}"${apprFilter.type===k?' selected':''}>${esc(REQ_LABEL[k])}</option>`).join('')}
-        </select>
-        <select class="inp sm" onchange="apprSetFilter('ym',this.value)">
-          <option value="__all"${apprFilter.ym==='__all'?' selected':''}>Mọi kỳ công</option>
-          ${ms.map(m=>`<option value="${m}"${apprFilter.ym===m?' selected':''}>${periodFor(m).label}</option>`).join('')}
-          <option value="__range"${apprFilter.ym==='__range'?' selected':''}>Khoảng ngày tự chọn…</option>
-        </select>
-        ${apprFilter.ym==='__range'?`
-          <label class="fl2">Từ</label><input type="date" class="inp sm" value="${apprFilter.from}" onchange="apprSetFilter('from',this.value)">
-          <label class="fl2">Đến</label><input type="date" class="inp sm" value="${apprFilter.to}" onchange="apprSetFilter('to',this.value)">`:''}
-        <button class="btn sec sm" onclick="apprResetFilter()">↺ Bỏ lọc</button>
-      </div>
+    <div class="ab-adv" style="${apprAdvOpen?'':'display:none'}">
+      <p class="muted sm2">${t('Sao lưu & dọn đơn cũ — luôn xuất Excel trước khi xoá.')}</p>
       <div class="ab-tools">
         <button class="btn sec sm admin-only" onclick="exportRequests(Object.values(S.requests).filter(apprMatch),'LPGT_SaoLuuDon_'+todayIso()+'.xlsx')" title="${t('Chỉ xuất Excel, không xoá')}">⬇️ ${t('Xuất Excel đơn đang lọc')}</button>
         <button class="btn warn sm admin-only" onclick="apprPurgeFiltered()" title="${t('Xuất Excel sao lưu rồi xoá')}">🗑️ ${t('Xuất Excel & xoá (đang lọc)')}</button>

@@ -80,6 +80,13 @@ const IC_SVG={
   fuel:'<path d="M3 22h12"/><path d="M4 9h10"/><path d="M14 22V4a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v18"/><path d="M14 13h2a2 2 0 0 1 2 2v2a2 2 0 0 0 4 0V9.83a2 2 0 0 0-.59-1.42L18 5"/>',
   download:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
   compass:'<circle cx="12" cy="12" r="10"/><path d="m16.24 7.76-2.12 6.36-6.36 2.12 2.12-6.36z"/>',
+  /* v5.6 — bốn bữa ăn trong ngày (đặt cơm tăng ca) */
+  sunrise:'<path d="M12 2v6M4.93 10.93 6.34 12.34M2 18h2M20 18h2M17.66 12.34l1.41-1.41M22 22H2"/><path d="m8 6 4-4 4 4"/><path d="M16 18a4 4 0 0 0-8 0"/>',
+  sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
+  sunset:'<path d="M12 10V2M4.93 10.93 6.34 12.34M2 18h2M20 18h2M17.66 12.34l1.41-1.41M22 22H2"/><path d="m16 6-4 4-4-4"/><path d="M16 18a4 4 0 0 0-8 0"/>',
+  moon:'<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+  utensils:'<path d="M3 2v7a3 3 0 0 0 3 3 3 3 0 0 0 3-3V2"/><path d="M6 12v10M18 2v20"/><path d="M18 12c2 0 3-1.5 3-4V4c0-1.5-1-2-3-2"/>',
+  bowl:'<path d="M3 11h18a9 9 0 0 1-9 9 9 9 0 0 1-9-9Z"/><path d="M8 8c0-1.5 1-2 2-2s2-.5 2-2M14 8c0-1 .7-1.5 1.5-1.5"/>',
 };
 
 /* ---- emoji → tên icon (kèm lớp màu tuỳ chọn) ---- */
@@ -99,6 +106,10 @@ const IC_MAP={
   '🟢':'dot gr','🔴':'dot rd','🟡':'dot yl','●':'dot','○':'circle','☐':'square',
   '👍':'thumbs-up','🚩':'flag','🏭':'factory','🏢':'building','👋':'hand','✋':'hand','🧮':'calc',
   '⬇':'download','↺':'undo','⤷':'chev-r','🧭':'compass',
+  /* v5.4 — người OT cover: bắt tay = hai người, từ chối = bàn tay chặn */
+  '🤝':'users','🙅':'hand',
+  /* v5.6 — đặt cơm tăng ca: 4 mốc bữa ăn + bát cơm */
+  '🌅':'sunrise','🍚':'bowl','🌆':'sunset','🌙':'moon','🍽':'utensils',
 };
 
 /* ---- dựng markup ---- */

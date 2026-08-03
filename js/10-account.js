@@ -325,13 +325,19 @@ function calcStats(id,days){
     const c=eff(id,iso).code;if(!c)return;
     cnt[c]=(cnt[c]||0)+1;
     const cat=codeInfo(c).cat,h=effHours(id,iso);
-    if(cat==='work'||cat==='swap')hWork+=h;
+    /* Ca kép: 20h của "O+N" KHÔNG phải 20h giờ công — tách 8h công + 12h tăng ca */
+    const sp=(typeof comboSplitHours==='function')&&comboSplitHours(c,h);
+    if(sp){hWork+=sp.work;hOT+=sp.ot;}
+    else if(cat==='work'||cat==='swap')hWork+=h;
     else if(cat==='ot')hOT+=h;
     else if(cat==='leave')hLeave+=h;
   });
   return{cnt,hWork,hOT,hLeave};
 }
-function otShifts(s){return Object.entries(s.cnt).filter(([c])=>codeInfo(c).cat==='ot').reduce((a,[,n])=>a+n,0);}
+/* Số CA tăng ca — ca kép cũng là một lần tăng ca */
+function otShifts(s){return Object.entries(s.cnt)
+  .filter(([c])=>codeInfo(c).cat==='ot'||(typeof isCombo==='function'&&isCombo(c)))
+  .reduce((a,[,n])=>a+n,0);}
 const rnd1=v=>Math.round(v*10)/10;
 
 /* Tab 'Cua toi' (trang chinh nhan vien) da chuyen sang js/13-portal.js */

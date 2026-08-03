@@ -21,17 +21,27 @@ const SCHEDBG={
   AL8:'#FBD9E4', AL4:'#FCE7EF', NP:'#FBD5D2', OFF:'#FDEBC8',
   OTD:'#CFEFDF', OTN:'#CFEFDF',
   SD:'#E6DAFB', SN:'#E6DAFB', SO:'#E6DAFB',
-  OTL:'#CFEFDF', OT2:'#CFEFDF', OT3:'#CFEFDF'
+  OTL:'#CFEFDF', OT2:'#CFEFDF', OT3:'#CFEFDF',
+  /* Ca kép — nền chia đôi: nửa ca chuẩn, nửa tăng ca */
+  'O+N':'linear-gradient(108deg,#E3DBF5 0 50%,#CFEFDF 50% 100%)',
+  'D+N':'linear-gradient(108deg,#BDD7EE 0 50%,#CFEFDF 50% 100%)'
 };
 const SCHEDTXT={
   O:'#000000', D:'#1F3B57', N:'#2E4B22', R:'#C00000',
   AL8:'#98123F', AL4:'#98123F', NP:'#A31B14', OFF:'#8A5A00',
   OTD:'#0B6244', OTN:'#0B6244',
   SD:'#4C1D95', SN:'#4C1D95', SO:'#4C1D95',
-  OTL:'#0B6244', OT2:'#0B6244', OT3:'#0B6244'
+  OTL:'#0B6244', OT2:'#0B6244', OT3:'#0B6244',
+  'O+N':'#000000', 'D+N':'#1F3B57'
 };
 function cellStyle(code){
   if(!code)return '';
+  /* Ca kép: nền chia đôi chéo — nửa trái màu ca chuẩn, nửa phải màu tăng ca */
+  const cb=(typeof comboOf==='function')&&comboOf(code);
+  if(cb){
+    const a=SCHEDBG[cb.work]||'#E2E8F0', b=SCHEDBG[cb.ot]||'#CFEFDF';
+    return `background:linear-gradient(108deg,${a} 0 50%,${b} 50% 100%);color:${SCHEDTXT[cb.work]||'#334155'};font-weight:800;font-size:.82em;letter-spacing:-.3px`;
+  }
   if(SCHEDBG[code])return `background:${SCHEDBG[code]};color:${SCHEDTXT[code]};font-weight:800`;
   const info=codeInfo(code);
   return `background:${info.col||'#64748B'};color:#fff;font-weight:800`;
@@ -44,12 +54,12 @@ const STD ={real:false, box:'mtxBox', month:'calMonth', range:'calRange', grp:'c
 const REAL={real:true,  box:'mtxBox', month:'calMonth', range:'calRange', grp:'calGroupFilter'};
 /* ===== v4: renderCal() hợp nhất — điều phối desktop (matrix) và mobile (thẻ tuần / theo ngày) ===== */
 /* ------------------------------------------------------------
-   ĐIỆN THOẠI XEM LỊCH KIỂU "NHÂN LỰC"
-   Ma trận lịch và thẻ tuần vốn thiết kế cho màn hình rộng; nhét vào
-   màn hình điện thoại thì chữ li ti, cuộn ngang, nhìn rất rối. Từ bản
-   này, trên điện thoại tab Lịch hiện DANH SÁCH THEO NGÀY giống bảng
-   Nhân lực: mỗi ngày một dòng gọn, chạm mới bung tên người. Máy tính
-   giữ nguyên ma trận đầy đủ.
+   ĐIỆN THOẠI XEM LỊCH THEO TUẦN
+   Ma trận cả kỳ thiết kế cho màn hình rộng; nhét vào điện thoại thì
+   chữ li ti, cuộn ngang, nhìn rất rối. Trên điện thoại tab Lịch hiện
+   LƯỚI NGƯỜI × 7 NGÀY của một tuần, mặc định đúng nhóm của người đăng
+   nhập, có nút chuyển tuần và chip xem thêm nhóm khác — xem
+   renderCalWeekGrid() ở cuối file. Máy tính giữ nguyên ma trận đầy đủ.
    ------------------------------------------------------------ */
 /* Sub-tab của tab Lịch: 'sched' = bảng lịch ca · 'mp' = Nhân lực theo ngày
    (chuyển từ tab Báo cáo sang — quản lý xem quân số từng ngày ngay cạnh lịch). */
@@ -62,6 +72,7 @@ function renderCal(opts){
   if(opts.date)calDate=opts.date;
   if(!calDate)calDate=todayIso();
   if(!$('calMonth').options.length)fillMonthSelects();
+  if(typeof refreshMealBadge==='function')refreshMealBadge();
   document.querySelectorAll('#calTabSeg button').forEach(b=>b.classList.toggle('on',b.dataset.ct===calTab));
   document.querySelectorAll('#calSeg button').forEach(b=>b.classList.toggle('on',b.dataset.m===calMode));
   const real=calMode==='real';
@@ -74,7 +85,7 @@ function renderCal(opts){
   const bar=$('calBar');
   if(bar)bar.classList.toggle('mp-on',calTab==='mp');
   if(calTab==='mp'){
-    show('calWeekBox',false);show('calDayBox',false);show('calMpBox',false);
+    show('calWeekBox',false);show('calDayBox',false);show('calWkGrid',false);
     const sw=document.querySelector('#v-cal .sched-wrap');if(sw)sw.style.display='none';
     const p=$('calMpPanel');
     if(p){p.style.display='';p.innerHTML=(typeof repMpPanel==='function')?repMpPanel():'';}
@@ -83,15 +94,19 @@ function renderCal(opts){
   {const p=$('calMpPanel');if(p)p.style.display='none';
    const sw=document.querySelector('#v-cal .sched-wrap');if(sw)sw.style.display='';}
 
+  /* Lịch tuần trên ĐT có thanh điều hướng riêng (tuần + chip nhóm) nên các
+     control chọn KỲ / khoảng ngày / nhóm của bố cục máy tính phải ẩn đi,
+     để trên màn hình không có hai chỗ điều khiển đá nhau. */
+  ['calMonth','calRange','calGroupFilter','calPrevBtn','calNextBtn']
+    .forEach(id=>show(id,!mob));
   if(mob){
-    /* Điện thoại: chỉ một danh sách theo ngày, bỏ hẳn ma trận & thẻ tuần
+    /* Điện thoại: chỉ lưới lịch tuần, bỏ hẳn ma trận & thẻ tuần
        (không dựng luôn cho nhẹ máy, chứ không phải chỉ ẩn bằng CSS). */
-    show('calWeekBox',false);show('calDayBox',false);show('calMpBox',true);
-    fillGroupFilter('calGroupFilter');   // renderMatrix không chạy trên ĐT nên phải điền ở đây
-    renderCalMpList();
+    show('calWeekBox',false);show('calDayBox',false);show('calWkGrid',true);
+    renderCalWeekGrid();
     return;
   }
-  show('calMpBox',false);
+  show('calWkGrid',false);
   const tgl=$('calViewToggle');if(tgl)tgl.textContent=calMobileView==='day'?'📅 Xem tuần':'👁 Theo ngày';
   renderMatrix(real?REAL:STD);
   if(calMobileView==='day'){show('calWeekBox',false);show('calDayBox',true);renderCalDayView();}
@@ -142,11 +157,17 @@ function renderMatrix(C){
   h+='<tr class="band"><th class="c0"></th><th class="c1"></th><th class="c2"></th><th class="c3"></th><th class="c4"></th>';
   bands.forEach(b=>{h+=`<th class="band" colspan="${b.n}">${MONTHS_EN[b.mo-1]}</th>`;});
   h+='</tr>';
+  /* Ngày có sự kiện (nhập tàu, bảo dưỡng…) tô khác ngày thường — js/20-events.js */
+  const evOn=typeof eventsOfDay==='function';
+  const evCls=iso=>(evOn&&eventsOfDay(iso).length)?' evday':'';
+  const evTit=iso=>(evOn&&eventsOfDay(iso).length)?` title="📌 ${esc(evTitleOfDay(iso))}"`:'';
   h+='<tr class="dnum"><th class="c0">No.</th><th class="c1">Tổ</th><th class="c2">ID</th><th class="c3">Họ tên</th><th class="c4">Vị trí</th>';
-  days.forEach(iso=>{h+=`<th class="${iso===tIso?'today':wkClass(iso)}">${+iso.slice(8)}</th>`;});
+  days.forEach(iso=>{h+=`<th class="${iso===tIso?'today':wkClass(iso)}${evCls(iso)}"${evTit(iso)}>${+iso.slice(8)}</th>`;});
   h+='</tr>';
   h+='<tr class="dow"><th class="c0"></th><th class="c1"></th><th class="c2"></th><th class="c3"></th><th class="c4"></th>';
-  days.forEach(iso=>{const dw=new Date(iso+'T00:00:00').getDay();h+=`<th class="${iso===tIso?'today ':wkClass(iso)+' '}${dw===0?'dowSun':dw===6?'dowSat':''}">${DOW_EN[dw]}</th>`;});
+  /* Giữ nguyên chữ thứ (Mon/Tue…) — ngày sự kiện nhận diện bằng MÀU + tooltip,
+     không thay chữ thứ, vì mất chữ thứ là mất thông tin đọc lịch quan trọng nhất. */
+  days.forEach(iso=>{const dw=new Date(iso+'T00:00:00').getDay();h+=`<th class="${iso===tIso?'today ':wkClass(iso)+' '}${dw===0?'dowSun':dw===6?'dowSat':''}${evCls(iso)}"${evTit(iso)}>${DOW_EN[dw]}</th>`;});
   h+='</tr></thead><tbody>';
 
   const byTeam={};emps.forEach(e=>{const t=e.team||'';(byTeam[t]=byTeam[t]||[]).push(e);});
@@ -177,7 +198,10 @@ function renderMatrix(C){
   h+='</tbody><tfoot><tr><td class="lbl" colspan="5">Σ D / N / O</td>';
   days.forEach(iso=>{
     let cD=0,cN=0,cO=0;
-    emps.forEach(e=>{const c=getCode(e.id,iso).code;if(c==='D'||c==='SD'||c==='OTD')cD++;else if(c==='N'||c==='SN'||c==='OTN')cN++;else if(c==='O'||c==='SO')cO++;});
+    /* Ca kép đếm theo nửa CA CHUẨN (workCodeOf) — người trực O rồi tăng ca đêm
+       vẫn là một đầu người của ca O hôm đó. */
+    emps.forEach(e=>{const c=workCodeOf(getCode(e.id,iso).code);
+      if(c==='D'||c==='SD'||c==='OTD')cD++;else if(c==='N'||c==='SN'||c==='OTN')cN++;else if(c==='O'||c==='SO')cO++;});
     const low=(cD<S.settings.minD||cN<S.settings.minN);
     h+=`<td class="${iso===tIso?'today':''}" style="${low?'color:#DC2626':''}">${cD}/${cN}/${cO}</td>`;
   });
@@ -188,7 +212,9 @@ function renderLegend(elId){
   if(!$(elId))return;
   const L=[['O','Office (08–17h)'],['D','Day time (08–20h)'],['N','Night time (20–08h)'],['R','Rest']];
   let s=L.map(([c,d])=>`<span class="lg"><span class="box" style="${cellStyle(c)}">${c}</span>${d}</span>`).join('');
-  s+=allCodes().filter(c=>c.cat==='leave'||c.cat==='ot').map(c=>`<span class="lg"><span class="box" style="background:${c.col};color:#fff">${c.c}</span>${c.l}</span>`).join('');
+  s+=allCodes().filter(c=>c.cat==='leave'||c.cat==='ot'||c.cat==='combo').map(c=>(c.cat==='combo'
+      ? `<span class="lg">${chip(c.c)}${c.l}</span>`                       /* ca kép vẽ chip 2 nửa */
+      : `<span class="lg"><span class="box" style="background:${c.col};color:#fff">${c.c}</span>${c.l}</span>`)).join('');
   $(elId||'legend').innerHTML=s;
 }
 function fillGroupFilter(selId){
@@ -210,20 +236,36 @@ function openCell(empId,iso){
   $('cellMask').classList.add('on');
 }
 function closeCell(){$('cellMask').classList.remove('on');curCell=null;}
+/* ------------------------------------------------------------
+   SỬA Ô LỊCH THỰC TẾ
+   Đổi ca của người khác → gửi thông báo xác nhận. Nhưng nếu sau đó
+   quản lý ĐỔI Ý và trả ô về đúng ca chuẩn, thông báo cũ phải được
+   THU HỒI — trước đây nó nằm lại khiến nhân viên vẫn thấy "cần xác
+   nhận" cho một thay đổi không còn tồn tại. Xem revokeSchedChange()
+   ở js/13-portal.js: chưa xác nhận thì thu hồi lặng lẽ, đã xác nhận
+   rồi thì báo lại cho nhân viên biết là thay đổi đã bị huỷ.
+   ------------------------------------------------------------ */
 function setCell(code){
   if(!curCell)return;
   const{empId,iso}=curCell;
   const oldCode=eff(empId,iso).code;              // ca trước khi sửa (để nhân viên đối chiếu)
+  const stdCode=(S.base[empId]&&S.base[empId][iso])||'';   // ca chuẩn của ngày này
   if(code===null){if(S.over[empId])delete S.over[empId][iso];}
   else{S.over[empId]=S.over[empId]||{};S.over[empId][iso]={code:code,by:meId()||'manager',at:Date.now()};}
-  // Nếu quản lý/thư ký đổi lịch của NGƯỜI KHÁC sang mã khác → gửi thông báo xác nhận
-  if(code&&code!==oldCode&&empId!==meId()&&typeof newNotif==='function'){
-    // gộp vào thông báo đang chờ cho cùng người + ngày (tránh spam)
+  const newCode=(code===null)?stdCode:code;       // ca sau khi sửa
+  let revoked=0;
+  if(newCode===stdCode){
+    /* Đã trả về đúng lịch chuẩn → không còn gì để nhân viên xác nhận */
+    if(typeof revokeSchedChange==='function')revoked=revokeSchedChange(empId,iso,stdCode);
+  }else if(code&&code!==oldCode&&empId!==meId()&&typeof newNotif==='function'){
+    // Đổi sang mã khác → gộp vào thông báo đang chờ cho cùng người + ngày (tránh spam)
     let ex=Object.values(S.notifs||{}).find(n=>n.kind==='schedChange'&&n.to===empId&&n.iso===iso&&n.status==='pending');
     if(ex){ex.newCode=code;ex.from=meId()||'manager';ex.createdAt=Date.now();}
     else newNotif({kind:'schedChange',to:empId,from:meId()||'manager',iso,oldCode:oldCode||'',newCode:code});
   }
-  save();closeCell();renderReal();toast('Đã cập nhật lịch thực tế');
+  save();closeCell();renderReal();
+  toast(revoked?t('Đã trả về ca chuẩn và thu hồi thông báo')
+               :t('Đã cập nhật lịch thực tế'));
 }
 
 /* =================== v4: LỊCH — THẺ TUẦN (mobile) & NHÂN LỰC THEO NGÀY (mobile) =================== */
@@ -343,111 +385,115 @@ function renderCalWeekCards(){
     setTimeout(()=>{const el=$('wkc'+firstOpenIdx);if(el)el.scrollIntoView({block:'center',behavior:'smooth'});},80);
   }
 }
+
 /* ============================================================
-   LỊCH TRÊN ĐIỆN THOẠI — DANH SÁCH THEO NGÀY (kiểu Nhân lực)
-   Một dòng = một ngày. Nhìn phát biết ngay hôm đó ai trực ca nào,
-   khối sản xuất và khối văn phòng đếm riêng, ngày thiếu người tô đỏ.
-   Chạm vào dòng mới bung danh sách tên → màn hình không bị chữ dày đặc.
+   LỊCH TUẦN TRÊN ĐIỆN THOẠI — LƯỚI NGƯỜI × 7 NGÀY
+   ------------------------------------------------------------
+   Ma trận cả kỳ (30 cột) không thể nhét vừa màn hình điện thoại.
+   Bố cục này cắt xuống ĐÚNG MỘT TUẦN: mỗi hàng là một người, mỗi
+   cột là một ngày — nhìn ngang biết lịch của mình cả tuần, nhìn dọc
+   biết hôm đó cả nhóm ai trực ca gì.
+
+   · Mặc định mở đúng NHÓM của người đang đăng nhập (quản lý chưa có
+     nhóm thì mở nhóm đầu tiên) — vào là thấy ngay việc của mình.
+   · Nút ◀ ▶ đi tới tuần khác, nút "Tuần này" quay về hiện tại.
+   · Hàng chip nhóm ở trên: chạm để xem thêm / bớt nhóm khác.
+   · Ngày có SỰ KIỆN (js/20-events.js) tô màu riêng ở đầu cột.
    ============================================================ */
-let calMpOpen={};                 // ngày nào đang bung chi tiết
-let calMpLowOnly=false;           // chỉ hiện ngày thiếu người
-function calMpToggle(iso){
-  calMpOpen[iso]=!calMpOpen[iso];
-  const el=$('cmp_'+iso);if(el)el.classList.toggle('open',!!calMpOpen[iso]);
+let calWkMon='';           // thứ Hai của tuần đang xem
+let calWkTeams=null;       // nhóm nào đang hiện (null = chưa khởi tạo → lấy nhóm của mình)
+
+function calWkMonday(){return calWkMon||(calWkMon=mondayOf(todayIso()));}
+function calWkShift(d){calWkMon=addDaysIso(calWkMonday(),7*d);renderCalWeekGrid();}
+function calWkToday(){calWkMon=mondayOf(todayIso());renderCalWeekGrid();}
+/* Nhóm mặc định: nhóm của người đang đăng nhập; không có thì nhóm đầu danh sách */
+function calWkDefaultTeams(){
+  const me=empById(meId());
+  const all=teamList();
+  if(me&&all.includes(me.team||''))return [me.team||''];
+  return all.length?[all[0]]:[];
 }
-function calMpSetLow(on){calMpLowOnly=!!on;renderCalMpList();}
-function calMpNames(list,iso,codes){
-  if(!list.length)return `<span class="muted">—</span>`;
-  return list.map(e=>{
-    const c=codes?eff(e.id,iso).code:'';
-    const nm=esc(shortName(e.name)||e.id)+(e.team?`<em>${esc(teamShort(e.team))}</em>`:'');
-    return (calMode==='real'&&mgr)
-      ? `<button type="button" class="cmp-nm edit" onclick="openCell('${e.id}','${iso}')">${nm}${c?chip(c):''}</button>`
-      : `<span class="cmp-nm">${nm}${c?chip(c):''}</span>`;
-  }).join('');
+function calWkToggleTeam(tm){
+  if(!calWkTeams)calWkTeams=calWkDefaultTeams();
+  const i=calWkTeams.indexOf(tm);
+  if(i<0)calWkTeams.push(tm);
+  else if(calWkTeams.length>1)calWkTeams.splice(i,1);   // luôn chừa lại ít nhất 1 nhóm
+  else{toast(t('Phải giữ ít nhất một nhóm'));return;}
+  renderCalWeekGrid();
 }
-function renderCalMpList(){
-  const box=$('calMpBox');if(!box)return;
-  const days=calDaysForCurrentFilter();
-  if(!days.length){box.innerHTML='<p class="muted" style="padding:16px">Chưa có lịch. Vào 🛠️ Nhóm &amp; Lịch để tạo nhóm và điền lịch.</p>';return;}
-  const fGrp=$('calGroupFilter').value;
+function calWkAllTeams(){calWkTeams=teamList().slice();renderCalWeekGrid();}
+function calWkMineOnly(){calWkTeams=calWkDefaultTeams();renderCalWeekGrid();}
+
+function renderCalWeekGrid(){
+  const box=$('calWkGrid');if(!box)return;
+  const mon=calWkMonday();
+  const days=Array.from({length:7},(_,i)=>addDaysIso(mon,i));
+  const allTeams=teamList();
+  if(!calWkTeams||!calWkTeams.length)calWkTeams=calWkDefaultTeams();
+  const showTeams=calWkTeams.filter(tm=>allTeams.includes(tm));
+  if(!showTeams.length&&allTeams.length)showTeams.push(allTeams[0]);
+
+  const real=calMode==='real';
+  const getCode=real?(id,iso)=>eff(id,iso):(id,iso)=>({code:(S.base[id]&&S.base[id][iso])||'',ovr:false});
   const tIso=todayIso(), meCur=meId();
-  const only=(fGrp&&fGrp!=='__all')?fGrp:'';
-  const keep=e=>!only||String(e.team||'')===only;
-  const pick=arr=>arr.filter(keep);
-  const pickX=arr=>arr.filter(x=>keep(x.e));
+  const evOn=typeof eventsOfDay==='function';
 
-  let rows='',nLow=0,shown=0,todayIdx=-1;
-  days.forEach(iso=>{
-    const P=mpBucketsByPool(iso);
-    const B={D:pick(P.prod.D),N:pick(P.prod.N),O:pick(P.prod.O),R:pick(P.prod.R),
-             leave:pickX(P.prod.leave),ot:pickX(P.prod.ot)};
-    const V={O:pick(P.office.O),R:pick(P.office.R),
-             leave:pickX(P.office.leave),ot:pickX(P.office.ot)};
-    /* Định mức chỉ áp cho khối sản xuất — khối văn phòng không trực ca */
-    const lowD=P.prod.D.length<minOfShift('D'), lowN=P.prod.N.length<minOfShift('N');
-    const low=lowD||lowN;
-    if(low)nLow++;
-    if(calMpLowOnly&&!low)return;
-    if(iso===tIso)todayIdx=shown;
-    shown++;
-    const dw=new Date(iso+'T00:00:00').getDay();
-    const nLeave=B.leave.length+V.leave.length, nOt=B.ot.length+V.ot.length;
-    const mine=eff(meCur,iso).code;
-    const pl=(n,lb,col,bad)=>`<span class="cmp-p${bad?' bad':''}${n?'':' zero'}" style="--pc:${col}"><b>${n}</b><i>${lb}</i></span>`;
-    const sec=(ttl,inner)=>`<div class="cmp-s"><h5>${ttl}</h5>${inner}</div>`;
+  /* --- thanh điều hướng tuần --- */
+  let h=`<div class="cwg-nav">
+    <button class="btn sec sm" onclick="calWkShift(-1)" title="${t('Tuần trước')}">◀</button>
+    <div class="cwg-lbl"><b>${t('Tuần')} ${isoWeekNum(mon)}</b><i>${fmtVN(mon)} – ${fmtVN(days[6])}</i></div>
+    <button class="btn sec sm" onclick="calWkShift(1)" title="${t('Tuần sau')}">▶</button>
+    <button class="btn sec sm" onclick="calWkToday()">${t('Tuần này')}</button>
+  </div>`;
 
-    rows+=`<div class="cmp-row${iso===tIso?' today':''}${low?' low':''}${calMpOpen[iso]?' open':''}" id="cmp_${iso}">
-      <button type="button" class="cmp-h" onclick="calMpToggle('${iso}')">
-        <span class="cmp-d">
-          <b>${+iso.slice(8)}/${+iso.slice(5,7)}</b>
-          <i class="${dw===0?'dowSun':dw===6?'dowSat':''}">${dowOf(iso)}</i>
-          ${iso===tIso?`<em class="tdy">${t('hôm nay')}</em>`:''}
-        </span>
-        <span class="cmp-ps">
-          ${pl(B.D.length,'D','var(--cD)',lowD)}
-          ${pl(B.N.length,'N','var(--cN)',lowN)}
-          ${pl(B.O.length,'O',"var(--cO)",false)}
-          ${pl(V.O.length,'VP','var(--cSW)',false)}
-          ${pl(B.R.length,'R','var(--cR)',false)}
-          ${nLeave?pl(nLeave,'🏖','var(--cAL)',false):''}
-          ${nOt?pl(nOt,'⚡','var(--cOT)',false):''}
-        </span>
-        ${mine?`<span class="cmp-me">${chip(mine)}</span>`:''}
-        ${low?'<span class="cmp-w">⚠</span>':''}
-        <span class="cmp-cv">▾</span>
-      </button>
-      <div class="cmp-det">
-        <div class="cmp-pool">${poolChip(POOL_PROD)} ${t('Khối sản xuất')}</div>
-        ${sec(chip('D')+' '+t('Ca ngày')+' <i>'+B.D.length+(minOfShift('D')?'/'+minOfShift('D'):'')+'</i>',calMpNames(B.D,iso))}
-        ${sec(chip('N')+' '+t('Ca đêm')+' <i>'+B.N.length+(minOfShift('N')?'/'+minOfShift('N'):'')+'</i>',calMpNames(B.N,iso))}
-        ${sec(chip('O')+' '+t('Ca hành chính (sản xuất)')+' <i>'+B.O.length+'</i>',calMpNames(B.O,iso))}
-        ${sec(chip('R')+' '+t('Nghỉ ca')+' <i>'+B.R.length+'</i>',calMpNames(B.R,iso))}
-        ${B.leave.length?sec(chip('AL8')+' '+t('Nghỉ phép')+' <i>'+B.leave.length+'</i>',calMpNames(B.leave.map(x=>x.e),iso,true)):''}
-        ${B.ot.length?sec(chip('OTD')+' '+t('Tăng ca')+' <i>'+B.ot.length+'</i>',calMpNames(B.ot.map(x=>x.e),iso,true)):''}
-        <div class="cmp-pool">${poolChip(POOL_OFF)} ${t('Khối văn phòng')}</div>
-        ${sec(chip('O')+' '+t('Hành chính')+' <i>'+V.O.length+'</i>',calMpNames(V.O,iso))}
-        ${V.leave.length?sec(chip('AL8')+' '+t('Nghỉ phép')+' <i>'+V.leave.length+'</i>',calMpNames(V.leave.map(x=>x.e),iso,true)):''}
-        ${V.ot.length?sec(chip('OTD')+' '+t('Tăng ca')+' <i>'+V.ot.length+'</i>',calMpNames(V.ot.map(x=>x.e),iso,true)):''}
-        <div class="cmp-acts">
-          ${noSelf?'':`<button class="btn sec sm" onclick="openDaySheet('${iso}')">✍️ ${t('Xem ngày & gửi đơn')}</button>`}
-          ${(calMode==='real'&&mgr)?`<span class="muted sm2">${t('Chạm tên để sửa ca thực tế')}</span>`:''}
-        </div>
-      </div>
-    </div>`;
+  /* --- chip chọn nhóm: mặc định nhóm của mình, chạm để xem thêm nhóm khác --- */
+  h+=`<div class="cwg-teams">
+    ${allTeams.map(tm=>`<button type="button" class="tchip${showTeams.includes(tm)?' on':''}"
+        style="--tc:${teamColor(tm)}" onclick="calWkToggleTeam('${esc(tm)}')">${
+        esc(tm?t('Nhóm')+' '+tm:t('(chưa nhóm)'))}</button>`).join('')}
+    <button type="button" class="tchip act" onclick="calWkAllTeams()">${t('Tất cả')}</button>
+    <button type="button" class="tchip act" onclick="calWkMineOnly()">${t('Nhóm của tôi')}</button>
+  </div>`;
+
+  /* --- sự kiện trong tuần: dải nhắc ở trên đầu --- */
+  if(typeof evBannerHtml==='function')h+=evBannerHtml(days);
+
+  /* --- lưới --- */
+  let body='';
+  showTeams.forEach(tm=>{
+    const mem=schedEmps().filter(e=>(e.team||'')===tm);
+    if(!mem.length)return;
+    body+=`<div class="cwg-grp" style="--tc:${teamColor(tm)}">${
+      esc(tm?t('Nhóm')+' '+tm:t('(chưa phân nhóm)'))} <i>${mem.length} ${t('người')}</i></div>`;
+    mem.forEach(e=>{
+      body+=`<div class="cwg-row${e.id===meCur?' me':''}">
+        <div class="nm" title="${esc(e.name||e.id)}">${esc(shortName(e.name)||e.id)}</div>`;
+      days.forEach(iso=>{
+        const r=getCode(e.id,iso);
+        const editable=real&&mgr;
+        const act=editable?`onclick="openCell('${e.id}','${iso}')"`
+                          :(noSelf?'':`onclick="openDaySheet('${iso}')"`);
+        body+=`<div class="c${iso===tIso?' today':''}${r.ovr?' ovr':''}${r.o&&r.o.prov?' prov':''}${
+          evOn&&eventsOfDay(iso).length?' ev':''}" ${act}>${r.code?chip(r.code):'<i class="dash">—</i>'}</div>`;
+      });
+      body+='</div>';
+    });
   });
 
-  const head=`<div class="cmp-head">
-    <span class="st ${nLow?'rejected':'approved'}">${nLow?('⚠ '+nLow+' '+t('ngày thiếu người')):'✓ '+t('đủ nhân lực cả kỳ')}</span>
-    <label class="cal-chk"><input type="checkbox" ${calMpLowOnly?'checked':''} onchange="calMpSetLow(this.checked)"> ${t('Chỉ ngày thiếu người')}</label>
-    <span class="muted sm2">${t('Định mức khối sản xuất')}: D ≥ ${minOfShift('D')} · N ≥ ${minOfShift('N')}</span>
-  </div>`;
-  box.innerHTML=head+(shown?`<div class="cmp">${rows}</div>`
-    :`<div class="card"><p class="muted">${t('Không có ngày nào khớp bộ lọc.')}</p></div>`);
-  if(todayIdx>=0&&!box._scrolled){
-    box._scrolled=true;
-    setTimeout(()=>{const el=$('cmp_'+tIso);if(el)el.scrollIntoView({block:'center',behavior:'smooth'});},80);
-  }
+  const hdr=`<div class="cwg-row hd"><div class="nm"></div>${days.map(iso=>{
+      const dw=new Date(iso+'T00:00:00').getDay();
+      const ev=evOn?eventsOfDay(iso):[];
+      return `<div class="c${iso===tIso?' today':''}${dw===0||dw===6?' we':''}${ev.length?' ev':''}"
+        ${ev.length?`title="📌 ${esc(evTitleOfDay(iso))}"`:''}>
+        <b>${dowOf(iso)}</b><i>${+iso.slice(8)}</i>${ev.length?'<u class="evd">📌</u>':''}</div>`;
+    }).join('')}</div>`;
+
+  h+=body?`<div class="cwg">${hdr}${body}</div>`
+        :`<div class="card"><p class="muted">${t('Nhóm này chưa có ai trong lịch ca.')}</p></div>`;
+  h+=`<p class="muted sm2" style="padding:6px 4px">${
+    (real&&mgr)?t('Chạm vào ô để sửa ca thực tế.')
+               :(noSelf?'':t('Chạm vào ô để xem chi tiết ngày và gửi đơn.'))}</p>`;
+  box.innerHTML=h;
 }
 
 /* Nhân lực theo ngày (mobile) */

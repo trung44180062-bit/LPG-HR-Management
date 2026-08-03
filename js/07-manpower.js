@@ -7,18 +7,31 @@
    mpBuckets(iso,'prod')  → chỉ khối sản xuất A/B/C/D
    mpBuckets(iso,'office')→ chỉ khối văn phòng
    Hai khối không cover cho nhau nên định mức phải đếm tách bạch. */
+/* Xếp một người vào đúng rổ theo mã ca của ngày đó.
+   CA KÉP (O+N, D+N) được đếm HAI LẦN có chủ đích: người đó thật sự có
+   mặt ở ca chuẩn (nên phải tính vào quân số ca O/D) và đồng thời đang
+   tăng ca ca đêm (nên phải hiện trong danh sách tăng ca). Nếu chỉ đếm
+   một nơi thì hoặc là ca chuẩn hụt người, hoặc là mất dấu giờ tăng ca. */
+function mpPut(B,e,c){
+  const cb=(typeof comboOf==='function')&&comboOf(c);
+  const w=cb?cb.work:c;
+  if(cb)B.ot.push({e,c});
+  if(w==='D'||w==='SD')B.D.push(e);
+  else if(w==='N'||w==='SN')B.N.push(e);
+  else if(w==='O'||w==='SO')B.O.push(e);
+  else if(w==='R')B.R.push(e);
+  else if(!cb){
+    const cat=codeInfo(c).cat;
+    if(cat==='leave')B.leave.push({e,c});
+    else if(cat==='ot')B.ot.push({e,c});
+  }
+}
 function mpBuckets(iso,pool){
   const B={D:[],N:[],O:[],R:[],leave:[],ot:[]};
   schedEmps().forEach(e=>{
     if(pool&&poolOf(e)!==pool)return;
     const c=eff(e.id,iso).code;if(!c)return;
-    const cat=codeInfo(c).cat;
-    if(c==='D'||c==='SD')B.D.push(e);
-    else if(c==='N'||c==='SN')B.N.push(e);
-    else if(c==='O'||c==='SO')B.O.push(e);
-    else if(c==='R')B.R.push(e);
-    else if(cat==='leave')B.leave.push({e,c});
-    else if(cat==='ot')B.ot.push({e,c});
+    mpPut(B,e,c);
   });
   return B;
 }
@@ -28,13 +41,7 @@ function mpBucketsByPool(iso){
   const out={prod:mk(),office:mk()};
   schedEmps().forEach(e=>{
     const c=eff(e.id,iso).code;if(!c)return;
-    const B=out[poolOf(e)], cat=codeInfo(c).cat;
-    if(c==='D'||c==='SD')B.D.push(e);
-    else if(c==='N'||c==='SN')B.N.push(e);
-    else if(c==='O'||c==='SO')B.O.push(e);
-    else if(c==='R')B.R.push(e);
-    else if(cat==='leave')B.leave.push({e,c});
-    else if(cat==='ot')B.ot.push({e,c});
+    mpPut(out[poolOf(e)],e,c);
   });
   return out;
 }

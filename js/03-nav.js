@@ -28,6 +28,7 @@ function refreshBadge(){
     : rs.filter(r=>r.status==='pending').length;
   [$('pendBdg'),$('pendBdgM')].forEach(b=>{if(!b)return;b.style.display=n?'':'none';b.textContent=n;});
   if(typeof refreshPrintBadge==='function')refreshPrintBadge();
+  if(typeof refreshMealBadge==='function')refreshMealBadge();
 }
 /* bottom sheet "Thêm" & legend sheet */
 function openMoreSheet(){$('moreMask').classList.add('on');}
@@ -35,7 +36,9 @@ function closeMoreSheet(){const m=$('moreMask');if(m)m.classList.remove('on');}
 function openLegendSheet(){
   const L=[['O','Office (08–17h)'],['D','Day time (08–20h)'],['N','Night time (20–08h)'],['R','Rest']];
   let s=L.map(([c,d])=>`<span class="lg"><span class="box" style="${cellStyle(c)}">${c}</span>${d}</span>`).join('');
-  s+=allCodes().filter(c=>c.cat==='leave'||c.cat==='ot'||c.cat==='swap').map(c=>`<span class="lg"><span class="box" style="background:${c.col};color:#fff">${c.c}</span>${c.l}</span>`).join('');
+  s+=allCodes().filter(c=>c.cat==='leave'||c.cat==='ot'||c.cat==='swap'||c.cat==='combo').map(c=>(c.cat==='combo'
+      ? `<span class="lg">${chip(c.c)}${c.l}</span>`                       /* ca kép vẽ chip 2 nửa */
+      : `<span class="lg"><span class="box" style="background:${c.col};color:#fff">${c.c}</span>${c.l}</span>`)).join('');
   $('legendSheetBody').innerHTML=s;
   $('legendMask').classList.add('on');
 }

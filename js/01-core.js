@@ -37,14 +37,68 @@ const DEFAULT_CODES=[
  {c:'OTN',l:'Tăng ca đêm 20–08h',    col:'var(--cOT)', cat:'ot'},
  {c:'OTL',l:'Tăng ca giờ nghỉ trưa', col:'var(--cOT)', cat:'ot'},
  {c:'OT2',l:'Tăng ca 18–20h',        col:'var(--cOT)', cat:'ot'},
- {c:'OT3',l:'Tăng ca 17–20h',        col:'var(--cOT)', cat:'ot'}
+ {c:'OT3',l:'Tăng ca 17–20h',        col:'var(--cOT)', cat:'ot'},
+ /* CA KÉP — xem khối chú thích COMBO_CODES ngay bên dưới */
+ {c:'O+N',l:'Ca O + tăng ca đêm N',  col:'var(--cO)',  cat:'combo'},
+ {c:'D+N',l:'Ca D + tăng ca đêm N',  col:'var(--cD)',  cat:'combo'}
  /* Mã X (tăng ca nhập tàu) đã bỏ HOÀN TOÀN — không còn khai, không còn hiển thị
     trong danh sách chọn. Ô lịch cũ (nếu còn) sẽ hiện như mã lạ, không tính giờ OT. */
 ];
 // Giờ công mặc định theo mã ca (chỉnh / thêm ở tab Dữ liệu)
 const DEFAULT_HOURS={O:8,D:12,N:12,R:0,AL8:8,AL4:4,NP:0,COM:0,OFF:0,
                      WED:8,FUN:8,MAT:8,ALP:8,SD:12,SN:12,SO:8,
-                     OTD:12,OTN:12,OTL:1,OT2:2,OT3:3};
+                     OTD:12,OTN:12,OTL:1,OT2:2,OT3:3,
+                     'O+N':20,'D+N':24};
+
+/* ============================================================
+   CA KÉP — trực ca chuẩn RỒI TĂNG CA thêm một ca nữa
+   ------------------------------------------------------------
+   Một ô lịch chỉ chứa được MỘT mã, nên trước đây người vừa trực ca O
+   vừa tăng ca đêm chỉ hiện được "OTN" — nhìn vào không biết hôm đó họ
+   đã làm ca O. Nay có mã ghép: nửa trái là CA CHUẨN, nửa phải là CA
+   TĂNG. Ô lịch vẽ hai tông màu để nhìn phát biết ngay "vừa O vừa N".
+
+   Mã ghép mang cat riêng 'combo' — KHÔNG phải 'work' cũng không phải
+   'ot' — để những chỗ cộng giờ không nhầm cả 20h thành giờ công.
+   comboOf() tách lại thành 2 phần, comboSplitHours() chia số giờ.
+
+   Biểu mẫu công ty KHÔNG có ký hiệu ghép, nên mã ghép CHỈ dùng ở ô lịch
+   (quản lý chọn trong hộp sửa ca) — form gửi đơn không có nó, vì cat
+   'combo' không lọt qua bộ lọc của dsCodesFor(). Nhân viên xác nhận ô ca
+   kép thì inferReqFromChange() sinh đơn BỔ SUNG CÔNG 2 dòng đúng biểu
+   mẫu: một dòng ca chuẩn, một dòng ca tăng.
+   ============================================================ */
+const COMBO_CODES={
+  'O+N':{work:'O', ot:'OTN'},
+  'D+N':{work:'D', ot:'OTN'}
+};
+function comboOf(c){return COMBO_CODES[c]||null;}
+function isCombo(c){return !!COMBO_CODES[c];}
+/* Chia số giờ của ô ca kép thành phần CÔNG và phần TĂNG CA.
+   `total` là số giờ thực của ô (effHours) — bỏ trống thì lấy giờ mặc
+   định của hai mã cộng lại. Phần công lấy trọn giờ ca chuẩn, phần dôi
+   ra tính cho tăng ca (làm thêm bao nhiêu thì tính tăng ca bấy nhiêu). */
+function comboSplitHours(code,total){
+  const cb=comboOf(code);if(!cb)return null;
+  const hw=getHours(cb.work);
+  const tot=(typeof total==='number'&&total>0)?total:(hw+getHours(cb.ot));
+  const w=Math.min(hw,tot);
+  return {work:w, ot:Math.max(0,tot-w), workCode:cb.work, otCode:cb.ot};
+}
+/* Mã ca CHUẨN nằm trong một ô (ca kép thì trả về nửa ca chuẩn).
+   Dùng cho mọi phép đếm quân số D/N/O — người trực ca O rồi tăng ca
+   đêm thì ngày đó vẫn phải được đếm là có mặt ở ca O. */
+function workCodeOf(c){const cb=comboOf(c);return cb?cb.work:c;}
+/* Mã TĂNG CA nằm trong một ô ('' nếu ô không có phần tăng ca) */
+function otCodeOf(c){const cb=comboOf(c);return cb?cb.ot:(codeInfo(c).cat==='ot'?c:'');}
+/* Đếm số ca D / N / O từ bảng đếm mã ca của calcStats().
+   Gộp mã đổi ca (SD/SN/SO) và ca kép: "D+N" tính cho cột ca D, "O+N" tính
+   cho cột ca O — vì đó là ca chuẩn người ta trực hôm ấy. Mã tăng ca đơn
+   lẻ (OTD/OTN) KHÔNG tính vào đây, chúng có cột "Ca OT" riêng. */
+const CNT_SHIFT={D:['D','SD','D+N'],N:['N','SN'],O:['O','SO','O+N']};
+function cntShift(cnt,sh){
+  return (CNT_SHIFT[sh]||[]).reduce((a,c)=>a+((cnt&&cnt[c])||0),0);
+}
 
 /* ============================================================
    MẪU TĂNG CA
@@ -80,6 +134,7 @@ let S={
   settings:{minD:3,minN:3,minO:1,maxOffTeam:1,hours:{},customCodes:[],deptDefault:DEPT_DEFAULT_FALLBACK,approver1:APPROVER1_FALLBACK,approver2:APPROVER2_FALLBACK},
   printLog:{},            // printLog[batchId] = {ts, by, formType, reqIds:[...], rows, pages, reprint}
   notifs:{},              // notifs[id] = {kind, to, from, status, createdAt, ...payload} — xác nhận đổi lịch / đổi ca
+  events:{},              // events[id] = {title, from, to, days?, scope, teams, notify} — sự kiện trên lịch (js/20-events.js)
   meta:{schedFrom:'',schedTo:''},
   rev:0
 };
@@ -122,7 +177,17 @@ function getHours(c){
   if(DEFAULT_HOURS[c]!==undefined)return DEFAULT_HOURS[c];
   return 0;
 }
-function chip(c,big){const i=codeInfo(c);return `<span class="cc${big?' big':''}" style="background:${i.col}">${c}</span>`;}
+/* Nhãn mã ca. Ca kép vẽ thành hai nửa "O|N" hai tông màu để nhìn phát
+   biết vừa trực ca gì vừa tăng ca ca gì (xem .cc.combo trong css/ui.css). */
+function chip(c,big){
+  const cb=comboOf(c);
+  if(cb){
+    const a=codeInfo(cb.work), b=codeInfo(cb.ot);
+    const bl={OTD:'D',OTN:'N'}[cb.ot]||cb.ot;
+    return `<span class="cc combo${big?' big':''}" style="--cca:${a.col};--ccb:${b.col}" title="${esc(codeInfo(c).l)}"><i>${cb.work}</i><i>${bl}</i></span>`;
+  }
+  const i=codeInfo(c);return `<span class="cc${big?' big':''}" style="background:${i.col}">${c}</span>`;
+}
 function eff(empId,iso){const o=S.over[empId]&&S.over[empId][iso];if(o&&o.code)return{code:o.code,ovr:true,o};const b=S.base[empId]&&S.base[empId][iso];return b?{code:b,ovr:false}:{code:'',ovr:false};}
 /* Số giờ thực của một ô lịch.
    Đơn tăng ca khai giờ tự do (VD 14:00–19:30 = 5.5h) nên khi duyệt, số giờ thật
@@ -238,6 +303,35 @@ function posCode(e){
   return e.role==='eng'?'field_eng':(e.role==='oper'?'operator':'');
 }
 function posCodeOfId(id){return posCode(empById(id));}
+/* ------------------------------------------------------------
+   NHÓM VỊ TRÍ: KỸ SƯ vs OPERATOR
+   Trực ca không chỉ cần ĐỦ ĐẦU NGƯỜI mà phải đủ ĐÚNG LOẠI người:
+   một ca phải có kỹ sư (Field Engineer ngoài hiện trường + DCS
+   Boardman trong phòng điều khiển) và operator vận hành. Ba người
+   operator không thay được một kỹ sư, nên bảng Nhân lực theo ngày
+   đếm tách hai nhóm này ra.
+   ------------------------------------------------------------ */
+const POSG_ENG='eng', POSG_OPER='oper', POSG_OTHER='other';
+const POSG_LABEL={eng:'Kỹ sư',oper:'Operator',other:'Khác'};
+const POSG_FULL ={eng:'Kỹ sư (Field + DCS Boardman)',oper:'Operator',other:'Vị trí khác'};
+const POSG_ICON ={eng:'🛠️',oper:'⚙️',other:'👤'};
+const POSG_COLOR={eng:'#2563EB',oper:'#0F766E',other:'#64748B'};
+/* field_eng + boardman = kỹ sư · operator = operator · còn lại = khác */
+function posGroupOf(e){
+  const p=posCode(e);
+  if(p==='field_eng'||p==='boardman')return POSG_ENG;
+  if(p==='operator')return POSG_OPER;
+  if(p)return POSG_OTHER;
+  /* Chưa khai vị trí thì rơi về vai trò cũ (role) để dữ liệu cũ vẫn xếp đúng */
+  return e&&e.role==='eng'?POSG_ENG:(e&&e.role==='oper'?POSG_OPER:POSG_OTHER);
+}
+function posGroupOfId(id){return posGroupOf(empById(id));}
+/* Chia một danh sách nhân viên thành 3 rổ theo nhóm vị trí */
+function splitEO(list){
+  const out={eng:[],oper:[],other:[]};
+  (list||[]).forEach(e=>{(out[posGroupOf(e)]||out.other).push(e);});
+  return out;
+}
 /* Dropdown chọn vị trí — value đã chuẩn hoá qua posCode() */
 function posSelectHtml(e,extraStyle){
   const cur=posCode(e);

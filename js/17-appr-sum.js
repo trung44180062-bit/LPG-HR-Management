@@ -81,6 +81,8 @@ function asFlagMatch(r,f){
     case 'unprinted': return r.status==='approved'&&!r.printedAt&&!r.noPrint;
     case 'cfw':       return r.type==='swap'&&r.confirmW==='pending';
     case 'cfwno':     return r.type==='swap'&&r.confirmW==='declined';
+    case 'cvw':       return r.type==='leave'&&r.coverId&&(r.coverSt||'pending')==='pending';
+    case 'cvno':      return r.type==='leave'&&r.coverSt==='declined';
     case 'proxy':     return !!(r.byId&&r.byId!==r.empId);
     default: return true;
   }
@@ -91,6 +93,8 @@ const AS_FLAGS=[
   ['unprinted','🖨️', 'Duyệt rồi chưa in',              'Đã duyệt nhưng chưa in biểu mẫu nộp nhân sự.','info'],
   ['cfw',      '🔄',  'Đổi ca chờ xác nhận',            'Người nhận ca chưa bấm xác nhận — duyệt vội dễ thành xếp nhầm ca.','warn'],
   ['cfwno',    '✋',  'Đổi ca bị từ chối',              'Người kia đã từ chối đổi ca, đơn này nên trả lại.','bad'],
+  ['cvw',      '🤝',  'Cover chờ xác nhận',             'Đơn nghỉ có chỉ định người OT cover nhưng người đó chưa bấm đồng ý.','warn'],
+  ['cvno',     '🙅',  'Cover đã từ chối',               'Người được nhờ OT cover đã từ chối — nên đổi sang người khác trước khi duyệt.','bad'],
   ['proxy',    '👥',  'Khai hộ',                        'Đơn do người khác đứng ra khai thay — nên soát kỹ hơn.','info']
 ];
 

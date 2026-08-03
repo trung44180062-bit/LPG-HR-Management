@@ -133,7 +133,17 @@ function repDayList(){
 function repManpower(){
   const days=repDayList();
   if(!days.length)return '<div class="card"><p class="muted">Chọn khoảng ngày hợp lệ.</p></div>';
-  const pill=(n,lbl,col,low)=>`<span class="mpp${low?' low':''}${n?'':' zero'}" style="background:${col}">${n}<small>${lbl}</small></span>`;
+  /* Pill có thêm DÒNG TÁCH VỊ TRÍ: một ca đủ đầu người vẫn có thể thiếu kỹ sư,
+     nên ngay trên đầu dòng đã thấy "KS x · OP y" mà không cần bung chi tiết. */
+  const eoTag=arr=>{
+    const g=splitEO(arr||[]);
+    if(!arr||!arr.length)return '';
+    return `<em class="mpp-eo" title="${esc(t2('Kỹ sư (Field + DCS Boardman)'))} / ${esc(t2('Operator'))}">`
+      +`<b class="${g.eng.length?'':'z'}">${POSG_ICON.eng}${g.eng.length}</b>`
+      +`<b class="${g.oper.length?'':'z'}">${POSG_ICON.oper}${g.oper.length}</b>`
+      +(g.other.length?`<b>${POSG_ICON.other}${g.other.length}</b>`:'')+`</em>`;
+  };
+  const pill=(n,lbl,col,low,arr)=>`<span class="mpp${low?' low':''}${n?'':' zero'}" style="background:${col}">${n}<small>${lbl}</small>${arr?eoTag(arr):''}</span>`;
   let rows='',nLow=0,shown=0;
   days.forEach(iso=>{
     /* Đếm TÁCH KHỐI: nhóm sản xuất A/B/C/D trực ca, nhóm Office làm hành chính.
@@ -147,6 +157,14 @@ function repManpower(){
     const nm=x=>esc((x&&x.name)||(x&&x.id)||'');
     const line=(code,arr,tip)=>`<div class="mp-line">${chip(code)}<span class="who"${tip?` title="${esc(tip)}"`:''}>${
       arr.length?arr.map(nm).join(', '):'—'}</span></div>`;
+    /* Dòng ca có tách vị trí: tên người xếp thành 2 hàng con Kỹ sư / Operator */
+    const lineEO=(code,arr,tip)=>{
+      const g=splitEO(arr);
+      const sub=(k)=>g[k].length?`<div class="mp-eo-sub ${k}"><i>${POSG_ICON[k]} ${t2(POSG_LABEL[k])} <b>${g[k].length}</b></i><span>${g[k].map(nm).join(', ')}</span></div>`:'';
+      if(!arr.length)return line(code,arr,tip);
+      return `<div class="mp-line eo">${chip(code)}<span class="who"${tip?` title="${esc(tip)}"`:''}>
+        ${sub('eng')}${sub('oper')}${sub('other')}</span></div>`;
+    };
     const lvOt=(arr,code)=>arr.length?`<div class="mp-line">${chip(code)}<span class="who">${
       arr.map(x=>nm(x.e)+' ('+x.c+')').join(', ')}</span></div>`:'';
     const nLeave=B.leave.length+V.leave.length, nOt=B.ot.length+V.ot.length;
@@ -155,9 +173,9 @@ function repManpower(){
         <div class="dt"><div class="d1">${fmtVN(iso)}</div>
           <div class="d2 ${dw===0?'dowSun':dw===6?'dowSat':''}">${dowOf(iso)}${iso===todayIso()?' · '+t2('Hôm nay'):''}</div></div>
         <div class="pillrow">
-          ${pill(B.D.length,t2('NGÀY'),'var(--cD)',lowD)}
-          ${pill(B.N.length,t2('ĐÊM'),'var(--cN)',lowN)}
-          ${pill(B.O.length,t2('O SX'),'var(--cO)',false)}
+          ${pill(B.D.length,t2('NGÀY'),'var(--cD)',lowD,B.D)}
+          ${pill(B.N.length,t2('ĐÊM'),'var(--cN)',lowN,B.N)}
+          ${pill(B.O.length,t2('O SX'),'var(--cO)',false,B.O)}
           ${pill(V.O.length,t2('O VP'),'var(--cSW)',false)}
           ${pill(B.R.length,t2('NGHỈ CA'),'var(--cR)',false)}
           ${pill(nLeave,t2('PHÉP'),'var(--cAL)',false)}
@@ -168,8 +186,8 @@ function repManpower(){
       </div>
       <div class="mp2-det">
         <div class="mp-pool">${poolChip(POOL_PROD)} ${t2('Khối sản xuất')}</div>
-        ${line('D',B.D)}${line('N',B.N)}${line('O',B.O)}
-        ${line('R',B.R,'Có thể huy động tăng ca')}
+        ${lineEO('D',B.D)}${lineEO('N',B.N)}${lineEO('O',B.O)}
+        ${lineEO('R',B.R,'Có thể huy động tăng ca')}
         ${lvOt(B.leave,'AL8')}${lvOt(B.ot,'OTD')}
         <div class="mp-pool">${poolChip(POOL_OFF)} ${t2('Khối văn phòng')}</div>
         ${line('O',V.O)}
@@ -180,7 +198,8 @@ function repManpower(){
   const head=`<div class="card rep-head">
     <b>${days.length} ngày</b>
     <span class="st ${nLow?'rejected':'approved'}">${nLow?('⚠ '+nLow+' ngày thiếu nhân lực'):'✓ Đủ nhân lực toàn khoảng'}</span>
-    <span class="muted sm2">Chạm vào từng ngày để xem danh sách tên · định mức chỉ tính khối sản xuất</span></div>`;
+    <span class="muted sm2">Chạm vào từng ngày để xem danh sách tên · định mức chỉ tính khối sản xuất</span>
+    <span class="muted sm2">${POSG_ICON.eng} ${t2('Kỹ sư')} = Field Engineer + DCS Boardman · ${POSG_ICON.oper} ${t2('Operator')}</span></div>`;
   return shown?head+`<div class="mp2">${rows}</div>`
               :head+'<div class="card"><p class="muted">Không có ngày nào khớp bộ lọc.</p></div>';
 }
@@ -219,7 +238,7 @@ function repStatsAll(){
   const rows=statRows(repYm,repGroup);
   if(!rows.length)return '<div class="card"><p class="muted">Chưa có nhân sự / lịch trong kỳ này.</p></div>';
   const sum=f=>rnd1(rows.reduce((a,r)=>a+f(r.s),0));
-  const cD=s=>(s.cnt.D||0)+(s.cnt.SD||0),cN=s=>(s.cnt.N||0)+(s.cnt.SN||0),cO=s=>(s.cnt.O||0)+(s.cnt.SO||0);
+  const cD=s=>cntShift(s.cnt,'D'),cN=s=>cntShift(s.cnt,'N'),cO=s=>cntShift(s.cnt,'O');
   let h=`<div class="me-stats rep-sum">
     <div class="stat-box"><div class="v">${sum(s=>s.hWork)}</div><div class="k">TỔNG GIỜ CÔNG</div></div>
     <div class="stat-box"><div class="v">${sum(s=>s.hOT)}</div><div class="k">TỔNG GIỜ TĂNG CA</div></div>
@@ -236,7 +255,7 @@ function repStatsAll(){
         .map(([c,n])=>`<span class="cnt" style="background:${(typeof SCHEDBG!=='undefined'&&SCHEDBG[c])||'#E2E8F0'};color:${(typeof SCHEDTXT!=='undefined'&&SCHEDTXT[c])||'#334155'}">${c}×${n}</span>`).join('');
       const ot=otShifts(s);
       return `<div class="st-card">
-        <div class="h">${teamChip(e.team)}<b>${esc(e.name||e.id)}</b><i>${esc(posLabel(posCode(e)))}</i></div>
+        <div class="h">${teamChip(e.team)}<button type="button" class="st-nm" onclick="openEmpSum('${e.id}')">${esc(e.name||e.id)}</button><i>${esc(posLabel(posCode(e)))}</i></div>
         <div class="nums">
           <span class="n hl">${rnd1(s.hWork)}<small>h ${t('công')}</small></span>
           <span class="n hl-ot">${rnd1(s.hOT)}<small>h OT${ot?' ('+ot+')':''}</small></span>
@@ -256,7 +275,8 @@ function repStatsAll(){
      ============================================================ */
   const ST_COLS=[
     {l:'Nhóm',    w:64, cls:'l',   get:({e})=>teamChip(e.team)},
-    {l:'Họ tên',  w:170,cls:'l',   get:({e})=>`<b>${esc(e.name||e.id)}</b>`},
+    /* Bấm vào tên → bảng tổng hợp cả kỳ của riêng người đó (openEmpSum) */
+    {l:'Họ tên',  w:170,cls:'l',   get:({e})=>`<button type="button" class="st-nm" onclick="openEmpSum('${e.id}')" title="${t('Xem tổng hợp cả kỳ của người này')}">${esc(e.name||e.id)}</button>`},
     {l:'Vị trí',  w:135,cls:'l pos',get:({e})=>esc(posLabel(posCode(e))),
                   tot:()=>'TỔNG CỘNG'},
     {l:'D',   w:46,hd:'g-sh',get:({s})=>stCnt('D',cD(s)),  tot:()=>rows.reduce((a,r)=>a+cD(r.s),0)},
@@ -295,13 +315,163 @@ function repStatsAll(){
   h+=`<p class="muted sm2" style="margin-top:8px">Tính theo lịch thực tế (chuẩn + điều chỉnh + đơn đã duyệt). Số giờ mỗi mã ca khai ở tab Dữ liệu.</p>`;
   return h;
 }
+/* ============================================================
+   BẢNG TỔNG HỢP CẢ KỲ CỦA MỘT NGƯỜI  (bấm vào tên ở Bảng công tổng hợp)
+   Gộp mọi thứ người duyệt cần biết về một nhân viên trong kỳ vào một chỗ:
+   số giờ · đếm ca · từng ngày · các lần tăng ca · đơn đã gửi trong kỳ.
+   Tất cả tính từ dữ liệu đã có sẵn trong bộ nhớ (eff/calcStats/S.requests) —
+   KHÔNG tải thêm gì từ Firebase.
+   ============================================================ */
+let esId='', esYm='';
+function esPeriod(){return esYm||repYm||curSchedMonth();}
+function openEmpSum(id){
+  if(!id)return;
+  esId=id;esYm=repYm||curSchedMonth();
+  const m=$('empSumMask');if(!m)return;
+  m.classList.add('on');
+  renderEmpSum();
+}
+function closeEmpSum(){const m=$('empSumMask');if(m)m.classList.remove('on');esId='';}
+function esShiftYm(delta){
+  const ym=esPeriod();let a=ym.split('-').map(Number),y=a[0],mo=a[1]+delta;
+  while(mo<1){mo+=12;y--;}while(mo>12){mo-=12;y++;}
+  esYm=y+'-'+pad(mo);renderEmpSum();
+}
+/* Nhảy sang danh sách đơn của đúng người này */
+function esGoRequests(){
+  const e=empById(esId);
+  closeEmpSum();
+  if(typeof apprFilter==='undefined'||typeof apprSetTab!=='function')return;
+  Object.assign(apprFilter,{status:'__all',type:'__all',print:'__all',flag:'',
+    q:(e&&e.name)||esId,ym:esPeriod(),from:'',to:''});
+  apprSetTab('list');
+  if(typeof go==='function')go('appr');
+}
+function renderEmpSum(){
+  const box=$('empSumBody'),id=esId;if(!box||!id)return;
+  const e=empById(id)||{id,name:id};
+  const ym=esPeriod(),per=periodFor(ym),days=daysOfPeriod(ym),today=todayIso();
+  const s=calcStats(id,days);
+  const cD=cntShift(s.cnt,'D'),cN=cntShift(s.cnt,'N'),cO=cntShift(s.cnt,'O');
+  const ot=(typeof otSummary==='function')?otSummary(id,ym):{approved:s.hOT,pending:0};
+  const left=(typeof alLeft==='function')?alLeft(id):0;
+  const leaveDays=Object.entries(s.cnt).filter(([c])=>codeInfo(c).cat==='leave')
+    .reduce((a,[c,n])=>a+((typeof alDayValue==='function'?alDayValue(c):1)||1)*n,0);
+
+  /* --- đếm theo mã ca --- */
+  const cnts=Object.entries(s.cnt).sort((a,b)=>b[1]-a[1])
+    .map(([c,n])=>`<span class="cnt" style="background:${(typeof SCHEDBG!=='undefined'&&SCHEDBG[c])||'#E2E8F0'};color:${(typeof SCHEDTXT!=='undefined'&&SCHEDTXT[c])||'#334155'}">${esc(c)}×${n}</span>`).join('');
+
+  /* --- từng ngày --- */
+  const rows=days.map(iso=>{
+    const r=eff(id,iso),c=r.code;if(!c)return '';
+    const ci=codeInfo(c),h=effHours(id,iso);
+    const sp=comboSplitHours(c,h);
+    const hw=sp?sp.work:((ci.cat==='work'||ci.cat==='swap')?h:0),
+          ho=sp?sp.ot:(ci.cat==='ot'?h:0),
+          hl=sp?0:(ci.cat==='leave'?h:0);
+    const std=(S.base[id]||{})[iso]||'';
+    const prov=r.o&&r.o.prov;
+    return `<tr class="${iso<=today?'':'fut'}">
+      <td>${fmtVN(iso)} <span class="muted">${dowOf(iso)}</span></td>
+      <td>${chip(c)}${prov?' <span class="mini-prov" title="'+t('Tạm duyệt, chờ Quản lý người Hàn chốt')+'">~</span>':''}
+        ${std&&std!==c?`<em class="chg" title="${t('Lịch chuẩn')}: ${esc(std)}">⇄${esc(std)}</em>`:''}</td>
+      <td class="num">${hw?rnd1(hw):''}</td>
+      <td class="num ot">${ho?rnd1(ho):''}</td>
+      <td class="num lv">${hl?rnd1(hl):''}</td></tr>`;
+  }).filter(Boolean).join('');
+
+  /* --- các lần tăng ca trong kỳ --- */
+  const otRows=days.map(iso=>{
+    const c=eff(id,iso).code;if(!c)return null;
+    const sp=comboSplitHours(c,effHours(id,iso));
+    if(sp)return {iso,code:c,h:sp.ot};           // ca kép: chỉ tính phần tăng ca
+    if(codeInfo(c).cat!=='ot')return null;
+    return {iso,code:c,h:effHours(id,iso)};
+  }).filter(Boolean);
+
+  /* --- đơn đã gửi trong kỳ (mọi loại, mọi trạng thái) --- */
+  const reqs=Object.values(S.requests||{})
+    .filter(r=>r&&(r.empId===id||r.withId===id)&&reqInRange(r,per.from,per.to))
+    .sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  const reqRows=reqs.map(r=>`<div class="ds-req ${r.status}">
+      <span class="ic">${REQ_ICON[r.type]||'📄'}</span>
+      <span class="tx"><b>${esc(REQ_LABEL[r.type]||r.type)}</b>
+        <i>${r.type==='multi'?fmtVN(r.from)+' → '+fmtVN(r.to)
+             :reqDays(r).map(d=>fmtVN(d.iso)+(d.code?' ('+d.code+')':'')).join(' · ')}</i>
+        ${r.withId?`<i>${t('với')} ${esc(shortName((empById(r.withId)||{}).name||r.withId))}</i>`:''}
+        ${r.coverId&&typeof reqCoverChip==='function'?`<i>${reqCoverChip(r)}</i>`:''}
+        ${r.note?`<i>“${esc(r.note)}”</i>`:''}</span>
+      <span class="st ${reqStatusClass(r)}">${reqStatusLabel(r)}</span>
+    </div>`).join('');
+
+  box.innerHTML=`
+    <div class="es-head">
+      <div class="es-who">
+        <div class="es-nm">${teamChip(e.team)}<b>${esc(e.name||id)}</b></div>
+        <div class="es-sub">${esc(posLabel(posCode(e)))} · ${t('Mã NV')} ${esc(id)}${
+          e.joinAt?' · '+t('vào làm')+' '+fmtVN(e.joinAt):''}</div>
+      </div>
+      <button class="ds-x" onclick="closeEmpSum()">✕</button>
+    </div>
+    <div class="es-nav">
+      <button class="btn sec sm" onclick="esShiftYm(-1)">◀</button>
+      <b>${esc(per.label)}</b>
+      <button class="btn sec sm" onclick="esShiftYm(1)">▶</button>
+      <span class="sp"></span>
+      <button class="btn sec sm" onclick="esYm='';renderEmpSum()">${t('Kỳ hiện tại')}</button>
+    </div>
+
+    <div class="mp-sum-kpi es-kpi">
+      <div class="k"><div class="v">${rnd1(s.hWork)}<i>h</i></div><span>${t('Giờ công')}</span></div>
+      <div class="k ot"><div class="v">${rnd1(s.hOT)}<i>h</i></div><span>${t('Giờ tăng ca')} (${otRows.length})</span></div>
+      <div class="k lv"><div class="v">${rnd1(leaveDays)}<i>${t('ngày')}</i></div><span>${t('Nghỉ phép')}</span></div>
+      <div class="k al"><div class="v">${rnd1(left)}<i>${t('ngày')}</i></div><span>${t('Phép năm còn lại')}</span></div>
+    </div>
+
+    <div class="stbl stbl-col es-cnt"><table><thead><tr>
+      <th class="g-sh">D</th><th class="g-sh">N</th><th class="g-sh">O</th><th class="g-sh">R</th>
+      <th class="g-lv">AL8</th><th class="g-lv">AL4</th><th class="g-lv">NP</th><th class="g-lv">OFF</th><th class="g-ot">${t('Ca OT')}</th>
+    </tr></thead><tbody><tr>
+      ${stCnt('D',cD)}${stCnt('N',cN)}${stCnt('O',cO)}${stCnt('R',s.cnt.R)}
+      ${stCnt('AL8',s.cnt.AL8)}${stCnt('AL4',s.cnt.AL4)}${stCnt('NP',s.cnt.NP)}${stCnt('OFF',s.cnt.OFF)}
+      ${stCnt('OTD',otShifts(s))}</tr></tbody></table></div>
+    ${cnts?`<div class="es-chips">${cnts}</div>`:''}
+    ${ot.pending?`<p class="pv-alert info sm">${t('Còn')} ${rnd1(ot.pending)}h ${t('tăng ca đang chờ duyệt.')}</p>`:''}
+
+    <div class="ds-block"><h4>⚡ ${t('Các lần tăng ca')} (${otRows.length} · ${rnd1(s.hOT)}h)</h4>
+      ${otRows.length?`<div class="ot-list">${otRows.map(x=>`<div class="ot-row">
+          <span class="d">${dowOf(x.iso)} ${fmtVNfull(x.iso)}</span>${chip(x.code)}<span class="h">${rnd1(x.h)}h</span>
+        </div>`).join('')}</div>`
+        :`<p class="muted">${t('Kỳ này chưa có ca tăng ca nào được duyệt.')}</p>`}
+    </div>
+
+    <div class="ds-block"><h4>📋 ${t('Đơn trong kỳ')} (${reqs.length})</h4>
+      ${reqRows||`<p class="muted">${t('Kỳ này người này chưa gửi đơn nào.')}</p>`}
+      ${reqs.length&&typeof canAppr==='function'&&canAppr()
+        ?`<button class="btn sec sm" style="margin-top:8px" onclick="esGoRequests()">${t('Mở trong Danh sách đơn')} ›</button>`:''}
+    </div>
+
+    <div class="ds-block"><h4>🗓 ${t('Chi tiết từng ngày')}</h4>
+      <table class="tbl mp-sum-tbl">
+        <colgroup><col><col style="width:96px"><col style="width:17%"><col style="width:15%"><col style="width:17%"></colgroup>
+        <thead><tr><th>${t('Ngày')}</th><th>${t('Mã')}</th><th class="num">${t('Công')}</th>
+          <th class="num">OT</th><th class="num">${t('Phép')}</th></tr></thead>
+        <tbody>${rows||`<tr><td colspan="5" class="muted">${t('Kỳ này chưa có dữ liệu.')}</td></tr>`}
+          <tr class="sum-total"><td colspan="2">${t('Tổng')}</td><td class="num">${rnd1(s.hWork)}</td>
+            <td class="num ot">${rnd1(s.hOT)}</td><td class="num lv">${rnd1(s.hLeave)}</td></tr>
+        </tbody></table>
+      <p class="muted sm2" style="margin-top:6px">${t('Tính theo lịch thực tế (chuẩn + điều chỉnh + đơn đã duyệt). Ô có ⇄ là ngày khác lịch chuẩn.')}</p>
+    </div>`;
+}
+
 /* Nhân viên thường: chỉ số liệu của chính mình */
 function repStatsMe(){
   const id=meId();if(!id)return '<div class="card"><p class="muted">Đăng nhập để xem.</p></div>';
   const e=empById(id)||{};
   const days=daysOfPeriod(repYm), s=calcStats(id,days);
   const ot=otSummary(id,repYm);
-  const cD=(s.cnt.D||0)+(s.cnt.SD||0),cN=(s.cnt.N||0)+(s.cnt.SN||0),cO=(s.cnt.O||0)+(s.cnt.SO||0);
+  const cD=cntShift(s.cnt,'D'),cN=cntShift(s.cnt,'N'),cO=cntShift(s.cnt,'O');
   const left=alLeft(id);
   return `<div class="me-stats rep-sum">
       <div class="stat-box"><div class="v">${rnd1(s.hWork)}</div><div class="k">GIỜ CÔNG</div></div>
@@ -472,7 +642,7 @@ function repPersonal(){
       h+=`<div class="card"><h3 class="rep-h3">Giờ công theo người · ${esc(selLbl)}</h3>${chartHoursByEmp(emps,allDays)}</div>`;
     }else if(emps.length===1){
       const s=perRows[0].s;
-      const cD=(s.cnt.D||0)+(s.cnt.SD||0),cN=(s.cnt.N||0)+(s.cnt.SN||0),cO=(s.cnt.O||0)+(s.cnt.SO||0);
+      const cD=cntShift(s.cnt,'D'),cN=cntShift(s.cnt,'N'),cO=cntShift(s.cnt,'O');
       h+=`<div class="card"><h3 class="rep-h3">Chi tiết ${esc(shortName(perRows[0].e.name)||perRows[0].e.id)} · ${esc(selLbl)}</h3>
         <div class="stbl"><table><thead>
         <tr><th>Ca ngày D</th><th>Ca đêm N</th><th>Văn phòng O</th><th>Nghỉ ca R</th><th>Nghỉ phép</th><th>Ca OT</th></tr></thead>
@@ -817,10 +987,12 @@ function otlogRowsForPeriod(m){
   // Ô lịch thực tế mang mã OT nhưng không gắn đơn (quản lý gán tay)
   days.forEach(iso=>{
     schedEmps().forEach(e=>{
-      const rr=eff(e.id,iso);
-      if(!rr.code||codeInfo(rr.code).cat!=='ot')return;
+      const rr=eff(e.id,iso);if(!rr.code)return;
+      const sp=comboSplitHours(rr.code,effHours(e.id,iso));
+      if(!sp&&codeInfo(rr.code).cat!=='ot')return;
       if(seen.has(e.id+'|'+iso))return;
-      out.push({src:'app',d:iso,n:e.name||e.id,s:'',e:'',h:effHours(e.id,iso),r:'',st:'app'});
+      out.push({src:'app',d:iso,n:e.name||e.id,s:'',e:'',
+        h:sp?sp.ot:effHours(e.id,iso),r:sp?t('Ca kép')+' '+rr.code:'',st:'app'});
     });
   });
   return out;

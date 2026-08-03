@@ -24,7 +24,7 @@
    ============================================================ */
 
 /* Nhánh dạng bảng: khoá là mã NV / id đơn → nghe & ghi ở mức con */
-const FB_MAP_BRANCHES=['base','over','requests','accounts','printLog','notifs'];
+const FB_MAP_BRANCHES=['base','over','requests','accounts','printLog','notifs','events'];
 /* Nhánh nghe trọn gói (nhỏ, và luôn cần đủ để render) */
 const FB_VAL_BRANCHES=['employees','settings','meta'];
 
@@ -54,6 +54,7 @@ function normalizeState(){
   S.employees=S.employees||[];
   S.base=S.base||{};S.over=S.over||{};S.requests=S.requests||{};
   S.accounts=S.accounts||{};S.printLog=S.printLog||{};S.notifs=S.notifs||{};
+  S.events=S.events||{};                 // sự kiện trên lịch — xem js/20-events.js
   S.settings=S.settings||{minD:3,minN:3};
   S.settings.hours=S.settings.hours||{};
   S.settings.customCodes=S.settings.customCodes||[];
@@ -104,6 +105,10 @@ function fbPush(){
    thì giao diện giật, mà vẽ 1 lần là đủ. */
 function fbTouch(){
   clearTimeout(_fbRenderT);
+  /* Dữ liệu về từ máy khác KHÔNG đi qua save() nên S.rev không đổi → các bộ
+     đệm khoá theo S.rev phải được xoá tay ở đây, nếu không sẽ hiện số cũ. */
+  if(typeof mealResetCache==='function')mealResetCache();
+  if(typeof evResetCache==='function')evResetCache();
   _fbRenderT=setTimeout(()=>{
     localStorage.setItem(LS,JSON.stringify(S));
     if(typeof renderAll==='function')renderAll();

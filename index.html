@@ -15,10 +15,10 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 
 <!-- ===== CSS ===== -->
-<link rel="stylesheet" href="css/app.css?v=53">
-<link rel="stylesheet" href="css/portal.css?v=53">
-<link rel="stylesheet" href="css/print.css?v=53">
-<link rel="stylesheet" href="css/ui.css?v=53">
+<link rel="stylesheet" href="css/app.css?v=58">
+<link rel="stylesheet" href="css/portal.css?v=58">
+<link rel="stylesheet" href="css/print.css?v=58">
+<link rel="stylesheet" href="css/ui.css?v=58">
 <style id="pageDyn">@page{size:A4 portrait;margin:8mm}</style>
 </head>
 <body class="locked">
@@ -155,9 +155,9 @@
       <button class="on" data-ct="sched" onclick="setCalTab('sched')">📅 Lịch</button>
       <button class="mgr-only" data-ct="mp" onclick="setCalTab('mp')">👥 Nhân lực</button>
     </div>
-    <button class="btn sec sm" onclick="shiftCalMonth(-1)" title="Kỳ trước">◀</button>
+    <button class="btn sec sm" id="calPrevBtn" onclick="shiftCalMonth(-1)" title="Kỳ trước">◀</button>
     <select class="inp sm" id="calMonth" style="font-weight:700" onchange="renderCal()"></select>
-    <button class="btn sec sm" onclick="shiftCalMonth(1)" title="Kỳ sau">▶</button>
+    <button class="btn sec sm" id="calNextBtn" onclick="shiftCalMonth(1)" title="Kỳ sau">▶</button>
     <div class="seg" id="calSeg">
       <button class="on" data-m="std" onclick="setCalMode('std')">Chuẩn</button>
       <button data-m="real" onclick="setCalMode('real')">Thực tế</button>
@@ -171,19 +171,23 @@
     </select>
     <label id="calDiffWrap" class="cal-chk"><input type="checkbox" id="realDiffOnly" onchange="renderCal()"> Chỉ ô khác chuẩn</label>
     <span class="sp"></span>
+    <!-- Ghi nhận ngày đặc biệt (nhập tàu, bảo dưỡng…) — js/20-events.js -->
+    <button class="btn sec sm admin-only" onclick="openEventMgr()" title="Đánh dấu ngày đặc biệt trên lịch và báo cho mọi người">📌 Sự kiện</button>
     <!-- Thu/Mở và "Theo ngày" là của bố cục thẻ tuần trên máy tính.
-         Điện thoại nay xem lịch theo danh sách ngày (kiểu Nhân lực) nên ẩn đi. -->
+         Điện thoại có bố cục lịch tuần riêng (renderCalWeekGrid) nên ẩn đi. -->
     <button class="btn sec sm pc-only" id="calCollapseAllBtn" onclick="calCollapseAll()">Thu/Mở</button>
     <button class="btn sec sm pc-only" onclick="toggleCalMobileView()" id="calViewToggle">👁 Theo ngày</button>
     <button class="btn sec sm" onclick="openLegendSheet()" title="Chú giải mã ca">❔ Chú giải</button>
+    <!-- Cơm phát sinh: so lịch chuẩn (bếp đã đặt) với lịch thực tế (js/19-meal.js) — ai cũng xem được -->
+    <button class="btn sm" id="mealBtn" style="position:relative;background:var(--cOT)" onclick="openMealPlan()" title="So lịch chuẩn (bếp đã đặt) với lịch thực tế để biết phải đặt thêm hay báo bớt">🍚 Cơm phát sinh<span class="bdg" id="mealBdg" style="display:none;position:static;margin-left:6px">0</span></button>
     <button class="btn sm pc-only" id="calPrintBtn" style="position:relative" onclick="openPrintBulk()" title="In đơn đã duyệt">🖨️ In đơn<span class="bdg" id="printBdgCal" style="display:none;position:static;margin-left:6px">0</span></button>
   </div>
 
   <div class="sched-wrap cal-desktop"><div class="mtx-scroll" id="mtxBox"></div></div>
   <div id="calWeekBox" class="cal-mobile"></div>
   <div id="calDayBox" class="cal-mobile" style="display:none"></div>
-  <!-- Điện thoại: danh sách theo ngày kiểu Nhân lực (js/06-calendar.js) -->
-  <div id="calMpBox" class="cal-mobile" style="display:none"></div>
+  <!-- Điện thoại: LỊCH TUẦN dạng lưới người × 7 ngày (js/06-calendar.js) -->
+  <div id="calWkGrid" class="cal-mobile" style="display:none"></div>
   <!-- Sub-tab Nhân lực (chuyển từ tab Báo cáo sang, js/15-report.js) -->
   <div id="calMpPanel" style="display:none"></div>
 </section>
@@ -340,9 +344,29 @@
   </div>
 </div>
 
+<!-- ghi nhận sự kiện trên lịch (nhập tàu, bảo dưỡng…) — js/20-events.js -->
+<div class="mask" id="evMask" onclick="if(event.target===this)closeEventMgr()">
+  <div class="modal" id="evBody"></div>
+</div>
+
 <!-- email báo cáo modal -->
 <div class="mask" id="mailMask" onclick="if(event.target===this)closeMailReport()">
   <div class="modal" id="mailBody"></div>
+</div>
+
+<!-- chọn / đổi người OT cover cho đơn nghỉ phép -->
+<div class="mask" id="coverMask" onclick="if(event.target===this)closeCoverPicker()">
+  <div class="modal" id="coverBody"></div>
+</div>
+
+<!-- đặt cơm tăng ca: bảng ngày × 4 bữa + chi tiết từng người -->
+<div class="mask" id="mealMask" onclick="if(event.target===this)closeMealPlan()">
+  <div class="modal wide" id="mealBody"></div>
+</div>
+
+<!-- bấm tên ở Bảng công tổng hợp → tổng hợp cả kỳ của một người -->
+<div class="mask" id="empSumMask" onclick="if(event.target===this)closeEmpSum()">
+  <div class="modal wide" id="empSumBody"></div>
 </div>
 
 <!-- print bulk modal (Duyệt) -->
@@ -378,27 +402,29 @@
      config.js PHAI dung dau tien (khong co trong repo GitHub,
      copy tu js/config.example.js)
      ============================================================ -->
-<script src="js/config.js?v=53"></script>
-<script src="js/01-core.js?v=53"></script>
+<script src="js/config.js?v=58"></script>
+<script src="js/01-core.js?v=58"></script>
 <!-- i18n phai nap ngay sau 01-core (can bien LS) va truoc moi man hinh -->
-<script src="js/14-i18n.js?v=53"></script>
-<script src="js/00-icons.js?v=53"></script>
-<script src="js/02-storage.js?v=53"></script>
-<script src="js/03-nav.js?v=53"></script>
-<script src="js/04-schedule.js?v=53"></script>
-<script src="js/05-roster.js?v=53"></script>
-<script src="js/06-calendar.js?v=53"></script>
-<script src="js/07-manpower.js?v=53"></script>
-<script src="js/08-requests.js?v=53"></script>
-<script src="js/09-print.js?v=53"></script>
-<script src="js/10-account.js?v=53"></script>
-<script src="js/11-stats-data.js?v=53"></script>
-<script src="js/13-portal.js?v=53"></script>
-<script src="js/16-otlog-data.js?v=53"></script>
-<script src="js/15-report.js?v=53"></script>
-<script src="js/17-appr-sum.js?v=53"></script>
-<script src="js/18-advice.js?v=53"></script>
-<script src="js/12-main.js?v=53"></script>
+<script src="js/14-i18n.js?v=58"></script>
+<script src="js/00-icons.js?v=58"></script>
+<script src="js/02-storage.js?v=58"></script>
+<script src="js/03-nav.js?v=58"></script>
+<script src="js/04-schedule.js?v=58"></script>
+<script src="js/05-roster.js?v=58"></script>
+<script src="js/06-calendar.js?v=58"></script>
+<script src="js/07-manpower.js?v=58"></script>
+<script src="js/08-requests.js?v=58"></script>
+<script src="js/09-print.js?v=58"></script>
+<script src="js/10-account.js?v=58"></script>
+<script src="js/11-stats-data.js?v=58"></script>
+<script src="js/13-portal.js?v=58"></script>
+<script src="js/16-otlog-data.js?v=58"></script>
+<script src="js/15-report.js?v=58"></script>
+<script src="js/17-appr-sum.js?v=58"></script>
+<script src="js/18-advice.js?v=58"></script>
+<script src="js/19-meal.js?v=58"></script>
+<script src="js/20-events.js?v=58"></script>
+<script src="js/12-main.js?v=58"></script>
 
 </body>
 </html>
