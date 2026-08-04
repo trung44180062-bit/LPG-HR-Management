@@ -104,7 +104,7 @@ function reqSetCover(rid,newId,byId){
   if(S.notifs)for(const k in S.notifs){const n=S.notifs[k];
     if(n&&n.reqId===rid&&n.kind==='coverConfirm'&&n.status==='pending')delete S.notifs[k];}
   if(old&&typeof newNotif==='function')
-    newNotif({kind:'info',to:old,from:byId||'',reqId:rid,
+    newNotif({kind:'info',to:old,from:byId||'',reqId:rid,zk:'coverRemoved',
       text:t2('đã gỡ bạn khỏi vai trò OT cover')+' · '+fmtVN(r.from)});
   if(newId){
     r.coverId=newId;r.coverSt='pending';
@@ -879,7 +879,10 @@ function notifyReqParties(r,kind,byId,lvl,extra){
   const txt=head+' · '+fmtVN(r.from)+(extra?(' · '+extra):'');
   apprPartyIds(r).forEach(pid=>{
     if(pid===byId)return;
-    newNotif({kind:'info',to:pid,from:byId||'',reqId:r.id,text:txt});
+    /* zk = khoá cho ma trận Zalo (js/21-zalo.js). Trong app không dùng tới,
+       chỉ để 21-zalo.js phân biệt được approved/rejected/fe/… vì mọi tin
+       nhóm B đều mang chung kind:'info'. */
+    newNotif({kind:'info',to:pid,from:byId||'',reqId:r.id,text:txt,zk:kind});
   });
 }
 

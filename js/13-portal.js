@@ -100,6 +100,10 @@ function decidedList(id){
 function newNotif(o){
   const id=uid();
   S.notifs[id]=Object.assign({id,status:'pending',createdAt:Date.now()},o);
+  /* Đẩy kèm sang hàng đợi Zalo (js/21-zalo.js). Hàm đó tự quyết định tin nào
+     đáng bắn theo MA-TRAN-THONG-BAO và tự nuốt mọi lỗi — Zalo hỏng thì
+     thông báo trong app vẫn chạy nguyên vẹn. */
+  if(typeof zaloEnqueue==='function')zaloEnqueue(S.notifs[id]);
   return id;
 }
 /* Chỉ GIỮ thông báo trong ~2 kỳ ca gần đây để nhẹ Firebase (gói Spark).
@@ -221,7 +225,7 @@ function revokeSchedChange(empId,iso,stdCode){
   }
   /* Đã xác nhận rồi mới bị thu hồi → phải báo, kèm nhắc kiểm tra đơn đã gửi */
   if(hadConfirmed&&typeof newNotif==='function'){
-    newNotif({kind:'info',to:empId,from:by,iso,
+    newNotif({kind:'info',to:empId,from:by,iso,zk:'schedRevoke',
       text:t2('đã THU HỒI thay đổi lịch')+' '+fmtVN(iso)+' — '
         +t2('lịch trả về ca chuẩn')+' '+(stdCode||'—')+'. '
         +t2('Nếu bạn đã gửi đơn theo thay đổi này, hãy vào Đơn của tôi để huỷ.')});
@@ -246,7 +250,7 @@ function declineSchedChange(nid){
   const ov=S.over[n.to]&&S.over[n.to][n.iso];
   if(ov&&ov.code===n.newCode)delete S.over[n.to][n.iso];
   n.status='cancelled';n.decidedAt=Date.now();
-  newNotif({kind:'info',to:n.from,from:n.to,
+  newNotif({kind:'info',to:n.from,from:n.to,zk:'schedDecline',
     text:t2('đã HUỶ thay đổi lịch bạn tạo')+': '+fmtVN(n.iso)+' '+(n.oldCode||'—')+' → '+(n.newCode||'—')});
   save();renderMyPanel();renderMe(true);
   if(typeof renderCal==='function'&&curView==='cal')renderCal();
@@ -258,7 +262,7 @@ function confirmSwap(nid){
   const r=S.requests[n.reqId];
   n.status='confirmed';n.decidedAt=Date.now();
   if(r){r.confirmW='confirmed';
-    newNotif({kind:'info',to:r.byId||r.empId,from:meId(),
+    newNotif({kind:'info',to:r.byId||r.empId,from:meId(),zk:'swapOk',
       text:t2('đã XÁC NHẬN đổi ca với bạn')+': '+fmtVN(r.from)});}
   save();renderMyPanel();renderMe(true);
   if(typeof renderApprList==='function'&&mgr)renderApprList();
@@ -270,7 +274,7 @@ function declineSwap(nid){
   const r=S.requests[n.reqId];
   n.status='cancelled';n.decidedAt=Date.now();
   if(r){r.confirmW='declined';
-    newNotif({kind:'info',to:r.byId||r.empId,from:meId(),
+    newNotif({kind:'info',to:r.byId||r.empId,from:meId(),zk:'swapNo',
       text:t2('đã TỪ CHỐI đổi ca với bạn')+': '+fmtVN(r.from)});}
   save();renderMyPanel();renderMe(true);
   if(typeof renderApprList==='function'&&mgr)renderApprList();
@@ -285,7 +289,7 @@ function confirmCover(nid){
   n.status='confirmed';n.decidedAt=Date.now();
   if(r){
     r.coverSt='confirmed';
-    newNotif({kind:'info',to:r.byId||r.empId,from:meId(),reqId:r.id,
+    newNotif({kind:'info',to:r.byId||r.empId,from:meId(),reqId:r.id,zk:'coverOk',
       text:t2('đã NHẬN OT cover cho bạn')+': '+fmtVN(r.from)});
   }
   save();renderMyPanel();renderMe(true);
@@ -299,7 +303,7 @@ function declineCover(nid){
   n.status='cancelled';n.decidedAt=Date.now();
   if(r){
     r.coverSt='declined';
-    newNotif({kind:'info',to:r.byId||r.empId,from:meId(),reqId:r.id,
+    newNotif({kind:'info',to:r.byId||r.empId,from:meId(),reqId:r.id,zk:'coverNo',
       text:t2('đã TỪ CHỐI OT cover')+': '+fmtVN(r.from)+' — '+t2('hãy chọn người khác')});
   }
   save();renderMyPanel();renderMe(true);
