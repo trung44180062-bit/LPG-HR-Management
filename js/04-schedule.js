@@ -12,8 +12,12 @@ function periodFor(ym){
   const pm=m===1?12:m-1, py=m===1?y-1:y;
   const from=`${py}-${pad(pm)}-21`;
   const to=`${y}-${pad(m)}-20`;
+  /* label = bản đầy đủ, dùng cho tiêu đề báo cáo, file Excel, email.
+     slim  = bỏ chữ "Kỳ" / "Period" ở đầu, dùng cho các Ô CHỌN trong thanh lọc —
+             chỗ đó hẹp, để nguyên chữ là bị cắt mất phần ngày phía sau. */
   return {from,to,y,m,pm,py,short:periodShort(m,y),
-          label:`${periodShort(m,y)} · 21/${pad(pm)} → 20/${pad(m)}`};
+          label:`${periodShort(m,y)} · 21/${pad(pm)} → 20/${pad(m)}`,
+          slim :`${isEN()?'M':'T'}${m}/${y} · 21/${pad(pm)} → 20/${pad(m)}`};
 }
 // Which schedule month (kỳ) does an ISO date belong to?  Ngày ≥21 thuộc kỳ tháng SAU.
 function schedMonthOf(iso){
@@ -43,7 +47,7 @@ function monthsAvailable(){
 }
 function fillMonthSelects(){
   const ms=monthsAvailable();
-  const opt=m=>`<option value="${m}">${periodFor(m).label}</option>`;
+  const opt=m=>`<option value="${m}">${periodFor(m).slim}</option>`;
   const nowM=curSchedMonth();
   const setSel=id=>{const el=$(id);if(!el)return;const cur=el.value;el.innerHTML=ms.map(opt).join('');el.value=ms.includes(cur)?cur:(ms.includes(nowM)?nowM:ms[ms.length-1]||nowM);};
   setSel('calMonth');setSel('expMonth');setSel('stMonth');
@@ -58,7 +62,7 @@ function fillPeriodSel(){
   for(let k=-3;k<=6;k++){const dt=new Date(by,bm-1+k,1);ms.add(dt.getFullYear()+'-'+pad(dt.getMonth()+1));}
   const list=[...ms].sort();
   const cur=sel.value||base;
-  sel.innerHTML=list.map(m=>`<option value="${m}">${periodFor(m).label}</option>`).join('');
+  sel.innerHTML=list.map(m=>`<option value="${m}">${periodFor(m).slim}</option>`).join('');
   sel.value=list.includes(cur)?cur:base;
 }
 function shiftCalMonth(d){

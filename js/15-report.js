@@ -93,7 +93,7 @@ function repCtlHtml(mode){
     if(!ms.includes(repYm))ms.push(repYm),ms.sort();
     return `<button class="btn sec sm" onclick="repShiftYm(-1)">◀</button>
       <select class="inp sm" style="font-weight:700" onchange="repSet('ym',this.value)">
-        ${ms.map(m=>`<option value="${m}"${m===repYm?' selected':''}>${periodFor(m).label}</option>`).join('')}
+        ${ms.map(m=>`<option value="${m}"${m===repYm?' selected':''}>${periodFor(m).slim}</option>`).join('')}
       </select>
       <button class="btn sec sm" onclick="repShiftYm(1)">▶</button>`;
   };
@@ -545,7 +545,7 @@ function repPListHtml(){
 /* Các lựa chọn kỳ theo chế độ */
 function repPOptions(){
   const ms=monthsAvailable();
-  if(repPMode==='month')return ms.map(m=>({v:m,label:periodFor(m).label}));
+  if(repPMode==='month')return ms.map(m=>({v:m,label:periodFor(m).slim}));
   if(repPMode==='quarter'){
     const set=[];
     ms.forEach(m=>{const[y,mo]=m.split('-').map(Number);const q=Math.ceil(mo/3);const v=y+'-Q'+q;
@@ -928,11 +928,13 @@ function otlogPerListHtml(){
   const imported=otlogImportedPeriods();
   const q=otNorm(otlogPerQ);
   const list=otlogAllPeriods().slice().reverse()
-    .filter(m=>!q||otNorm(periodFor(m).label).includes(q)||m.includes(q));
+    /* Tìm được cả khi gõ "Kỳ T8" (nhãn đầy đủ) lẫn "T8/2026" (nhãn gọn) */
+    .filter(m=>!q||otNorm(periodFor(m).label).includes(q)
+                 ||otNorm(periodFor(m).slim).includes(q)||m.includes(q));
   if(!list.length)return `<p class="muted sm2" style="padding:8px 10px">${t('Không có kỳ nào khớp.')}</p>`;
   return list.map(m=>`<label class="dd-it${otlogSel.includes(m)?' on':''}">
       <input type="checkbox" ${otlogSel.includes(m)?'checked':''} onchange="otlogTogglePeriod('${m}')">
-      <span>${esc(periodFor(m).label)}</span>
+      <span>${esc(periodFor(m).slim)}</span>
       ${imported.has(m)?'':`<i class="dd-dot" title="${t('Kỳ tổng hợp từ phần mềm (chưa có trong Excel)')}">•</i>`}
     </label>`).join('');
 }

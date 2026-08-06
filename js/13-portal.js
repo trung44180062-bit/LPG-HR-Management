@@ -100,8 +100,8 @@ function decidedList(id){
 function newNotif(o){
   const id=uid();
   S.notifs[id]=Object.assign({id,status:'pending',createdAt:Date.now()},o);
-  /* Đẩy kèm sang hàng đợi Zalo (js/21-zalo.js). Hàm đó tự quyết định tin nào
-     đáng bắn theo MA-TRAN-THONG-BAO và tự nuốt mọi lỗi — Zalo hỏng thì
+  /* Đẩy kèm sang hàng đợi Zalo (js/21-notify.js). Hàm đó tự quyết định tin nào
+     đáng bắn theo ZALO-BOT.md và tự nuốt mọi lỗi — Zalo hỏng thì
      thông báo trong app vẫn chạy nguyên vẹn. */
   if(typeof zaloEnqueue==='function')zaloEnqueue(S.notifs[id]);
   return id;
@@ -1357,9 +1357,13 @@ function dsSubmit(t){
 
   // Đơn đổi ca: gửi thông báo cho người B để xác nhận. Chưa xác nhận thì đơn
   // vẫn vào hàng duyệt nhưng gắn cờ confirmW='pending' để quản trị nắm.
+  /* nz:1 = chỉ hiện trong app, KHÔNG bắn tin Zalo riêng. Lời mời xác nhận
+     này được gộp thẳng vào tin "có đơn cần duyệt" gửi ngay bên dưới, nên
+     một sự việc chỉ tốn đúng MỘT tin Zalo mà nội dung lại đầy đủ hơn
+     (yêu cầu trong ZALO-PHUONG-AN.xlsx ô K9). */
   if(t==='swap'&&r.withId&&r.withId!==me){
     r.confirmW='pending';
-    newNotif({kind:'swapConfirm',to:r.withId,from:me,reqId:r.id,iso:r.from});
+    newNotif({kind:'swapConfirm',to:r.withId,from:me,reqId:r.id,iso:r.from,nz:1});
   }
 
   /* Đơn nghỉ phép có chỉ định người OT cover: ghi vào đơn để người duyệt thấy
@@ -1367,10 +1371,13 @@ function dsSubmit(t){
      duyệt — người làm đơn hoặc người duyệt đổi sang người khác được. */
   if(t==='leave'&&dsCoverId&&dsCoverId!==empId){
     r.coverId=dsCoverId;r.coverSt='pending';
-    newNotif({kind:'coverConfirm',to:r.coverId,from:me,reqId:r.id,iso:r.from});
+    newNotif({kind:'coverConfirm',to:r.coverId,from:me,reqId:r.id,iso:r.from,nz:1});
   }
 
   S.requests[r.id]=r;
+  /* Báo cho cấp duyệt đầu tiên + Hoàng Trung là có đơn mới đang chờ.
+     Đặt SAU khi ghi vào S.requests vì tin Zalo cần đọc lại chi tiết đơn. */
+  if(typeof notifyApprovers==='function')notifyApprovers(r,me);
   save();
   pvSheetForm=null;
   closeDaySheet();
@@ -1404,15 +1411,26 @@ function cancelMyReq(rid){
    BẢNG PHỤ: Tăng ca của tôi · Đơn của tôi · Phép năm · Tài khoản
    ============================================================ */
 let myPanelTab='ot';
+/* Mục nào thư ký / quản lý người Hàn xem được. Họ không nằm trong lịch ca nên
+   không có Tăng ca / Bảng công / Phép năm — NHƯNG vẫn nhận thông báo (đơn chờ
+   duyệt, nhân viên huỷ thay đổi lịch họ tạo…), nên bắt buộc phải có 🔔. */
+const MP_NOSELF_TABS=['ntf','acc'];
 function openMyPanel(tab){
   if(!meId()){toast('Đăng nhập để xem');renderGate();return;}
-  myPanelTab=noSelf?'acc':(tab||'ot');   // thư ký / sếp Hàn chỉ có mục Tài khoản
+  const want=tab||(noSelf?'ntf':'ot');
+  myPanelTab=noSelf?(MP_NOSELF_TABS.includes(want)?want:'ntf'):want;
   renderMyPanel();
   $('myPanelMask').classList.add('on');
-  if(myPanelTab==='req'||myPanelTab==='ntf'){markSeen(meId());renderMe(true);}
+  if(myPanelTab==='req'||myPanelTab==='ntf'){markSeen(meId());renderMe(true);
+    /* Người không có Trang chính thì renderMe không vẽ gì — phải tự cập nhật
+       chuông trên header / trong sheet "Thêm" (js/03-nav.js). */
+    if(typeof refreshBellBadge==='function')refreshBellBadge();}
 }
 function closeMyPanel(){$('myPanelMask').classList.remove('on');}
-function myPanelGo(t){myPanelTab=t;renderMyPanel();if(t==='req'||t==='ntf'){markSeen(meId());renderMe(true);}}
+function myPanelGo(t){myPanelTab=t;renderMyPanel();if(t==='req'||t==='ntf'){markSeen(meId());renderMe(true);
+    /* Người không có Trang chính thì renderMe không vẽ gì — phải tự cập nhật
+       chuông trên header / trong sheet "Thêm" (js/03-nav.js). */
+    if(typeof refreshBellBadge==='function')refreshBellBadge();}}
 
 /* ---- 📊 Bảng công: thống kê theo ngày / theo giờ của chính người đăng nhập ----
    Giúp người lao động rà soát bảng công cuối tháng: mỗi ngày một dòng kèm mã ca,
@@ -1472,7 +1490,8 @@ function myPanelSum(id){
 
 function renderMyPanel(){
   const id=meId();const box=$('myPanelBody');if(!id||!box)return;
-  const tabs=noSelf?[['acc','🔑 Tài khoản']]
+  const bellN=(typeof notifUnseenCount==='function')?notifUnseenCount(id):0;
+  const tabs=noSelf?[['ntf','🔔 Thông báo'+(bellN?` (${bellN})`:'')],['acc','🔑 Tài khoản']]
                    :[['ot','⚡ Tăng ca'],['req','📋 Đơn của tôi'],['sum','📊 Bảng công'],['al','🏖 Phép năm'],['acc','🔑 Tài khoản']];
   let h=`<div class="mp-tabs">${tabs.map(([k,l])=>
     `<button class="${myPanelTab===k?'on':''}" onclick="myPanelGo('${k}')">${l}</button>`).join('')}
@@ -1532,11 +1551,21 @@ function myPanelNtf(id){
        <span class="ic">📌</span>
        <span class="tx">${esc(n.text||'')}
          <i class="tm">${fmtDateTime(n.createdAt)}</i></span></div>`).join('')}</div>`:'';
-  const infoBlock=infos.length?`<div class="ds-block"><h4>📣 Thông báo (${infos.length})</h4>
-    ${infos.slice(0,15).map(n=>`<div class="ntf-item info${n.seen?'':' fresh'}">
-       <span class="ic">📣</span>
-       <span class="tx">${esc(shortName((empById(n.from)||{}).name||n.from))} ${esc(n.text||'')}
-         <i class="tm">${fmtDateTime(n.createdAt)}</i></span></div>`).join('')}</div>`:'';
+  /* Tin "có đơn chờ bạn duyệt" (zk:'apprNeed') bấm vào là nhảy thẳng sang tab
+     Duyệt đơn — đây là lối vào chính của Quản lý người Hàn và cấp duyệt, họ
+     không có Trang chính nên phải đi qua chuông. Câu chữ đã đủ ý nên KHÔNG
+     kèm tên người gửi ở đầu như các tin thường. */
+  const infoBlock=infos.length?`<div class="ds-block"><h4>📣 ${t('Thông báo')} (${infos.length})</h4>
+    ${infos.slice(0,15).map(n=>{
+      const isAppr=n.zk==='apprNeed';
+      const who=esc(shortName((empById(n.from)||{}).name||n.from));
+      return `<div class="ntf-item info${isAppr?' appr':''}${n.seen?'':' fresh'}"${
+         isAppr?` onclick="closeMyPanel();go('appr')" title="${t('Mở tab Duyệt đơn')}"`:''}>
+       <span class="ic">${isAppr?'📥':'📣'}</span>
+       <span class="tx">${isAppr?'':who+' '}${esc(n.text||'')}
+         ${isAppr?`<i>${t('Bấm để mở tab Duyệt đơn')}</i>`:''}
+         <i class="tm">${fmtDateTime(n.createdAt)}</i></span></div>`;
+    }).join('')}</div>`:'';
   const item=r=>{
     const fresh=(r.decidedAt||0)>seenAt;
     const stTxt=r.status==='approved'?(reqIsProvisional(r)?'🕒 Tạm duyệt (chờ QL Hàn)':'✅ Đã duyệt')

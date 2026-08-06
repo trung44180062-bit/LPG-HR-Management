@@ -20,6 +20,9 @@ function go(v,opts){
   if(v==='rep')renderReport();
   if(v==='appr')renderAppr();
   if(v==='data')renderData();
+  /* Băng nhắc "đang giữ thông báo lịch" phải theo người dùng qua MỌI tab,
+     không chỉ tab Lịch — nếu không sẽ có người quên bấm gửi. */
+  if(typeof renderHoldBar==='function')renderHoldBar();
 }
 function refreshBadge(){
   const rs=Object.values(S.requests||{});
@@ -29,9 +32,25 @@ function refreshBadge(){
   [$('pendBdg'),$('pendBdgM')].forEach(b=>{if(!b)return;b.style.display=n?'':'none';b.textContent=n;});
   if(typeof refreshPrintBadge==='function')refreshPrintBadge();
   if(typeof refreshMealBadge==='function')refreshMealBadge();
+  refreshBellBadge();
+}
+/* Chuông trên header — CHỈ dành cho người không có Trang chính (thư ký, quản
+   lý người Hàn, ai đặt Kiểu ca = Không xếp lịch). Nhân viên thường đã có
+   chuông ngay trên Trang chính rồi nên không nhân đôi.
+   Trước đây nhóm noSelf không có chỗ nào xem được thông báo của app. */
+function refreshBellBadge(){
+  const id=(typeof meId==='function')?meId():null;
+  const n=(id&&typeof notifUnseenCount==='function')?notifUnseenCount(id):0;
+  [$('hdrBellBdg'),$('sheetBellBdg')].forEach(b=>{
+    if(!b)return;
+    b.style.display=n?'':'none';
+    b.textContent=n>9?'9+':n;
+  });
+  const btn=$('hdrBell');
+  if(btn)btn.classList.toggle('has-new',!!n);
 }
 /* bottom sheet "Thêm" & legend sheet */
-function openMoreSheet(){$('moreMask').classList.add('on');}
+function openMoreSheet(){refreshBellBadge();$('moreMask').classList.add('on');}
 function closeMoreSheet(){const m=$('moreMask');if(m)m.classList.remove('on');}
 function openLegendSheet(){
   const L=[['O','Office (08–17h)'],['D','Day time (08–20h)'],['N','Night time (20–08h)'],['R','Rest']];

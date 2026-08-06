@@ -7,6 +7,9 @@ function renderAll(){
   syncAccounts();                 // mã NV mới → tự thành tài khoản đăng nhập
   applyRoleUI();
   fillMonthSelects();renderCal();renderSetup();renderAppr();renderData();refreshBadge();
+  /* Băng "đang giữ thông báo lịch" — dựng lại sau mỗi lượt đồng bộ Firebase,
+     để quản trị khác cũng thấy và bấm gửi hộ được (js/06-calendar.js). */
+  if(typeof renderHoldBar==='function')renderHoldBar();
   renderGate();
   if(curView==='me')renderMe();
   if(curView==='rep')renderReport();

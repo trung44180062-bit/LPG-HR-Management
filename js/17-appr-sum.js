@@ -308,7 +308,7 @@ function asRender(){
         <span class="muted">${esc(asScopeLabel())}</span></div>
       <button class="as-nav" onclick="asShiftYm(-1)" title="${t('Kỳ trước')}">◀</button>
       <select class="inp sm" onchange="asSetYm(this.value)">
-        ${ms.slice().reverse().map(m=>`<option value="${m}"${ym===m?' selected':''}>${esc(periodFor(m).label)}</option>`).join('')}
+        ${ms.slice().reverse().map(m=>`<option value="${m}"${ym===m?' selected':''}>${esc(periodFor(m).slim)}</option>`).join('')}
       </select>
       <button class="as-nav" onclick="asShiftYm(1)" title="${t('Kỳ sau')}">▶</button>
       ${ym!==cur?`<button class="btn sec sm" onclick="asSetYm('${cur}')">${t('Về kỳ hiện tại')}</button>`:''}

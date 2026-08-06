@@ -234,4 +234,5 @@ function renderData(){
   if($('setMailCc'))$('setMailCc').value=S.settings.reportEmailCc||'';
   const cfg=localStorage.getItem(LS+'_fb');if(cfg&&!$('fbCfg').value)$('fbCfg').value=cfg;
   renderHoursTbl();renderAccTbl();
+  if(typeof renderKmgrDelegate==='function')renderKmgrDelegate();
 }

@@ -149,6 +149,87 @@ function applyPerm(){
   return p;
 }
 
+/* ============================================================
+   UỶ QUYỀN PHÊ DUYỆT CẤP CUỐI — GIAO DIỆN
+   Dữ liệu & logic ở js/01-core.js (kmgrDelegate / setKmgrDelegate).
+   Chỉ Quản trị và Quản lý người Hàn thấy thẻ này (class admin-only).
+   ============================================================ */
+/* Ai được phép nhận uỷ quyền: người có tài khoản, đang hoạt động, và
+   KHÔNG phải chính kmgr (họ vốn đã duyệt được). Ưu tiên xếp quản trị lên đầu. */
+function kdCandidates(){
+  return (S.employees||[])
+    .filter(e=>e&&e.active!==false&&canHaveAccount(e)&&permOf(e.id)!=='kmgr')
+    .sort((a,b)=>{
+      const ra=(permOf(a.id)==='admin'||permOf(a.id)==='appr')?0:1;
+      const rb=(permOf(b.id)==='admin'||permOf(b.id)==='appr')?0:1;
+      if(ra!==rb)return ra-rb;
+      return String(a.name||'').localeCompare(String(b.name||''),'vi');
+    });
+}
+function renderKmgrDelegate(){
+  const box=$('kdBox');if(!box)return;
+  const d=(S.settings&&S.settings.kmgrDelegate)||{};
+  const on=!!kmgrDelegate();
+  const to=d.to||'';
+  const byE=d.by?empById(d.by):null;
+  const list=kdCandidates();
+  box.innerHTML=`
+    <div class="kd ${on?'on':''}">
+      <div class="kd-row">
+        <label class="kd-sw">
+          <input type="checkbox" id="kdOn" ${on?'checked':''} ${to?'':'disabled'}
+                 onchange="kdToggle(this.checked)">
+          <span>${on?'🟢 '+t('Đang uỷ quyền'):'⚪ '+t('Chưa uỷ quyền')}</span>
+        </label>
+        <span class="sp" style="flex:1"></span>
+        ${on?`<span class="kd-badge">${t('Người duyệt thay')}: <b>${esc(kmgrDelegateLabel())}</b></span>`:''}
+      </div>
+      <div class="grid2" style="margin-top:9px">
+        <div class="fg">
+          <label class="fl">${t('Người duyệt thay')}</label>
+          <select class="inp" id="kdTo" onchange="kdPick(this.value)">
+            <option value="">— ${t('Chọn người')} —</option>
+            ${list.map(e=>`<option value="${esc(e.id)}"${to===e.id?' selected':''}>${esc(e.name||e.id)} · ${esc(PERM_LABEL[permOf(e.id)]||'')}</option>`).join('')}
+          </select>
+        </div>
+        <div class="fg">
+          <label class="fl">${t('Lý do / ghi chú')}</label>
+          <input class="inp" id="kdNote" placeholder="${t('VD: Nghỉ phép 05–12/08')}" value="${esc(d.note||'')}"
+                 onchange="kdNoteSave(this.value)">
+        </div>
+      </div>
+      <p class="muted sm2" style="margin-top:7px">
+        ${d.at?`${t('Lần thay đổi gần nhất')}: ${fmtDateTime(d.at)}${byE?' · '+t('bởi')+' '+esc(byE.name||d.by):''}.`:''}
+        ${on?`<br><b>${t('Trong lúc bật, mọi đơn được người này duyệt sẽ CHỐT chính thức y như Quản lý người Hàn duyệt.')}</b>`:''}
+      </p>
+    </div>`;
+}
+function kdPick(id){
+  const d=(S.settings&&S.settings.kmgrDelegate)||{};
+  setKmgrDelegate(!!d.on&&!!id,id,undefined);
+  renderKmgrDelegate();
+  if(typeof renderAppr==='function')renderAppr();
+}
+function kdNoteSave(v){
+  const d=(S.settings&&S.settings.kmgrDelegate)||{};
+  setKmgrDelegate(!!d.on,d.to||'',String(v||'').trim());
+}
+function kdToggle(on){
+  const d=(S.settings&&S.settings.kmgrDelegate)||{};
+  if(on&&!d.to){toast(t('Chọn người duyệt thay trước'));renderKmgrDelegate();return;}
+  if(on){
+    const nm=(empById(d.to)||{}).name||d.to;
+    if(!confirm(t('Uỷ quyền phê duyệt CẤP CUỐI cho')+' '+nm+'?\n'
+      +t('Người này sẽ chốt được đơn chính thức thay Quản lý người Hàn cho tới khi bạn tắt công tắc.'))){
+      renderKmgrDelegate();return;
+    }
+  }
+  setKmgrDelegate(on,d.to,undefined);
+  renderKmgrDelegate();
+  if(typeof renderAppr==='function')renderAppr();
+  toast(on?t('Đã bật uỷ quyền phê duyệt'):t('Đã tắt uỷ quyền — quyền trả về Quản lý người Hàn'));
+}
+
 /* ---- TÊN ĐĂNG NHẬP = PHẦN SỐ CỦA MÃ NV ----------------------------
    Mã NV trong dữ liệu giữ nguyên (vd vc44180062) — mọi bảng biểu, biểu mẫu
    in và file Excel vẫn hiện đúng như cũ. Riêng màn hình đăng nhập chỉ dùng
@@ -291,9 +372,17 @@ function gateMsg(html){
   b.style.display=html?'':'none';
 }
 function doLogout(){
+  /* Còn thay đổi lịch đang giữ mà đăng xuất → hỏi lại, không thì cả nhà máy
+     đi làm theo lịch mới mà không ai được báo. Xem schedHold* ở 06-calendar.js */
+  if(typeof schedHoldOn==='function'&&schedHoldOn()&&schedHoldCount()>0){
+    if(!confirm(t('Bạn còn')+' '+schedHoldCount()+' '+t('thay đổi lịch đang GIỮ chưa báo cho ai.')+'\n'
+      +t('Đăng xuất bây giờ thì chúng vẫn nằm đó chờ. Vẫn đăng xuất?')))return;
+  }
   localStorage.removeItem(SESS);
   mgr=false;adm=false;secr=false;noSelf=false;
-  renderGate();applyRoleUI();renderMe();toast(t('Đã đăng xuất'));
+  renderGate();applyRoleUI();renderMe();
+  if(typeof renderHoldBar==='function')renderHoldBar();
+  toast(t('Đã đăng xuất'));
 }
 /* Kiểm tra mật khẩu mới có đủ an toàn không */
 function pwProblem(id,pw){

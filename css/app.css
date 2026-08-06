@@ -872,3 +872,137 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
 button.cmp-nm.edit{border-color:var(--brand);color:var(--brand);text-decoration:underline}
 .cmp-acts{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;
   border-top:1px dashed var(--line);padding-top:8px}
+
+/* ============================================================
+   BẢNG DUYỆT ĐƠN (PC) — js/08-requests.js : apprTableHtml()
+   Điện thoại vẫn dùng dạng thẻ .ar; hai dạng không bao giờ cùng hiện.
+
+   table-layout:fixed + colgroup (khai trong apprTableHtml) → bảng luôn vừa
+   đúng bề ngang khung, KHÔNG BAO GIỜ có thanh cuộn ngang. Ô nào chữ dài thì
+   xuống dòng trong ô. Đây là điểm khác quan trọng nhất so với bản đầu.
+   ============================================================ */
+.at-wrap{background:var(--panel);border:1px solid var(--line);border-radius:var(--rad);
+  overflow-x:auto;max-width:100%}
+/* min-width là lưới an toàn cho màn hình hẹp (768–940px): thà cuộn ngang còn
+   hơn bóp chữ nát. Từ 940px trở lên bảng vừa khít, không có thanh cuộn. */
+.at{width:100%;min-width:940px;table-layout:fixed;border-collapse:collapse;font-size:12.5px}
+.at thead th{background:#E9F1F8;color:#1F3B57;
+  font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.2px;
+  text-align:left;padding:7px 6px;border-bottom:1.5px solid var(--line);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.at thead th.srt{cursor:pointer;user-select:none}
+.at thead th.srt:hover{background:#DCE9F5}
+.at thead th.srt i{font-style:normal;font-size:9px;color:#8AA4BC;margin-left:3px}
+.at thead th.srt.on{color:var(--brand)}
+.at thead th.srt.on i{color:var(--accent)}
+.at tbody td{padding:7px 6px;border-bottom:1px solid var(--line);vertical-align:top;
+  overflow-wrap:anywhere;word-break:break-word}
+.at tr.at-r:hover td{background:#F7FBFF}
+.at tr.at-r.pending  td:first-child{box-shadow:inset 3px 0 0 #EAB308}
+.at tr.at-r.approved td:first-child{box-shadow:inset 3px 0 0 #0E9F6E}
+.at tr.at-r.rejected td:first-child{box-shadow:inset 3px 0 0 #DC2626}
+.at tr.at-r.rejected td{background:#FFFAFA}
+.at tr.at-r.printed  td{background:#FCFDFE}
+.at tr.at-r.open td{background:#F2F8FF;border-bottom-color:transparent}
+.at .at-ck{padding-left:9px}
+.at .at-ck input{width:16px;height:16px;accent-color:#0B3B5C}
+.at .at-emp,.at .at-typ,.at .at-when,.at .at-cnt{cursor:pointer}
+.at .at-sent{font-size:11.5px;color:var(--mut);font-weight:600;line-height:1.25}
+.at .at-sent em{display:block;font-style:normal;font-size:10px;color:#94A3B8}
+.at .at-emp b{font-weight:700;color:var(--ink);line-height:1.25}
+.at .at-emp em{display:block;font-style:normal;font-size:10px;color:var(--mut);
+  font-family:var(--mono)}
+.at .at-team{font-weight:700;color:var(--mut);font-size:12px}
+.at .at-typ .ar-ic{font-size:13px;margin-right:2px}
+.at .at-typ i{font-style:normal;font-size:11.5px;font-weight:700;color:var(--brand)}
+.at .at-when{font-weight:600;font-size:12px;line-height:1.3}
+.at .at-when em{font-style:normal;color:var(--mut);font-size:10px;margin-left:3px}
+/* Nội dung: mỗi ngày một dòng, chip mã ca tự xuống dòng khi hẹp */
+.at .at-cnt .aq-d{display:flex;align-items:center;gap:3px;flex-wrap:wrap;
+  margin-bottom:2px;font-size:11.5px}
+.at .at-cnt .aq-d b{font-weight:700}
+.at .at-cnt .aq-d em{font-style:normal;color:var(--mut);font-size:10px}
+.at .at-cnt .cc{font-size:10px;padding:1px 5px}
+.at .at-cnt .aq-more{font-size:10.5px;color:var(--mut);font-weight:700}
+.at .at-met .aq-m{white-space:normal}
+.at .at-par{line-height:1.5}
+.at .at-par .at-w{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:700;
+  color:var(--mut);background:#F1F5F9;border-radius:99px;padding:1px 7px;max-width:100%}
+.at .at-par .cvw,.at .at-par .cfw{font-size:10.5px;white-space:normal}
+.at .at-st{line-height:1.35}
+.at .at-st .st{white-space:normal}
+.at .at-st .at-next{display:block;font-style:normal;font-size:10px;color:#B45309;
+  font-weight:700;margin-top:2px;white-space:normal}
+.at .at-prt button.prt{border:1px solid var(--line);background:#fff;cursor:pointer;
+  font-size:10px;font-weight:700;border-radius:99px;padding:2px 7px;white-space:nowrap;
+  max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.at .at-prt button.prt.yes{background:#E7EFF6;color:#0B3B5C;border-color:#C9DCEB}
+.at .at-prt button.prt.no{background:#F1F5F9;color:#94A3B8}
+.at .at-prt button.prt.none{background:#FEF3C7;color:#B45309;border-color:#FDE68A}
+.at .at-act{white-space:nowrap;text-align:right;padding-right:9px}
+.at .at-act .btn.sm{padding:3px 7px;font-size:12px}
+.at .at-act .ar-more{width:24px;height:24px;border:1px solid var(--line);background:#fff;
+  border-radius:6px;cursor:pointer;transition:.15s;padding:0}
+.at tr.at-r.open .ar-more{transform:rotate(180deg)}
+/* hàng chi tiết */
+.at tr.at-d{display:none}
+.at tr.at-d.open{display:table-row}
+.at tr.at-d td{background:#F2F8FF;padding:0 12px 11px 40px;border-bottom:2px solid var(--line)}
+.at .at-dbox{max-width:1100px}
+.at .at-dbox .aq-note{max-width:100%}
+@media(max-width:767px){ .at-wrap{display:none} }
+/* Màn hình rộng: nới khung chính ra cho bảng có chỗ thở, đỡ phải xuống dòng */
+@media(min-width:1500px){ .wrap{max-width:1640px} }
+
+/* ============================================================
+   UỶ QUYỀN PHÊ DUYỆT CẤP CUỐI — js/10-account.js : renderKmgrDelegate()
+   ============================================================ */
+.kd{border:1px solid var(--line);border-radius:11px;padding:11px;background:#FBFDFF}
+.kd.on{border-color:#0E9F6E;background:#F3FBF7}
+.kd-row{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.kd-sw{display:inline-flex;align-items:center;gap:7px;font-weight:800;font-size:13px;cursor:pointer}
+.kd-sw input{width:20px;height:20px;accent-color:#0E9F6E}
+.kd-badge{font-size:12px;font-weight:700;color:#0E7A55;background:#DCFCE7;
+  border-radius:99px;padding:3px 11px}
+.ab-flag.kd-flag{background:#FFF7ED;border-color:#FDBA74;color:#9A3412}
+
+/* ============================================================
+   BĂNG NHẮC "ĐANG GIỮ THÔNG BÁO" — js/06-calendar.js : renderHoldBar()
+   Dính ngay dưới header và hiện ở MỌI tab, vì quên bấm gửi là cả nhà máy
+   đi làm theo lịch mới mà không ai được báo.
+   ============================================================ */
+.holdbar{position:sticky;top:56px;z-index:45;
+  display:flex;align-items:center;gap:9px;flex-wrap:wrap;
+  padding:8px 14px;font-size:13px;color:#7F1D1D;
+  background:linear-gradient(90deg,#FEE2E2 0%,#FEF3C7 100%);
+  border-bottom:2px solid #F87171;
+  box-shadow:0 2px 8px rgba(220,38,38,.14);
+  animation:holdPulse 2.4s ease-in-out infinite}
+@keyframes holdPulse{0%,100%{border-bottom-color:#F87171}50%{border-bottom-color:#DC2626}}
+.holdbar .hb-ic{font-size:17px;line-height:1}
+.holdbar b{font-weight:800;letter-spacing:.2px}
+.holdbar .hb-n{font-weight:700;background:#fff;border:1px solid #FCA5A5;
+  border-radius:99px;padding:2px 10px;font-size:12px;color:#B91C1C}
+.holdbar .btn.sm{padding:5px 11px}
+/* Băng đẩy thanh tab xuống cho khỏi chồng lên nhau */
+body.hold-on .tabs,body.hold-on .topbar{top:96px}
+@media(max-width:767px){
+  .holdbar{top:52px;padding:7px 11px;gap:7px;font-size:12px}
+  .holdbar .muted{display:none}
+  body.hold-on .tabs,body.hold-on .topbar{top:92px}
+}
+
+/* ============================================================
+   CHUÔNG TRÊN HEADER — cho người KHÔNG có Trang chính
+   (thư ký, quản lý người Hàn, ai đặt Kiểu ca = Không xếp lịch).
+   Nhân viên thường đã có chuông trên Trang chính nên không hiện ở đây.
+   Xem refreshBellBadge() ở js/03-nav.js.
+   ============================================================ */
+.hdr .icobtn .bdg{position:absolute;top:-3px;right:-3px;
+  background:#DC2626;color:#fff;font-size:9.5px;font-weight:800;
+  border-radius:99px;padding:1px 5px;min-width:15px;line-height:1.4;
+  box-shadow:0 0 0 2px #12557F}
+.hdr .icobtn.has-new{background:rgba(255,255,255,.28)}
+/* Tin "có đơn chờ duyệt" trong bảng Thông báo — bấm được, nhảy sang tab Duyệt */
+.ntf-item.info.appr{cursor:pointer;border-left:3px solid var(--accent);background:#FFFBF5}
+.ntf-item.info.appr:hover{background:#FFF4E6}

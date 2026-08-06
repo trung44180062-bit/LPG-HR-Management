@@ -1456,7 +1456,72 @@ const I18N_EN={
 'Đã lưu sự kiện và gửi thông báo tới':'Event saved, notification sent to',
 'Đã lưu sự kiện (không gửi thông báo)':'Event saved (no notification sent)',
 'không gửi thông báo':'no notification',
-'Kỳ này chưa có lịch.':'No schedule for this period yet.'
+'Kỳ này chưa có lịch.':'No schedule for this period yet.',
+
+/* ---- v6.0 · Bảng Duyệt đơn dạng bảng (PC) — js/08-requests.js ---- */
+'Ngày gửi':'Submitted',
+'Ngày áp dụng':'Applies to',
+'Con số':'Amount',
+'Cover / Đổi với':'Cover / Swap with',
+'Chọn tất cả':'Select all',
+'Bấm để đổi giữa Chờ in và Không cần in':'Click to switch between To print and No print',
+'Ghi chú':'Note',
+'Gửi':'Submitted',
+'Đưa vào ds in':'Add to print list',
+'Đánh dấu không cần in':'Mark as no print',
+'Đang hiện 150 đơn mới nhất trong':'Showing the 150 most recent of',
+'đơn khớp bộ lọc.':'requests matching the filter.',
+
+/* ---- v6.0 · Uỷ quyền phê duyệt cấp cuối — js/10-account.js ---- */
+'Uỷ quyền phê duyệt cấp cuối':'Final approval delegation',
+'Khi Quản lý người Hàn nghỉ phép hoặc đi công tác, bật công tắc này để một người khác duyệt thay ở cấp cuối (chốt lịch chính thức). Chỉ chuyển quyền duyệt đơn — không kèm quyền sửa lịch gốc hay sửa tài khoản. Tắt công tắc là quyền trả về ngay.':'When the Korean Manager is on leave or away on business, switch this on so that someone else can give final approval (confirming the schedule officially). It transfers the approval right only — no access to the master schedule or user accounts. Switching it off returns the right immediately.',
+'Đang uỷ quyền':'Delegation active',
+'Chưa uỷ quyền':'No delegation',
+'Người duyệt thay':'Delegated approver',
+'Chọn người':'Select a person',
+'Lý do / ghi chú':'Reason / note',
+'VD: Nghỉ phép 05–12/08':'e.g. On leave 05–12/08',
+'Lần thay đổi gần nhất':'Last changed',
+'Trong lúc bật, mọi đơn được người này duyệt sẽ CHỐT chính thức y như Quản lý người Hàn duyệt.':'While this is on, any request approved by this person is FINAL, exactly as if the Korean Manager had approved it.',
+'Chọn người duyệt thay trước':'Select the delegated approver first',
+'Uỷ quyền phê duyệt CẤP CUỐI cho':'Delegate FINAL approval to',
+'Người này sẽ chốt được đơn chính thức thay Quản lý người Hàn cho tới khi bạn tắt công tắc.':'This person will be able to give final approval in place of the Korean Manager until you switch it off.',
+'Đã bật uỷ quyền phê duyệt':'Approval delegation switched on',
+'Đã tắt uỷ quyền — quyền trả về Quản lý người Hàn':'Delegation switched off — the right returns to the Korean Manager',
+'Đang uỷ quyền phê duyệt cấp cuối cho':'Final approval is currently delegated to',
+'Chỉnh':'Edit',
+
+/* ---- v6.0 · Giữ thông báo để gửi gộp — js/06-calendar.js ---- */
+'Giữ thông báo':'Hold notifications',
+'Gửi thông báo':'Send notifications',
+'ĐANG GIỮ THÔNG BÁO':'NOTIFICATIONS ON HOLD',
+'Sửa lịch hàng loạt (nhập tàu, bảo dưỡng…) mà chỉ gửi đúng 1 tin gộp':'Edit many shifts at once (ship arrival, maintenance…) and send just one combined message',
+'Gửi một lượt tất cả thay đổi đang giữ — Zalo chỉ tốn 1 tin gộp':'Send every held change at once — Zalo costs only one combined message',
+'Đang GIỮ thông báo — sửa lịch thoải mái, xong bấm Gửi thông báo':'Notifications are ON HOLD — edit freely, then press Send notifications',
+'Đã cập nhật lịch — đang giữ thông báo':'Schedule updated — notification held',
+'chưa có thay đổi nào':'no changes yet',
+'thay đổi':'change(s)',
+'người':'people',
+'bật bởi':'started by',
+'Bỏ, không báo':'Discard, notify nobody',
+'Bỏ':'Discard',
+'thay đổi đang giữ mà KHÔNG báo cho ai?':'held change(s) and notify NOBODY?',
+'Lịch vẫn giữ nguyên như bạn đã sửa — chỉ là nhân viên không được báo.':'The schedule stays exactly as you edited it — the staff simply will not be notified.',
+'Đã tắt chế độ giữ — không gửi thông báo nào':'Hold switched off — no notification sent',
+'Không có thay đổi nào cần báo — đã tắt chế độ giữ':'Nothing to notify — hold switched off',
+'Gửi thông báo cho':'Send notifications to',
+'Zalo chỉ tốn 1 tin gộp; trong app mỗi người nhận đúng một việc chờ xác nhận.':'Zalo costs one combined message; in the app each person gets exactly one item to confirm.',
+'Đã gửi':'Sent',
+'tin Zalo':'Zalo message',
+'Đã cập nhật lịch thực tế của':'Working schedule updated for',
+'Bạn không có quyền sửa lịch thực tế':'You are not allowed to edit the actual schedule',
+'Bạn còn':'You still have',
+'thay đổi lịch đang GIỮ chưa báo cho ai.':'schedule change(s) ON HOLD that nobody has been told about.',
+'Đăng xuất bây giờ thì chúng vẫn nằm đó chờ. Vẫn đăng xuất?':'They will stay pending if you log out now. Log out anyway?',
+
+/* ---- v6.0 · Chuông cho người không có Trang chính — js/13-portal.js ---- */
+'Mở tab Duyệt đơn':'Open the Approvals tab',
+'Bấm để mở tab Duyệt đơn':'Tap to open the Approvals tab'
 };
 
 /* ============================================================

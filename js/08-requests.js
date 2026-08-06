@@ -504,7 +504,7 @@ function apprRow(r){
         ${r.decidedAt?`<span>Duyệt: ${fmtDateTime(r.decidedAt)}</span>`:''}
         ${r.printedAt?`<span>In: ${fmtDateTime(r.printedAt)}${r.printCount>1?' ×'+r.printCount:''}</span>`:''}
         ${r.reason?`<span>Lý do: ${esc(r.reason)}</span>`:''}
-        <span class="src ${r.source}">${{zalo:'Zalo',app:'📱 App NV'}[r.source]||'Web'}</span>
+        <span class="src ${esc(r.source||'web')}">${{zalo:'Zalo',app:'📱 App NV'}[r.source]||'Web'}</span>
       </div>
       <div class="ar-more-act">
         <button class="btn sec sm pc-only" onclick="printOne('${r.id}')">🖨️ In</button>
@@ -517,6 +517,187 @@ function apprRow(r){
   </div>`;
 }
 function reqCard(r,withActs,pick){return apprRow(r);}
+
+/* ============================================================
+   GIAO DIỆN DẠNG BẢNG (chỉ PC — mobile giữ dạng thẻ)
+   Cùng dữ liệu, cùng bộ lọc, cùng thao tác với dạng thẻ ở trên; chỉ khác
+   cách xếp. 11 cột: Ngày gửi · Nhân viên · Tổ · Loại đơn · Ngày áp dụng ·
+   Nội dung · Con số · Cover/Với · Trạng thái · In · Thao tác.
+   Bấm vào dòng để bung hàng chi tiết (dùng lại reqDetail / apprChainHtml).
+   Chỉ dựng MỘT trong hai (bảng HOẶC thẻ) để không sinh checkbox trùng —
+   xem apprIsMobile() ở renderApprList().
+   ============================================================ */
+const AT_MAX_DAYS=3;                     // số ngày hiện trực tiếp trong ô Nội dung
+function atTeam(e){return (e&&e.team)?e.team:'—';}
+/* Ô "Ngày áp dụng" — gọn, một dòng */
+function atWhen(r){
+  if(r.type==='multi')return `${fmtVN(r.from)} → ${fmtVN(r.to)}`;
+  const n=reqDays(r).length;
+  if(n<=1)return `${fmtVN(r.from)} <em>${dowOf(r.from)}</em>`;
+  return `${fmtVN(r.from)} → ${fmtVN(r.to)} <em>${n} ${t('ngày')}</em>`;
+}
+/* Ô "Nội dung" — mã ca / khung giờ, tối đa AT_MAX_DAYS dòng rồi gộp "+N" */
+function atContent(r){
+  if(r.type==='multi')
+    return `<span class="aq-d"><i>${esc(r.timeIn||'')}–${esc(r.timeOut||'')}</i></span>`;
+  const list=reqDays(r);
+  let h=list.slice(0,AT_MAX_DAYS).map(d=>apprDayBrief(r,d)).join('');
+  if(list.length>AT_MAX_DAYS)h+=`<span class="aq-more">+${list.length-AT_MAX_DAYS} ${t('ngày')}</span>`;
+  return h;
+}
+/* Ô "Cover / Đổi với" */
+function atPartner(r){
+  const bits=[];
+  if(r.withId){
+    const w=empById(r.withId);
+    bits.push(`<span class="at-w">⇄ ${esc(shortName((w&&w.name)||r.withId))}</span>`);
+    if(r.confirmW)bits.push(`<span class="cfw ${r.confirmW}">${
+      {pending:'⏳ '+t('chờ'),confirmed:'✓ '+t('đã xác nhận'),declined:'✕ '+t('từ chối')}[r.confirmW]||''}</span>`);
+  }
+  if(r.coverId)bits.push(reqCoverChip(r));
+  if(r.type==='wt'&&r.guarantorId){
+    const g=empById(r.guarantorId);
+    bits.push(`<span class="at-w">🛡️ ${esc(shortName((g&&g.name)||r.guarantorId))}</span>`);
+  }
+  return bits.length?bits.join(' '):'<span class="muted">—</span>';
+}
+/* Ô "Con số" — giờ tăng ca / ngày phép / số ngày */
+function atMetric(r){
+  const m=apprMetric(r);
+  return m||'<span class="muted">—</span>';
+}
+/* Một dòng của bảng + hàng chi tiết đi kèm */
+function apprTr(r){
+  const e=empById(r.empId);
+  const open=!!apprOpen[r.id];
+  const canAct=(r.status!=='rejected'&&!(r.status==='approved'&&!reqIsProvisional(r)));
+  const nx=(typeof reqNextLevel==='function')?reqNextLevel(r):null;
+  return `<tr class="at-r ${r.status}${open?' open':''}${r.printedAt?' printed':''}" data-id="${r.id}">
+    <td class="at-ck"><input type="checkbox" class="rqChk" value="${r.id}" onchange="apprPickCount()"></td>
+    <td class="at-sent">${fmtVN(isoOfTs(r.createdAt))}<em>${fmtHM(r.createdAt)}</em></td>
+    <td class="at-emp" onclick="apprToggleRow('${r.id}')">
+      <b>${esc(e?e.name:r.empId)}</b><em>${esc(r.empId)}${r.byId&&r.byId!==r.empId?' · '+t('khai hộ'):''}</em></td>
+    <td class="at-team">${esc(atTeam(e))}</td>
+    <td class="at-typ" onclick="apprToggleRow('${r.id}')">
+      <span class="ar-ic">${REQ_ICON[r.type]||'📄'}</span><i>${esc(REQ_LABEL[r.type]||r.type)}</i></td>
+    <td class="at-when" onclick="apprToggleRow('${r.id}')">${atWhen(r)}</td>
+    <td class="at-cnt" onclick="apprToggleRow('${r.id}')">${atContent(r)}</td>
+    <td class="at-met">${atMetric(r)}</td>
+    <td class="at-par">${atPartner(r)}</td>
+    <td class="at-st">
+      <span class="st ${reqStatusClass(r)}">${reqStatusLabel(r)}</span>
+      ${nx?`<em class="at-next">${t('chờ')} ${esc(lvlLabel(nx))}</em>`:''}
+      ${apprAdviceBadge(r)}</td>
+    <td class="at-prt">
+      <button type="button" class="prt ${r.printedAt?'yes':(r.noPrint?'none':'no')}"
+        onclick="apprToggleNoPrint('${r.id}')"
+        title="${t('Bấm để đổi giữa Chờ in và Không cần in')}">${
+        r.printedAt?'🖨️ '+t('đã in'):(r.noPrint?'🚫 '+t('không in'):'○ '+t('chưa in'))}</button></td>
+    <td class="at-act">
+      ${canAct?`<button class="btn ok sm" onclick="decide('${r.id}',true)" title="${t('Duyệt')}">✓</button>
+      <button class="btn warn sm" onclick="decide('${r.id}',false)" title="${t('Từ chối')}">✕</button>`:''}
+      <button type="button" class="ar-more" onclick="apprToggleRow('${r.id}')" title="${t('Chi tiết')}">▾</button>
+    </td>
+  </tr>
+  <tr class="at-d ${open?'open':''}"><td colspan="12">
+    <div class="at-dbox">
+      ${apprChainHtml(r)}
+      ${reqDetail(r)}
+      ${r.status==='pending'?apprWarnLine(r):''}
+      ${open&&typeof reqAdviceHtml==='function'?reqAdviceHtml(r):''}
+      ${r.note?`<div class="muted sm2">${t('Ghi chú')}: “${esc(r.note)}”</div>`:''}
+      ${r.reason?`<div class="muted sm2">${t('Lý do từ chối')}: ${esc(r.reason)}</div>`:''}
+      <div class="ar-meta">
+        <span>${t('Gửi')}: ${fmtDateTime(r.createdAt)}</span>
+        ${r.decidedAt?`<span>${t('Duyệt')}: ${fmtDateTime(r.decidedAt)}</span>`:''}
+        ${r.printedAt?`<span>${t('In')}: ${fmtDateTime(r.printedAt)}${r.printCount>1?' ×'+r.printCount:''}</span>`:''}
+        <span class="src ${esc(r.source||'web')}">${{zalo:'Zalo',app:'📱 App NV'}[r.source]||'Web'}</span>
+      </div>
+      <div class="ar-more-act">
+        <button class="btn sec sm" onclick="printOne('${r.id}')">🖨️ ${t('In')}</button>
+        <button class="btn sec sm" onclick="apprToggleNoPrint('${r.id}')">${r.noPrint?'🖨️ '+t('Đưa vào ds in'):'🚫 '+t('Đánh dấu không cần in')}</button>
+        ${canSetCover(r,meId())?`<button class="btn sec sm" onclick="openCoverPicker('${r.id}')">🤝 ${r.coverId?t('Đổi người OT cover'):t('Chỉ định người OT cover')}</button>`:''}
+        ${r.status==='approved'?`<button class="btn warn sm" onclick="revokeApproval('${r.id}')">↩️ ${t('Huỷ duyệt')}</button>`:''}
+        <button class="btn warn sm" onclick="cancelOneReq('${r.id}')">🚫 ${t('Huỷ đơn')}</button>
+      </div>
+    </div>
+  </td></tr>`;
+}
+/* Sắp xếp bảng — bấm tiêu đề cột để đổi. Lưu theo từng người dùng. */
+let apprSort=(()=>{try{return JSON.parse(localStorage.getItem(LS+'_apprsort')||'null')||{k:'sent',dir:-1};}
+                   catch(e){return {k:'sent',dir:-1};}})();
+function apprSetSort(k){
+  apprSort=(apprSort.k===k)?{k,dir:-apprSort.dir}:{k,dir:(k==='emp'||k==='team'||k==='typ')?1:-1};
+  try{localStorage.setItem(LS+'_apprsort',JSON.stringify(apprSort));}catch(e){}
+  renderApprList();
+}
+function apprSortVal(r,k){
+  const e=empById(r.empId);
+  switch(k){
+    case 'sent': return r.createdAt||0;
+    case 'emp':  return String((e&&e.name)||r.empId||'');
+    case 'team': return String((e&&e.team)||'');
+    case 'typ':  return String(REQ_LABEL[r.type]||r.type||'');
+    case 'when': return String(r.from||'');
+    case 'met':  return r.type==='ot'?(typeof reqHours==='function'?reqHours(r):0)
+                     :(r.type==='leave'?(typeof reqLeaveDays==='function'?reqLeaveDays(r):reqDays(r).length)
+                     :reqDays(r).length);
+    case 'st':   return String(r.status||'')+(reqIsProvisional(r)?'1':'0');
+    case 'prt':  return r.printedAt?2:(r.noPrint?1:0);
+    default:     return 0;
+  }
+}
+function apprSortList(list){
+  const {k,dir}=apprSort;
+  return list.slice().sort((a,b)=>{
+    const va=apprSortVal(a,k),vb=apprSortVal(b,k);
+    if(typeof va==='string'||typeof vb==='string'){
+      const c=String(va).localeCompare(String(vb),'vi');
+      return c?c*dir:(b.createdAt||0)-(a.createdAt||0);
+    }
+    return (va===vb)?((b.createdAt||0)-(a.createdAt||0)):(va<vb?-dir:dir);
+  });
+}
+const AT_COLS=[
+  ['sent','Ngày gửi'],['emp','Nhân viên'],['team','Tổ'],['typ','Loại đơn'],
+  ['when','Ngày áp dụng'],[null,'Nội dung'],['met','Con số'],[null,'Cover / Đổi với'],
+  ['st','Trạng thái'],['prt','In'],[null,'']
+];
+function apprTableHtml(list){
+  const th=AT_COLS.map(([k,lb])=>k
+    ? `<th class="srt${apprSort.k===k?' on':''}" onclick="apprSetSort('${k}')">${t(lb)}<i>${
+        apprSort.k===k?(apprSort.dir>0?'▲':'▼'):'⇅'}</i></th>`
+    : `<th>${lb?t(lb):''}</th>`).join('');
+  /* Bề rộng cột khai cứng bằng colgroup + table-layout:fixed → bảng LUÔN vừa
+     đúng bề ngang màn hình, không bao giờ đẻ ra thanh cuộn ngang. Ô nào chữ
+     dài thì xuống dòng trong ô, chứ không đẩy cả bảng ra ngoài. */
+  return `<div class="at-wrap">
+    <table class="at">
+      <colgroup><!-- cộng lại đúng 100% → không thừa, không thiếu chỗ nào -->
+        <col style="width:2.6%">   <!-- ☑ -->
+        <col style="width:5.5%">   <!-- Ngày gửi -->
+        <col style="width:12%">    <!-- Nhân viên -->
+        <col style="width:3.4%">   <!-- Tổ -->
+        <col style="width:8.5%">   <!-- Loại đơn -->
+        <col style="width:8.5%">   <!-- Ngày áp dụng -->
+        <col style="width:18%">    <!-- Nội dung -->
+        <col style="width:6.5%">   <!-- Con số -->
+        <col style="width:11%">    <!-- Cover / Đổi với -->
+        <col style="width:10%">    <!-- Trạng thái -->
+        <col style="width:6%">     <!-- In -->
+        <col style="width:8%">     <!-- Thao tác -->
+      </colgroup>
+      <thead><tr>
+        <th class="at-ck"><input type="checkbox" onchange="apprPickAll(this.checked)" title="${t('Chọn tất cả')}"></th>
+        ${th}
+      </tr></thead>
+      <tbody>${apprSortList(list).map(apprTr).join('')}</tbody>
+    </table></div>`;
+}
+/* Mốc chuyển bảng ↔ thẻ. Trùng với @media(max-width:767px) trong css/app.css. */
+function apprIsMobile(){
+  try{return window.matchMedia('(max-width:767px)').matches;}catch(e){return false;}
+}
 /* Quản lý bật/tắt "không cần in" cho một đơn ở màn Duyệt */
 function apprToggleNoPrint(id){
   const r=S.requests[id];if(!r)return;
@@ -619,13 +800,20 @@ function renderAppr(){
   const fl=apprFilter.flag&&typeof AS_FLAGS!=='undefined'
     ? AS_FLAGS.find(f=>f[0]===apprFilter.flag):null;
 
+  // Đang uỷ quyền phê duyệt cấp cuối → nói rõ ở đầu màn Duyệt cho mọi người biết
+  const kd=(typeof kmgrDelegate==='function')?kmgrDelegate():null;
+
   $('apprBar').innerHTML=`
+    ${kd?`<div class="ab-flag kd-flag">🔑 ${t('Đang uỷ quyền phê duyệt cấp cuối cho')}
+        <b>${esc(kmgrDelegateLabel())}</b>${kd.note?` · ${esc(kd.note)}`:''}
+        ${adm?`<button class="btn sec sm" onclick="go('data');setTimeout(()=>{const c=$('kdCard');c&&c.scrollIntoView({behavior:'smooth'});},120)">⚙ ${t('Chỉnh')}</button>`:''}
+      </div>`:''}
     ${fl?`<div class="ab-flag">🔎 ${t('Đang xem riêng nhóm')}: <b>${fl[1]} ${t(fl[2])}</b>
         <button class="btn sec sm" onclick="apprSetFilter('flag','')">✕ ${t('Bỏ lọc này')}</button></div>`:''}
     <div class="ab-period">
       <button class="btn sec sm" onclick="apprPeriodShift(-1)" title="${t('Kỳ trước')}">◀</button>
       <select class="inp sm ab-per-sel" onchange="apprSetFilter('ym',this.value)" title="${t('Kỳ công đang xem')}">
-        ${ms.map(m=>`<option value="${m}"${apprFilter.ym===m?' selected':''}>${periodFor(m).label}</option>`).join('')}
+        ${ms.map(m=>`<option value="${m}"${apprFilter.ym===m?' selected':''}>${periodFor(m).slim}</option>`).join('')}
         <option value="__all"${apprFilter.ym==='__all'?' selected':''}>${t('Tất cả các kỳ')}</option>
         <option value="__range"${isRange?' selected':''}>${t('Khoảng ngày tự chọn…')}</option>
       </select>
@@ -678,12 +866,29 @@ function renderApprList(){
   const box=$('apprList');if(!box)return;
   const all=Object.values(S.requests).sort((a,b)=>b.createdAt-a.createdAt);
   const list=all.filter(apprMatch);
+  const show=list.slice(0,150);
+  /* PC = bảng, điện thoại = thẻ. Chỉ dựng MỘT dạng để không sinh checkbox
+     trùng mã đơn (apprPicked/apprPickCount đọc theo .rqChk). */
   box.innerHTML=list.length
-    ? `<div class="ar-list">${list.slice(0,150).map(apprRow).join('')}</div>`
-      +(list.length>150?`<p class="muted sm2" style="margin-top:8px">Đang hiện 150 đơn mới nhất trong ${list.length} đơn khớp bộ lọc.</p>`:'')
-    : `<div class="card"><p class="muted">Không có đơn nào khớp bộ lọc.</p></div>`;
+    ? (apprIsMobile()
+        ? `<div class="ar-list">${show.map(apprRow).join('')}</div>`
+        : apprTableHtml(show))
+      +(list.length>150?`<p class="muted sm2" style="margin-top:8px">${t('Đang hiện 150 đơn mới nhất trong')} ${list.length} ${t('đơn khớp bộ lọc.')}</p>`:'')
+    : `<div class="card"><p class="muted">${t('Không có đơn nào khớp bộ lọc.')}</p></div>`;
   apprPickCount();
 }
+/* Đổi chiều màn hình (xoay điện thoại / kéo cửa sổ) qua mốc 767px thì dựng
+   lại đúng một lần — tránh kẹt ở dạng không hợp với bề ngang hiện tại. */
+(function watchApprLayout(){
+  let wasMob=null;
+  const check=()=>{
+    const m=(typeof apprIsMobile==='function')&&apprIsMobile();
+    if(wasMob===null){wasMob=m;return;}
+    if(m!==wasMob){wasMob=m;
+      if($('apprList')&&$('apprList').innerHTML)renderApprList();}
+  };
+  try{window.addEventListener('resize',()=>{clearTimeout(window._alT);window._alT=setTimeout(check,180);});}catch(e){}
+})();
 
 /* ---- SAO LƯU EXCEL rồi mới XOÁ ----
    Trước khi xoá đơn (theo kỳ / nhiều kỳ / năm) BẮT BUỘC xuất file Excel sao lưu.
@@ -864,6 +1069,69 @@ function apprPartyIds(r){
   if(r.withId)s.add(r.withId);
   return [...s];
 }
+/* ============================================================
+   BÁO CHO NGƯỜI DUYỆT — "có đơn đang chờ bạn"
+   Trước đây app KHÔNG báo gì cho người duyệt; họ chỉ biết khi tự mở tab
+   Duyệt đơn. Nay mỗi lần đơn CHUYỂN SANG một cấp mới thì cấp đó được báo:
+     tạo đơn        → cấp đầu tiên trong chuỗi + Hoàng Trung
+     FE duyệt xong  → Hoàng Trung
+     Trung duyệt xong → Quản lý người Hàn (hoặc người đang được uỷ quyền)
+   Chỉ NGƯỜI ĐẦU TIÊN trong danh sách được đẩy sang Zalo (nz=0); những
+   người còn lại chỉ hiện trong app (nz=1). Lý do: hiện mọi tin Zalo đổ vào
+   MỘT chat nhóm, gửi cho 4 người là 4 tin y hệt nhau. Khi nào làm xong
+   liên kết 1-1 (ZALO-BOT.md mục 3.3) thì bỏ cờ nz là mỗi người nhận riêng.
+   ============================================================ */
+function apprLevelRecipients(r,lvl){
+  const out=new Set();
+  if(!r||!lvl)return [];
+  if(lvl==='fe'){
+    const emp=empById(r.empId);
+    const fe=(emp&&emp.team&&typeof teamFieldEngId==='function')?teamFieldEngId(emp.team):null;
+    if(fe&&fe!==r.empId)out.add(fe);
+  }else if(lvl==='trung'){
+    if(typeof ROOT_ADMIN!=='undefined'&&ROOT_ADMIN&&empById(ROOT_ADMIN))out.add(ROOT_ADMIN);
+    (S.employees||[]).forEach(e=>{
+      if(!e||e.active===false)return;
+      const p=(typeof permOf==='function')?permOf(e.id):'staff';
+      if(p==='admin'||p==='appr')out.add(e.id);
+    });
+  }else if(lvl==='kmgr'){
+    (S.employees||[]).forEach(e=>{
+      if(e&&e.active!==false&&typeof permOf==='function'&&permOf(e.id)==='kmgr')out.add(e.id);
+    });
+    const d=(typeof kmgrDelegate==='function')?kmgrDelegate():null;
+    if(d&&d.to)out.add(d.to);
+  }
+  return [...out];
+}
+/* Câu chữ trong app (tiếng Việt). Chữ nghĩa tin Zalo dựng riêng bằng tiếng
+   Anh ở js/21-notify.js — không dùng lại dòng này. */
+function apprNeedText(r,lvl){
+  const e=empById(r.empId);
+  const label=REQ_LABEL[r.type]||r.type;
+  const who=(e&&e.name)||r.empId;
+  return '📥 Đơn '+label+' của '+who+' đang chờ '+lvlLabel(lvl)+' duyệt · '+fmtVN(r.from);
+}
+function notifyApprovers(r,byId){
+  if(typeof newNotif!=='function'||!r)return 0;
+  if(r.status==='rejected')return 0;
+  const lvl=(typeof reqNextLevel==='function')?reqNextLevel(r):null;
+  if(!lvl)return 0;                                  // đã đủ mọi cấp
+  const to=new Set(apprLevelRecipients(r,lvl));
+  /* Hoàng Trung luôn nắm được đơn ngay từ lúc phát sinh, kể cả khi cấp đang
+     chờ là Field Engineer (yêu cầu trong ZALO-PHUONG-AN.xlsx ô K9). */
+  if(lvl==='fe'&&typeof ROOT_ADMIN!=='undefined'&&empById(ROOT_ADMIN))to.add(ROOT_ADMIN);
+  let n=0,firstZalo=true;
+  [...to].forEach(pid=>{
+    if(!pid||pid===byId)return;                      // người vừa bấm khỏi tự báo mình
+    newNotif({kind:'info',zk:'apprNeed',to:pid,from:byId||'',reqId:r.id,lvl:lvl,
+              text:apprNeedText(r,lvl),
+              nz:firstZalo?0:1});
+    firstZalo=false;n++;
+  });
+  return n;
+}
+
 function notifyReqParties(r,kind,byId,lvl,extra){
   if(typeof newNotif!=='function')return;
   const label={leave:'nghỉ phép',swap:'đổi ca',ot:'tăng ca',change:'đổi mã ca',
@@ -879,8 +1147,8 @@ function notifyReqParties(r,kind,byId,lvl,extra){
   const txt=head+' · '+fmtVN(r.from)+(extra?(' · '+extra):'');
   apprPartyIds(r).forEach(pid=>{
     if(pid===byId)return;
-    /* zk = khoá cho ma trận Zalo (js/21-zalo.js). Trong app không dùng tới,
-       chỉ để 21-zalo.js phân biệt được approved/rejected/fe/… vì mọi tin
+    /* zk = khoá cho ma trận Zalo (js/21-notify.js). Trong app không dùng tới,
+       chỉ để 21-notify.js phân biệt được approved/rejected/fe/… vì mọi tin
        nhóm B đều mang chung kind:'info'. */
     newNotif({kind:'info',to:pid,from:byId||'',reqId:r.id,text:txt,zk:kind});
   });
@@ -937,6 +1205,10 @@ function decide(id,ok,bulk,reasonArg){
     r.status='pending';r.provisional=false;kind='fe';
   }
   notifyReqParties(r,kind,me,lvl);
+  /* Đơn chưa đủ cấp → báo cho cấp kế tiếp là tới lượt họ. Đây cũng chính là
+     tin Zalo báo "Hoàng Trung đã duyệt, chờ Quản lý người Hàn chốt" — gộp
+     chung một tin thay vì bắn thêm tin trạng thái trung gian (quy tắc R1). */
+  notifyApprovers(r,me);
   if(bulk)return;
   save();renderAppr();
   if(typeof renderReal==='function')renderReal();

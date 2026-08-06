@@ -167,6 +167,10 @@ const isEN=()=>{try{return LANG==='en';}catch(e){return false;}};
 const dowOf=iso=>(isEN()?DOW_EN:DOW)[new Date(iso+'T00:00:00').getDay()];
 const dowShort=i=>(isEN()?['Mon','Tue','Wed','Thu','Fri','Sat','Sun']:['T2','T3','T4','T5','T6','T7','CN'])[i];
 const fmtDateTime=ts=>new Date(ts).toLocaleString(isEN()?'en-GB':'vi-VN');
+/* Mốc thời gian (ms) → ngày ISO / giờ:phút. Dùng cho cột "Ngày gửi" ở
+   bảng Duyệt đơn (js/08-requests.js) và nội dung tin Zalo. */
+const isoOfTs=ts=>ts?isoOf(new Date(ts)):'';
+const fmtHM=ts=>{if(!ts)return '';const d=new Date(ts);return pad(d.getHours())+':'+pad(d.getMinutes());};
 const dayNum=iso=>Math.round(new Date(iso+'T00:00:00').getTime()/86400000);
 function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(t._t);t._t=setTimeout(()=>t.style.display='none',2600);}
 function allCodes(){return DEFAULT_CODES.concat((S.settings&&S.settings.customCodes)||[]);}
@@ -368,6 +372,49 @@ function lvlLabel(k){
   if(k==='kmgr')return 'Quản lý người Hàn';
   return k;
 }
+
+/* ============================================================
+   UỶ QUYỀN PHÊ DUYỆT CẤP CUỐI (kmgr)
+   Quản lý người Hàn nghỉ phép / đi công tác thì bật công tắc này để một
+   người khác duyệt thay ở CẤP CUỐI. Chỉ chuyển quyền DUYỆT — không kèm
+   theo bất kỳ quyền quản trị nào khác (không sửa lịch gốc, không sửa tài
+   khoản). Tắt công tắc là quyền trả về ngay lập tức.
+
+   Dữ liệu: S.settings.kmgrDelegate = {on:bool, to:'<mã NV>', by:'<mã NV>',
+                                       at:<timestamp>, note:'<lý do>'}
+   Nằm trong S.settings nên đồng bộ Firebase realtime tới mọi máy.
+   ============================================================ */
+function kmgrDelegate(){
+  const d=(S.settings&&S.settings.kmgrDelegate)||null;
+  if(!d||!d.on||!d.to)return null;
+  if(typeof empById==='function'&&!empById(d.to))return null;   // người đã bị xoá
+  return d;
+}
+/* who có đang được uỷ quyền duyệt cấp cuối không? */
+function isKmgrDelegate(who){
+  const d=kmgrDelegate();
+  return !!(d&&who&&String(d.to)===String(who));
+}
+/* Nhãn hiển thị kèm tên người đang được uỷ quyền (rỗng nếu không có) */
+function kmgrDelegateLabel(){
+  const d=kmgrDelegate();if(!d)return '';
+  const e=(typeof empById==='function')?empById(d.to):null;
+  return (e&&e.name)||d.to;
+}
+/* Bật / tắt uỷ quyền. Chỉ admin gốc hoặc chính kmgr được gọi. */
+function setKmgrDelegate(on,toId,note){
+  S.settings=S.settings||{};
+  const me=(typeof meId==='function')?meId():'';
+  const cur=S.settings.kmgrDelegate||{};
+  S.settings.kmgrDelegate={
+    on:!!on,
+    to:on?(toId||cur.to||''):(cur.to||''),
+    note:(note!==undefined?note:(cur.note||'')),
+    by:me,at:Date.now()
+  };
+  if(typeof save==='function')save();
+  return S.settings.kmgrDelegate;
+}
 /* Chuỗi cấp cần duyệt cho một đơn — suy từ khối & nhóm của người đứng đơn */
 function reqChain(r){
   const emp=empById(r&&r.empId);
@@ -381,6 +428,9 @@ function apprLevelOf(who,r){
   if(!who||!r)return null;
   const p=(typeof permOf==='function')?permOf(who):'staff';
   if(p==='kmgr')return 'kmgr';
+  /* Người đang được uỷ quyền thay Quản lý người Hàn → duyệt được cấp cuối.
+     Đặt TRƯỚC nhánh admin để admin được uỷ quyền không bị rơi về cấp Trung. */
+  if(isKmgrDelegate(who))return 'kmgr';
   if((typeof isRootAdmin==='function'&&isRootAdmin(who))||p==='admin')return 'trung';
   const e=empById(who);
   if(e&&posCode(e)==='field_eng'){

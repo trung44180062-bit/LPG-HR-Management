@@ -77,6 +77,9 @@ function renderCal(opts){
   document.querySelectorAll('#calSeg button').forEach(b=>b.classList.toggle('on',b.dataset.m===calMode));
   const real=calMode==='real';
   $('calDiffWrap').style.display=real?'':'none';
+  /* Nút "Giữ thông báo" + băng nhắc đỏ (js/06-calendar.js, phần schedHold*) */
+  if(typeof refreshHoldBtn==='function')refreshHoldBtn();
+  if(typeof renderHoldBar==='function')renderHoldBar();
   const mob=isMobile();
   const show=(id,on)=>{const el=$(id);if(el)el.style.display=on?'':'none';};
 
@@ -253,27 +256,212 @@ function setCell(code){
   if(code===null){if(S.over[empId])delete S.over[empId][iso];}
   else{S.over[empId]=S.over[empId]||{};S.over[empId][iso]={code:code,by:meId()||'manager',at:Date.now()};}
   const newCode=(code===null)?stdCode:code;       // ca sau khi sửa
+
+  /* ĐANG GIỮ THÔNG BÁO (lúc nhập tàu, sửa lịch hàng loạt) → không báo ngay,
+     chỉ ghi vào bộ đệm. Bấm "Gửi thông báo" mới bắn một lượt. Xem schedHold*
+     ở cuối file này. Lịch vẫn được ghi và đồng bộ bình thường — chỉ hoãn
+     phần THÔNG BÁO, không hoãn dữ liệu. */
+  if(typeof schedHoldOn==='function'&&schedHoldOn()){
+    schedHoldPut(empId,iso,oldCode,newCode,stdCode);
+    save();closeCell();renderReal();
+    if(typeof renderHoldBar==='function')renderHoldBar();
+    toast(t('Đã cập nhật lịch — đang giữ thông báo')+' ('+schedHoldCount()+')');
+    return;
+  }
+
   let revoked=0;
   if(newCode===stdCode){
     /* Đã trả về đúng lịch chuẩn → không còn gì để nhân viên xác nhận */
     if(typeof revokeSchedChange==='function')revoked=revokeSchedChange(empId,iso,stdCode);
-  }else if(code&&code!==oldCode&&empId!==meId()&&typeof newNotif==='function'){
-    // Đổi sang mã khác → gộp vào thông báo đang chờ cho cùng người + ngày (tránh spam)
-    let ex=Object.values(S.notifs||{}).find(n=>n.kind==='schedChange'&&n.to===empId&&n.iso===iso&&n.status==='pending');
-    if(ex){
-      ex.newCode=code;ex.from=meId()||'manager';ex.createdAt=Date.now();
-      /* Nhánh này CẬP NHẬT thông báo cũ chứ không gọi newNotif, nên phải tự
-         đẩy sang hàng đợi Zalo — nếu không, sửa đi sửa lại cùng một ô sẽ
-         không bao giờ bắn tin. Ghi đè bản cũ trong hàng đợi vì khoá là
-         notifId, người nhận chỉ thấy đúng một tin với mã mới nhất. */
-      if(typeof zaloEnqueue==='function')zaloEnqueue(ex);
-    }
-    else newNotif({kind:'schedChange',to:empId,from:meId()||'manager',iso,oldCode:oldCode||'',newCode:code});
+  }else{
+    emitSchedChange(empId,iso,oldCode,newCode,stdCode,{});
   }
   save();closeCell();renderReal();
   toast(revoked?t('Đã trả về ca chuẩn và thu hồi thông báo')
                :t('Đã cập nhật lịch thực tế'));
 }
+
+/* ------------------------------------------------------------
+   PHÁT MỘT THAY ĐỔI LỊCH THỰC TẾ THÀNH THÔNG BÁO
+   Tách riêng khỏi setCell vì có HAI nơi gọi: sửa từng ô như bình thường,
+   và lúc bấm "Gửi thông báo" sau khi giữ hàng loạt (schedHoldFlush).
+     opts.nz = 1 → chỉ hiện trong app, không bắn tin Zalo riêng
+                   (dùng khi đã có một tin Zalo GỘP nói thay).
+   Trả về true nếu thật sự có sinh/cập nhật thông báo.
+   ------------------------------------------------------------ */
+function emitSchedChange(empId,iso,oldCode,newCode,stdCode,opts){
+  opts=opts||{};
+  if(newCode===stdCode){
+    if(typeof revokeSchedChange==='function')revokeSchedChange(empId,iso,stdCode);
+    return false;
+  }
+  if(!newCode||newCode===oldCode)return false;
+  if(empId===meId())return false;                 // sửa dòng của chính mình thì thôi
+  if(typeof newNotif!=='function')return false;
+  // Gộp vào thông báo đang chờ cho cùng người + ngày (tránh spam)
+  const ex=Object.values(S.notifs||{})
+    .find(n=>n.kind==='schedChange'&&n.to===empId&&n.iso===iso&&n.status==='pending');
+  if(ex){
+    ex.newCode=newCode;ex.from=meId()||'manager';ex.createdAt=Date.now();ex.nz=opts.nz?1:0;
+    /* Nhánh này CẬP NHẬT thông báo cũ chứ không gọi newNotif, nên phải tự
+       đẩy sang hàng đợi Zalo — nếu không, sửa đi sửa lại cùng một ô sẽ
+       không bao giờ bắn tin. Ghi đè bản cũ trong hàng đợi vì khoá là
+       notifId, người nhận chỉ thấy đúng một tin với mã mới nhất. */
+    if(typeof zaloEnqueue==='function')zaloEnqueue(ex);
+  }else{
+    newNotif({kind:'schedChange',to:empId,from:meId()||'manager',iso,
+              oldCode:oldCode||'',newCode:newCode,nz:opts.nz?1:0});
+  }
+  return true;
+}
+
+/* ============================================================
+   GIỮ THÔNG BÁO ĐỂ GỬI GỘP MỘT LẦN
+   ------------------------------------------------------------
+   Lúc nhập tàu / bảo dưỡng, quản lý đổi lịch của rất nhiều người liên tiếp.
+   Báo từng ô một là spam: 15 người × 2 ngày = 30 tin, mà lại còn sai — vì
+   trong lúc xếp, cùng một ô có thể bị đổi đi đổi lại vài lần.
+
+   Cách làm: bấm 🔕 để GIỮ. Lịch vẫn ghi và đồng bộ Firebase bình thường,
+   chỉ phần THÔNG BÁO là hoãn lại. Mỗi ô được ghi vào bộ đệm theo khoá
+   "mã NV|ngày" nên sửa lại lần nữa chỉ ĐÈ LÊN — luôn giữ đúng trạng thái
+   CUỐI CÙNG, không cộng dồn. Bấm 🔔 để gửi: mỗi người vẫn nhận đúng một
+   việc-chờ-xác-nhận trong app, còn Zalo chỉ tốn MỘT tin gộp nhiều người.
+
+   Dữ liệu nằm trong S.settings.schedHold nên đồng bộ realtime — quản trị
+   khác mở app cũng thấy băng nhắc đỏ và bấm gửi hộ được.
+   ============================================================ */
+function schedHold(){
+  S.settings=S.settings||{};
+  if(!S.settings.schedHold)S.settings.schedHold={on:false,by:'',at:0,items:{}};
+  if(!S.settings.schedHold.items)S.settings.schedHold.items={};
+  return S.settings.schedHold;
+}
+function schedHoldOn(){return !!(S.settings&&S.settings.schedHold&&S.settings.schedHold.on);}
+/* Danh sách thay đổi THẬT SỰ phải báo: bỏ những ô đã được sửa về đúng chỗ cũ */
+function schedHoldList(){
+  const h=schedHold();
+  return Object.keys(h.items)
+    .map(k=>h.items[k])
+    .filter(x=>x&&x.to&&x.iso&&x.now!==x.was)
+    .sort((a,b)=>{
+      const na=(empById(a.to)||{}).name||a.to, nb=(empById(b.to)||{}).name||b.to;
+      const c=String(na).localeCompare(String(nb),'vi');
+      return c||String(a.iso).localeCompare(String(b.iso));
+    });
+}
+function schedHoldCount(){return schedHoldList().length;}
+function schedHoldPeople(){return new Set(schedHoldList().map(x=>x.to)).size;}
+/* Ghi một ô vào bộ đệm. `was` LUÔN giữ giá trị của lần đầu chạm vào ô đó —
+   đó mới là cái nhân viên đang biết; những lần sửa sau chỉ đổi `now`. */
+function schedHoldPut(empId,iso,oldCode,newCode,stdCode){
+  const h=schedHold(),k=empId+'|'+iso;
+  const prev=h.items[k];
+  h.items[k]={to:empId,iso:iso,
+              was:prev?prev.was:(oldCode||''),
+              now:newCode||'',std:stdCode||'',
+              by:meId()||'manager',at:Date.now()};
+}
+function schedHoldStart(){
+  const h=schedHold();
+  h.on=true;h.by=meId()||'manager';h.at=Date.now();
+  save();renderHoldBar();if(typeof renderCal==='function')renderCal();
+  toast(t('Đang GIỮ thông báo — sửa lịch thoải mái, xong bấm Gửi thông báo'));
+}
+/* Nút 🔕/🔔 trên thanh Lịch: chưa giữ thì bật; đang giữ thì gửi đi. */
+function schedHoldToggle(){
+  if(!mgr){toast(t('Bạn không có quyền sửa lịch thực tế'));return;}
+  if(schedHoldOn())schedHoldFlush();
+  else schedHoldStart();
+}
+/* Cập nhật nhãn nút theo trạng thái. Gọi từ renderCal(). */
+function refreshHoldBtn(){
+  const b=$('holdBtn');if(!b)return;
+  /* Chỉ có nghĩa ở chế độ xem Lịch THỰC TẾ — lịch chuẩn không sinh thông báo */
+  const show=mgr&&calTab==='sched'&&calMode==='real';
+  b.style.display=show?'':'none';
+  if(!show)return;
+  const n=schedHoldCount();
+  if(schedHoldOn()){
+    b.className='btn ok sm mgr-only';
+    b.innerHTML='🔔 '+t('Gửi thông báo')+(n?` <b style="margin-left:5px">${n}</b>`:'');
+    b.title=t('Gửi một lượt tất cả thay đổi đang giữ — Zalo chỉ tốn 1 tin gộp');
+  }else{
+    b.className='btn sec sm mgr-only';
+    b.innerHTML='🔕 '+t('Giữ thông báo');
+    b.title=t('Sửa lịch hàng loạt (nhập tàu, bảo dưỡng…) mà chỉ gửi đúng 1 tin gộp');
+  }
+}
+/* Bỏ hết bộ đệm, KHÔNG báo cho ai. Dùng khi chỉ sửa nhầm rồi sửa lại. */
+function schedHoldDiscard(){
+  const n=schedHoldCount();
+  if(n&&!confirm(t('Bỏ')+' '+n+' '+t('thay đổi đang giữ mà KHÔNG báo cho ai?')+'\n'
+    +t('Lịch vẫn giữ nguyên như bạn đã sửa — chỉ là nhân viên không được báo.')))return;
+  const h=schedHold();h.on=false;h.items={};h.by='';h.at=0;
+  save();renderHoldBar();if(typeof renderCal==='function')renderCal();
+  toast(t('Đã tắt chế độ giữ — không gửi thông báo nào'));
+}
+/* Gửi đi: mỗi người một việc-chờ-xác-nhận trong app + ĐÚNG MỘT tin Zalo gộp */
+function schedHoldFlush(){
+  const list=schedHoldList();
+  const h=schedHold();
+  if(!list.length){
+    h.on=false;h.items={};save();renderHoldBar();
+    if(typeof renderCal==='function')renderCal();
+    toast(t('Không có thay đổi nào cần báo — đã tắt chế độ giữ'));
+    return;
+  }
+  const people=schedHoldPeople();
+  if(!confirm(t('Gửi thông báo cho')+' '+people+' '+t('người')+' ('+list.length+' '+t('thay đổi')+')?\n'
+    +t('Zalo chỉ tốn 1 tin gộp; trong app mỗi người nhận đúng một việc chờ xác nhận.')))return;
+
+  /* 1) Phần TRONG APP — từng người một, vì mỗi người phải tự bấm xác nhận.
+        Gắn nz:1 để không sinh tin Zalo riêng (tin gộp ở bước 2 nói thay). */
+  let sent=0;
+  list.forEach(x=>{ if(emitSchedChange(x.to,x.iso,x.was,x.now,x.std,{nz:1}))sent++; });
+
+  /* 2) Phần ZALO — đúng MỘT tin, nhóm theo người. Gửi tới chính người bấm
+        (hiện mọi tin đều đổ vào một chat nhóm; khi làm liên kết 1-1 thì
+        đổi chỗ này thành gửi cho nhóm quản lý). */
+  const me=meId()||'manager';
+  if(typeof newNotif==='function'&&empById(me)){
+    newNotif({kind:'info',zk:'schedBulk',to:me,from:me,
+              hold:list.map(x=>({to:x.to,iso:x.iso,was:x.was,now:x.now})),
+              text:'📅 '+t('Đã cập nhật lịch thực tế của')+' '+people+' '+t('người')
+                   +' ('+list.length+' '+t('thay đổi')+')'});
+  }
+
+  h.on=false;h.items={};h.by='';h.at=0;
+  save();renderHoldBar();
+  if(typeof renderCal==='function')renderCal();
+  if(typeof refreshBadge==='function')refreshBadge();
+  toast(t('Đã gửi')+' — '+people+' '+t('người')+' · '+sent+' '+t('thay đổi')+' · 1 '+t('tin Zalo'));
+}
+/* Băng nhắc đỏ — hiện ở MỌI tab chừng nào còn giữ, để không ai quên. */
+function renderHoldBar(){
+  const bar=$('holdBar');if(!bar)return;
+  if(!schedHoldOn()||!mgr){bar.style.display='none';bar.innerHTML='';document.body.classList.remove('hold-on');return;}
+  const n=schedHoldCount(),p=schedHoldPeople();
+  const who=empById(schedHold().by);
+  bar.style.display='';
+  document.body.classList.add('hold-on');
+  bar.innerHTML=`<span class="hb-ic">🔕</span>
+    <b>${t('ĐANG GIỮ THÔNG BÁO')}</b>
+    <span class="hb-n">${n?`${n} ${t('thay đổi')} · ${p} ${t('người')}`:t('chưa có thay đổi nào')}</span>
+    <span class="muted sm2 pc-only">${who?`${t('bật bởi')} ${esc(who.name||schedHold().by)}`:''}</span>
+    <span class="sp" style="flex:1"></span>
+    <button class="btn ok sm" onclick="schedHoldFlush()">🔔 ${t('Gửi thông báo')}</button>
+    <button class="btn sec sm" onclick="schedHoldDiscard()">${t('Bỏ, không báo')}</button>`;
+  if(typeof i18nApply==='function')i18nApply();
+}
+/* Đóng tab / tải lại trang mà còn thay đổi đang giữ → trình duyệt hỏi lại */
+try{
+  window.addEventListener('beforeunload',function(e){
+    if(typeof schedHoldOn==='function'&&schedHoldOn()&&schedHoldCount()>0){
+      e.preventDefault();e.returnValue='';return '';
+    }
+  });
+}catch(e){}
 
 /* =================== v4: LỊCH — THẺ TUẦN (mobile) & NHÂN LỰC THEO NGÀY (mobile) =================== */
 function calDaysForCurrentFilter(){
