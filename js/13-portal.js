@@ -106,27 +106,126 @@ function newNotif(o){
   if(typeof zaloEnqueue==='function')zaloEnqueue(S.notifs[id]);
   return id;
 }
-/* Chỉ GIỮ thông báo trong ~2 kỳ ca gần đây để nhẹ Firebase (gói Spark).
-   Việc đang CHỜ xác nhận (pending) luôn giữ lại dù cũ. Trả về số đã dọn. */
-const NOTIF_KEEP_DAYS=62;                 // ~2 kỳ công (mỗi kỳ ~1 tháng)
-function pruneOldNotifs(){
-  if(!S.notifs)return 0;
-  const cutoff=Date.now()-NOTIF_KEEP_DAYS*86400000;let n=0;
-  for(const k in S.notifs){const x=S.notifs[k];
-    if(x&&x.status!=='pending'&&(x.createdAt||0)<cutoff){delete S.notifs[k];n++;}}
-  return n;
-}
 /* Việc chờ nhân viên xác nhận */
 const CONFIRM_KINDS=['schedChange','swapConfirm','coverConfirm'];
+
+/* ============================================================
+   XOÁ THÔNG BÁO — MỘT CỬA DUY NHẤT
+   Mọi chỗ muốn gỡ thông báo phải đi qua đây, để KHÔNG BAO GIỜ quên rút
+   luôn tin đã nằm trong hàng đợi Zalo (js/21-notify.js). Trước đây mỗi
+   nơi tự `delete S.notifs[k]` nên tin trong app biến mất mà hàng đợi Zalo
+   vẫn còn → người ta vẫn nhận được tin nhắn cho một việc đã huỷ.
+   KHÔNG gọi save() — nơi gọi tự lưu (nhiều chỗ xoá theo cụm).
+   Trả về số thông báo đã gỡ.
+   ============================================================ */
+function notifDrop(pred){
+  if(!S.notifs||typeof pred!=='function')return 0;
+  let n=0;
+  for(const k in S.notifs){
+    const x=S.notifs[k];
+    if(!x)continue;
+    let hit=false;
+    try{hit=!!pred(x);}catch(e){hit=false;}
+    if(!hit)continue;
+    if(typeof zaloWithdraw==='function')zaloWithdraw(x.id||k);
+    delete S.notifs[k];n++;
+  }
+  return n;
+}
+/* Gỡ mọi VIỆC CHỜ XÁC NHẬN gắn với một đơn (huỷ đơn / từ chối đơn) */
+function notifDropForReq(rid){
+  if(!rid)return 0;
+  return notifDrop(n=>n.reqId===rid&&CONFIRM_KINDS.includes(n.kind));
+}
+
+/* ============================================================
+   THÔNG BÁO ĐÃ LỖI THỜI — TỰ PHÁT HIỆN
+   ------------------------------------------------------------
+   Một việc-chờ-xác-nhận chỉ có nghĩa chừng nào CÁI CỚ SINH RA NÓ còn tồn
+   tại. Xoá ô lịch, huỷ đơn, đổi người cover, từ chối đơn… đều làm nó vô
+   nghĩa. Trước đây chỉ vài đường đi được dọn thủ công, nên đủ kiểu lọt:
+     · "Xoá ô (trống)" gọi setCell('') chứ không phải setCell(null) → nhánh
+       thu hồi không chạy, thông báo đổi lịch nằm lại vĩnh viễn;
+     · đơn bị TỪ CHỐI (không phải huỷ) → lời nhờ OT cover vẫn treo;
+     · máy khác xoá đơn / đổi người cover rồi đồng bộ về;
+     · ô lịch bị đơn khác duyệt đè lên mã khác.
+   Nay thay vì đuổi theo từng đường đi, app KIỂM LẠI TỪ DỮ LIỆU: thông báo
+   nào không còn khớp thực tế thì gỡ. Cách này đúng với mọi đường đi, kể
+   cả những đường sẽ thêm về sau.
+
+   Trả về '' nếu còn hợp lệ, hoặc lý do (tiếng Việt) nếu đã lỗi thời.
+   ============================================================ */
+function notifStaleReason(n){
+  if(!n||n.status!=='pending')return '';            // chỉ xét việc đang chờ
+  if(!CONFIRM_KINDS.includes(n.kind))return '';     // tin một chiều thì để pruneOldNotifs dọn
+  /* Người nhận đã nghỉ việc / bị vô hiệu hoá thì việc chờ cũng vô nghĩa */
+  if(n.to&&typeof empById==='function'){
+    const e=empById(n.to);
+    if(!e||e.active===false)return 'người nhận không còn hoạt động';
+  }
+  if(n.kind==='schedChange'){
+    if(!n.iso)return 'thiếu ngày';
+    if(typeof eff!=='function')return '';
+    /* Ô lịch giờ mang mã gì? Khác mã đã báo nghĩa là thay đổi đó không còn:
+       bị trả về ca chuẩn, bị xoá, hoặc bị một đơn khác ghi đè. */
+    const now=eff(n.to,n.iso).code||'';
+    if(now!==(n.newCode||''))return 'ô lịch không còn mã đã báo';
+    return '';
+  }
+  /* swapConfirm / coverConfirm — bám theo đơn */
+  const r=n.reqId?((S.requests||{})[n.reqId]):null;
+  if(!r)return 'đơn đã bị xoá';
+  if(r.status==='rejected')return 'đơn đã bị từ chối';
+  if(n.kind==='coverConfirm'&&(r.coverId||'')!==n.to)return 'đã đổi người OT cover';
+  if(n.kind==='swapConfirm' &&(r.withId||'')!==n.to)return 'đã đổi người đổi ca';
+  return '';
+}
+function notifIsStale(n){return !!notifStaleReason(n);}
+/* Quét và gỡ hẳn. doSave=true thì tự lưu khi có gỡ được cái nào. */
+function sweepStaleNotifs(doSave){
+  const n=notifDrop(notifIsStale);
+  if(n&&doSave&&typeof save==='function')save();
+  return n;
+}
+/* Quét có tiết chế — gọi được từ renderAll() sau mỗi lượt đồng bộ Firebase
+   mà không sợ ghi liên tục. Xoá là thao tác luỹ đẳng nên hai máy cùng quét
+   cũng chỉ ra cùng một kết quả. */
+let _sweepAt=0;
+const SWEEP_EVERY_MS=30000;
+function sweepStaleNotifsThrottled(){
+  const now=Date.now();
+  if(now-_sweepAt<SWEEP_EVERY_MS)return 0;
+  _sweepAt=now;
+  return sweepStaleNotifs(true);
+}
+
+/* Chỉ GIỮ thông báo trong ~2 kỳ ca gần đây để nhẹ Firebase (gói Spark).
+   Việc đang CHỜ XÁC NHẬN luôn giữ lại dù cũ — nhưng CHỈ những loại thật sự
+   chờ người bấm (CONFIRM_KINDS). Lỗi cũ: newNotif() mặc định gán
+   status:'pending' nên tin một chiều (kind 'info') cũng lọt vào diện "giữ
+   mãi" → chúng chất đống trong Firebase, không bao giờ bị dọn.
+   Trả về số đã dọn. */
+const NOTIF_KEEP_DAYS=62;                 // ~2 kỳ công (mỗi kỳ ~1 tháng)
+function notifKeepForever(x){
+  return !!x&&x.status==='pending'&&CONFIRM_KINDS.includes(x.kind)&&!notifIsStale(x);
+}
+function pruneOldNotifs(){
+  if(!S.notifs)return 0;
+  const cutoff=Date.now()-NOTIF_KEEP_DAYS*86400000;
+  return notifDrop(x=>!notifKeepForever(x)&&(x.createdAt||0)<cutoff);
+}
 function pendingConfirms(id){
   return Object.values(S.notifs||{})
     .filter(n=>n.to===id&&n.status==='pending'&&CONFIRM_KINDS.includes(n.kind))
+    /* Chốt chặn hiển thị: kể cả khi bộ quét chưa kịp chạy (vừa nhận đồng bộ
+       từ máy khác), việc đã lỗi thời cũng KHÔNG hiện ra và KHÔNG được đếm. */
+    .filter(n=>!notifIsStale(n))
     .sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
 }
 /* Toàn bộ thông báo gửi tới id (cho tab Thông báo) */
 function myNotifs(id){
   return Object.values(S.notifs||{})
-    .filter(n=>n.to===id)
+    .filter(n=>n.to===id&&!notifIsStale(n))
     .sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
 }
 /* Thông báo một chiều chưa xem: tin nhắn info + sự kiện trên lịch */
@@ -213,16 +312,20 @@ function openPrefilledReq(iso,inf){
 function revokeSchedChange(empId,iso,stdCode){
   if(!S.notifs)return 0;
   const by=meId()||'manager';
-  let n=0, hadConfirmed=false;
+  let hadConfirmed=false;
+  /* Đã xác nhận thì KHÔNG xoá — đánh dấu 'revoked' để còn tra lại, vì nhân
+     viên có thể đã gửi đơn theo thay đổi đó. Chỉ cái CHƯA xác nhận mới gỡ hẳn. */
   for(const k in S.notifs){
     const x=S.notifs[k];
     if(!x||x.kind!=='schedChange'||x.to!==empId||x.iso!==iso)continue;
-    if(x.status==='pending'){delete S.notifs[k];n++;continue;}
     if(x.status==='confirmed'){
       x.status='revoked';x.revokedAt=Date.now();x.revokedBy=by;
-      hadConfirmed=true;n++;
+      hadConfirmed=true;
+      if(typeof zaloWithdraw==='function')zaloWithdraw(x.id||k);
     }
   }
+  let n=notifDrop(x=>x.kind==='schedChange'&&x.to===empId&&x.iso===iso&&x.status==='pending');
+  if(hadConfirmed)n++;
   /* Đã xác nhận rồi mới bị thu hồi → phải báo, kèm nhắc kiểm tra đơn đã gửi */
   if(hadConfirmed&&typeof newNotif==='function'){
     newNotif({kind:'info',to:empId,from:by,iso,zk:'schedRevoke',
@@ -233,9 +336,30 @@ function revokeSchedChange(empId,iso,stdCode){
   return n;
 }
 
+/* ------------------------------------------------------------
+   LẤY THÔNG BÁO ĐỂ XỬ LÝ — có chặn việc đã lỗi thời
+   Hai người dùng thao tác cùng lúc: nhân viên đang mở bảng thông báo thì
+   quản lý huỷ đơn / trả ô lịch về ca chuẩn. Nếu cứ cho bấm thì app sẽ ghi
+   một xác nhận cho chuyện không còn tồn tại (và với đơn đã bị xoá thì bấm
+   xong chẳng có gì xảy ra, người dùng tưởng app hỏng).
+   Nay: phát hiện lỗi thời → gỡ ngay, nói rõ lý do, vẽ lại danh sách.
+   ------------------------------------------------------------ */
+function notifTake(nid){
+  const n=S.notifs?S.notifs[nid]:null;
+  if(!n||n.to!==meId())return null;
+  const why=notifStaleReason(n);
+  if(why){
+    notifDrop(x=>x.id===n.id||x===n);
+    save();renderMyPanel();
+    if(typeof refreshBadge==='function')refreshBadge();
+    toast(t('Việc này đã không còn')+' — '+t(why));
+    return null;
+  }
+  return n;
+}
 /* Nhân viên XÁC NHẬN thay đổi lịch → mở đơn điền sẵn để gửi */
 function confirmSchedChange(nid){
-  const n=S.notifs[nid];if(!n||n.to!==meId())return;
+  const n=notifTake(nid);if(!n)return;
   n.status='confirmed';n.decidedAt=Date.now();save();
   closeMyPanel();go('me');
   const inf=inferReqFromChange(n.to,n.iso,n.oldCode,n.newCode);
@@ -244,7 +368,7 @@ function confirmSchedChange(nid){
 }
 /* Nhân viên HUỶ thay đổi → trả ô lịch về cũ + báo người đã sửa */
 function declineSchedChange(nid){
-  const n=S.notifs[nid];if(!n||n.to!==meId())return;
+  const n=notifTake(nid);if(!n)return;
   if(!confirm(t('Huỷ thay đổi lịch này? Ô lịch sẽ trả về trạng thái trước đó và người sửa sẽ được báo.')))return;
   // gỡ ô over nếu vẫn đang là mã mới do người kia gán
   const ov=S.over[n.to]&&S.over[n.to][n.iso];
@@ -258,7 +382,7 @@ function declineSchedChange(nid){
 }
 /* B XÁC NHẬN / TỪ CHỐI đơn đổi ca của A */
 function confirmSwap(nid){
-  const n=S.notifs[nid];if(!n||n.to!==meId())return;
+  const n=notifTake(nid);if(!n)return;
   const r=S.requests[n.reqId];
   n.status='confirmed';n.decidedAt=Date.now();
   if(r){r.confirmW='confirmed';
@@ -269,7 +393,7 @@ function confirmSwap(nid){
   toast(t('Đã xác nhận đổi ca'));
 }
 function declineSwap(nid){
-  const n=S.notifs[nid];if(!n||n.to!==meId())return;
+  const n=notifTake(nid);if(!n)return;
   if(!confirm(t('Từ chối đổi ca này? Đơn vẫn còn nhưng quản trị sẽ thấy bạn đã từ chối.')))return;
   const r=S.requests[n.reqId];
   n.status='cancelled';n.decidedAt=Date.now();
@@ -284,7 +408,7 @@ function declineSwap(nid){
    Kết quả chỉ là CỜ trên đơn nghỉ phép, không tự sinh đơn tăng ca và không
    chặn duyệt. Người cover muốn được tính giờ thì gửi đơn tăng ca như thường. */
 function confirmCover(nid){
-  const n=S.notifs[nid];if(!n||n.to!==meId())return;
+  const n=notifTake(nid);if(!n)return;
   const r=S.requests[n.reqId];
   n.status='confirmed';n.decidedAt=Date.now();
   if(r){
@@ -297,7 +421,7 @@ function confirmCover(nid){
   toast(t('Đã nhận OT cover — nhớ gửi đơn tăng ca để được tính giờ'));
 }
 function declineCover(nid){
-  const n=S.notifs[nid];if(!n||n.to!==meId())return;
+  const n=notifTake(nid);if(!n)return;
   if(!confirm(t('Từ chối OT cover ngày này? Người làm đơn và người duyệt sẽ thấy để chọn người khác.')))return;
   const r=S.requests[n.reqId];
   n.status='cancelled';n.decidedAt=Date.now();
@@ -1270,7 +1394,7 @@ function dsFormUI(){
   /* Nhắc nhở bối cảnh: hôm đó ai đã nghỉ, đơn của họ đang ở trạng thái nào,
      và đơn này có khả năng bị vướng không. Chạy hoàn toàn bằng logic trên
      dữ liệu đã tải sẵn — xem js/18-advice.js. */
-  if(typeof advForFormHtml==='function')h+=advForFormHtml(own,dsRows,t);
+  if(typeof advForFormHtml==='function')h+=advForFormHtml(own,dsRows,t,dsCoverId);
 
   w.innerHTML=h;
 }
@@ -1490,6 +1614,9 @@ function myPanelSum(id){
 
 function renderMyPanel(){
   const id=meId();const box=$('myPanelBody');if(!id||!box)return;
+  /* Mở bảng thông báo là lúc đáng dọn nhất: người dùng sắp NHÌN vào danh sách
+     nên tuyệt đối không được còn việc chờ cho một chuyện đã không tồn tại. */
+  if(typeof sweepStaleNotifs==='function')sweepStaleNotifs(true);
   const bellN=(typeof notifUnseenCount==='function')?notifUnseenCount(id):0;
   const tabs=noSelf?[['ntf','🔔 Thông báo'+(bellN?` (${bellN})`:'')],['acc','🔑 Tài khoản']]
                    :[['ot','⚡ Tăng ca'],['req','📋 Đơn của tôi'],['sum','📊 Bảng công'],['al','🏖 Phép năm'],['acc','🔑 Tài khoản']];

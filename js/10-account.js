@@ -154,14 +154,22 @@ function applyPerm(){
    Dữ liệu & logic ở js/01-core.js (kmgrDelegate / setKmgrDelegate).
    Chỉ Quản trị và Quản lý người Hàn thấy thẻ này (class admin-only).
    ============================================================ */
-/* Ai được phép nhận uỷ quyền: người có tài khoản, đang hoạt động, và
-   KHÔNG phải chính kmgr (họ vốn đã duyệt được). Ưu tiên xếp quản trị lên đầu. */
+/* Ai được phép nhận uỷ quyền: mọi người có tài khoản và đang hoạt động,
+   trừ CHÍNH NGƯỜI ĐANG BẬT (uỷ quyền cho chính mình thì vô nghĩa).
+   LƯU Ý: bản trước loại hết perm 'kmgr' khỏi danh sách vì cho rằng họ vốn
+   đã duyệt được — nhưng công ty có NHIỀU quản lý người Hàn, và khi một
+   người đi vắng thì người cần nhận uỷ quyền thường lại chính là quản lý
+   người Hàn còn lại. Nay giữ họ trong danh sách và xếp lên đầu.
+   Thứ tự: Quản lý người Hàn → Quản trị / Duyệt đơn → còn lại, mỗi nhóm
+   xếp theo tên tiếng Việt. */
+const KD_RANK={kmgr:0,admin:1,appr:1,sec:2};
 function kdCandidates(){
+  const me=meId();
   return (S.employees||[])
-    .filter(e=>e&&e.active!==false&&canHaveAccount(e)&&permOf(e.id)!=='kmgr')
+    .filter(e=>e&&e.active!==false&&canHaveAccount(e)&&e.id!==me)
     .sort((a,b)=>{
-      const ra=(permOf(a.id)==='admin'||permOf(a.id)==='appr')?0:1;
-      const rb=(permOf(b.id)==='admin'||permOf(b.id)==='appr')?0:1;
+      const ra=KD_RANK[permOf(a.id)]===undefined?3:KD_RANK[permOf(a.id)];
+      const rb=KD_RANK[permOf(b.id)]===undefined?3:KD_RANK[permOf(b.id)];
       if(ra!==rb)return ra-rb;
       return String(a.name||'').localeCompare(String(b.name||''),'vi');
     });

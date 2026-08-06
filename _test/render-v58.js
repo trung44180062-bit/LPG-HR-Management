@@ -20,6 +20,9 @@ function mkEl(id){
     scrollIntoView(){},appendChild(){},setAttribute(){},focus(){}};
 }
 const doc={
+  /* renderHoldBar() / applyRoleUI() đụng tới document.body — thiếu nó thì mọi
+     hàm đi qua renderCal/setCell đều ném "reading 'classList'" và bị tính là hỏng. */
+  body:mkEl('body'),
   getElementById:id=>els[id]||(els[id]=mkEl(id)),
   querySelectorAll:()=>[],querySelector:()=>null,
   createElement:()=>mkEl('tmp'),addEventListener(){},
@@ -50,8 +53,13 @@ const stub=`
 vm.runInContext([src('js/01-core.js'),stub,src('js/04-schedule.js'),src('js/05-roster.js'),
   src('js/06-calendar.js'),src('js/07-manpower.js'),src('js/08-requests.js'),
   src('js/20-events.js'),
-  /* revokeSchedChange nằm giữa js/13-portal.js (file nặng DOM) → lấy đúng hàm đó */
-  cut(src('js/13-portal.js'),'function revokeSchedChange','/* Nhân viên XÁC NHẬN'),
+  /* Phần THÔNG BÁO của js/13-portal.js (file nặng DOM) → lấy đúng 2 khúc cần:
+     bộ dọn thông báo lỗi thời (notifDrop/notifStaleReason/sweep…) mà
+     revokeSchedChange gọi tới, rồi mới tới chính revokeSchedChange. */
+  cut(src('js/13-portal.js'),'const CONFIRM_KINDS=','/* ---- Suy ra loại đơn'),
+  (p13=>{ /* cắt tới } cuối cùng, đừng cắt vào giữa khối chú thích kế tiếp */
+     const a=p13.indexOf('function revokeSchedChange'),b=p13.indexOf('   LẤY THÔNG BÁO',a);
+     return p13.slice(a,p13.lastIndexOf('}',b)+1);})(src('js/13-portal.js')),
   cut(acc,'function calcStats','const rnd1=')+'const rnd1=v=>Math.round(v*10)/10;'
 ].join('\n;\n'),ctx,{filename:'render-v58'});
 

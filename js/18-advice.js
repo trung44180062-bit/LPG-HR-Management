@@ -51,8 +51,14 @@ function offListOfDay(iso){
     const r=eff(e.id,iso);
     if(!advIsLeaveCode(r.code))return;
     const rid=(r.o&&r.o.reqId)||'';
+    const src=rid?(S.requests||{})[rid]:null;
     seen[e.id]=1;
     out.push({e,code:r.code,status:'approved',reqId:rid,
+              /* Mốc ĐĂNG KÝ (không phải mốc duyệt): dùng để biết ai xí chỗ
+                 ngày này trước. Ô lịch quản lý gõ tay không có đơn → coi như
+                 đã có từ lâu (0) nên luôn tính là "trước". */
+              at:src?(src.createdAt||0):0,
+              coverId:src?(src.coverId||''):'',coverSt:src?(src.coverSt||''):'',
               pool:poolOf(e),team:String(e.team||'').trim()});
   });
   Object.values(S.requests||{}).forEach(r=>{
@@ -65,10 +71,12 @@ function offListOfDay(iso){
     if(!e||e.active===false||!inSchedule(e))return;
     seen[r.empId]=1;
     out.push({e,code:d.code,status:'pending',reqId:r.id,
+              at:r.createdAt||0,coverId:r.coverId||'',coverSt:r.coverSt||'',
               pool:poolOf(e),team:String(e.team||'').trim()});
   });
   return out.sort((a,b)=>
     (a.status===b.status?0:(a.status==='approved'?-1:1))||
+    (a.at||0)-(b.at||0)||
     String(a.team).localeCompare(String(b.team),'vi',{numeric:true})||
     String(a.e.name||'').localeCompare(String(b.e.name||''),'vi'));
 }
@@ -97,22 +105,56 @@ function mpBucketsCached(iso,pool){
 }
 
 /* ------------------------------------------------------------
+   NGƯỜI OT COVER CỦA MỘT ĐƠN NGHỈ
+   Nghiệp vụ: người xin nghỉ có thể chỉ định một đồng nghiệp ở lại tăng ca
+   gánh ca thay mình (r.coverId + r.coverSt, xem js/08-requests.js). Nếu
+   người đó ĐÃ XÁC NHẬN thì ca trực KHÔNG hụt người — trước đây bộ tư vấn
+   không biết chuyện này nên vẫn kêu "dưới định mức" và bắt người duyệt
+   phải tự nhẩm lại. Nay cover đã xác nhận được cộng bù vào quân số.
+
+   Chỉ cover 'confirmed' mới bù (quyết định nghiệp vụ): cover mới chỉ định
+   mà người ta chưa bấm đồng ý thì chưa chắc có người, chỉ nhắc chứ không bù.
+   Người cover cũng phải CÙNG KHỐI mới bù được — khối văn phòng và khối
+   sản xuất không gánh ca cho nhau (xem poolOf ở 01-core.js).
+   ------------------------------------------------------------ */
+function advCoverInfo(opt,pool,iso){
+  const o=opt||{};
+  const id=o.coverId||'';
+  if(!id)return {id:'',st:'',ok:false,name:'',samePool:false,busy:''};
+  const e=empById(id);
+  const samePool=!!e&&poolOf(e)===pool;
+  const st=o.coverSt||'pending';
+  /* Người cover có đang vướng gì ngày đó không (chính họ cũng nghỉ / cũng xin nghỉ) */
+  const c=e?eff(id,iso).code:'';
+  const busy=advCodeLeavesShift(c)&&codeInfo(c).cat==='leave'?c:'';
+  return {id,st,name:(e&&e.name)||id,samePool,busy,
+          ok:st==='confirmed'&&samePool&&!busy};
+}
+
+/* ------------------------------------------------------------
    KHUYẾN NGHỊ CHO MỘT NGƯỜI – MỘT NGÀY
    empId    : người xin nghỉ
    iso      : ngày
    newCode  : mã sẽ áp vào ô lịch nếu duyệt (AL8 / AL4 / NP / OFF / R…)
    skipReqId: id đơn đang xét (không tự tính mình vào danh sách đã nghỉ)
+   opt      : {coverId, coverSt, at} — người OT cover của đơn và mốc gửi đơn.
+              `at` để biết ai ĐĂNG KÝ NGHỈ TRƯỚC ngày này (ai xí chỗ trước
+              thì thường được ưu tiên; đơn gửi sau phải nhường).
    ------------------------------------------------------------ */
-function leaveAdvice(empId,iso,newCode,skipReqId){
+function leaveAdvice(empId,iso,newCode,skipReqId,opt){
   const e=empById(empId)||{id:empId,name:empId,team:''};
   const pool=poolOf(e), team=String(e.team||'').trim();
   const cur=eff(empId,iso).code;
   const shift=advShiftOf(cur);
+  const myAt=(opt&&opt.at)||Date.now();
 
   const off     = offListCached(iso).filter(x=>x.e.id!==empId&&!(skipReqId&&x.reqId===skipReqId));
   const offTeam = off.filter(x=>x.team===team);
   const offPool = off.filter(x=>x.pool===pool);
   const teamSize= schedEmps().filter(x=>String(x.team||'').trim()===team).length;
+  /* Ai đã ĐĂNG KÝ NGHỈ NGÀY NÀY TRƯỚC đơn đang xét — tiêu chí ưu tiên số 1 */
+  const earlier     = off.filter(x=>(x.at||0)<myAt);
+  const earlierTeam = earlier.filter(x=>x.team===team);
 
   /* Đếm quân số CÙNG KHỐI — khối kia không cover được nên không tính vào */
   const B=mpBucketsCached(iso,pool);
@@ -120,6 +162,11 @@ function leaveAdvice(empId,iso,newCode,skipReqId){
   const after=Object.assign({},before);
   const pulls=(shift==='D'||shift==='N'||shift==='O');
   if(pulls)after[shift]=Math.max(0,after[shift]-1);
+
+  /* Có người OT cover đã xác nhận → cộng bù lại đúng 1 người vào ca đó */
+  const cv=advCoverInfo(opt,pool,iso);
+  const covered=!!(cv.ok&&pulls);
+  if(covered)after[shift]=after[shift]+1;
 
   /* Đơn cùng ca, cùng khối, đang chờ duyệt → nếu duyệt hết còn rút thêm nữa */
   const pendSameShift=offPool.filter(x=>x.status==='pending'&&
@@ -133,6 +180,8 @@ function leaveAdvice(empId,iso,newCode,skipReqId){
   let level='ok';
   const bump=l=>{ if(l==='block')level='block'; else if(l==='warn'&&level!=='block')level='warn'; };
   const say=(lv,txt)=>{ reasons.push({lv,txt}); bump(lv); };
+  const nameList=a=>a.slice(0,4).map(x=>shortName(x.e.name)||x.e.id).join(', ')
+                   +(a.length>4?' +'+(a.length-4):'');
 
   /* --- Bối cảnh ca của chính người xin --- */
   if(!cur)                  say('warn', t('Ngày này chưa xếp ca cho người xin — nên kiểm tra lại lịch trước khi duyệt.'));
@@ -140,21 +189,48 @@ function leaveAdvice(empId,iso,newCode,skipReqId){
   else if(shift==='OT')     say('warn', t('Ngày này người xin đang được xếp tăng ca — duyệt nghỉ sẽ huỷ mất ca tăng đó.'));
   else if(shift==='R')      pluses.push(t('Ngày này vốn là ngày nghỉ ca R — nghỉ phép không rút ai khỏi ca trực.'));
 
-  /* --- TIÊU CHÍ CHÍNH: cùng nhóm đã có ai nghỉ chưa --- */
-  if(team){
-    if(nTeamOk>=cap&&cap>0)
-      say('block', t('Nhóm')+' '+team+' '+t('đã có')+' '+nTeamOk+' '+t('người nghỉ ngày này')+
-                   ' ('+t('trần')+' '+cap+' '+t('người/ngày')+') — '+t('duyệt thêm sẽ mỏng kíp trực.'));
-    else if(nTeamOk>0)
-      say('warn',  t('Nhóm')+' '+team+' '+t('đã có')+' '+nTeamOk+'/'+cap+' '+t('người nghỉ ngày này.'));
+  /* --- NGƯỜI OT COVER: nói trước, vì nó đổi hẳn kết luận --- */
+  if(cv.id){
+    if(cv.ok)
+      pluses.push(t('Đã có')+' '+shortName(cv.name)+' '+t('nhận OT cover ngày này — ca trực không hụt người.'));
+    else if(!cv.samePool)
+      say('warn', shortName(cv.name)+' '+t('được chọn cover nhưng KHÁC KHỐI nhân lực — không gánh ca thay được.'));
+    else if(cv.busy)
+      say('warn', shortName(cv.name)+' '+t('được chọn cover nhưng chính họ cũng nghỉ ngày này')+' ('+cv.busy+').');
     else
-      pluses.push(t('Nhóm')+' '+team+' '+t('chưa có ai nghỉ ngày này.'));
+      say('warn', shortName(cv.name)+' '+t('chưa xác nhận nhận OT cover — chưa chắc chắn có người gánh ca.'));
+  }
 
+  /* --- TIÊU CHÍ CHÍNH: NGÀY NÀY ĐÃ CÓ AI ĐĂNG KÝ NGHỈ TRƯỚC CHƯA ---
+     Người xin sau phải nhường người xin trước, nên nêu đích danh và nêu
+     trước mọi tiêu chí khác. Có người cover thì hạ một bậc cảnh báo,
+     vì lúc đó vấn đề chỉ còn là thứ tự ưu tiên chứ không phải thiếu người. */
+  if(team){
+    if(earlierTeam.length){
+      const who=nameList(earlierTeam);
+      const okN=earlierTeam.filter(x=>x.status==='approved').length;
+      const pnN=earlierTeam.length-okN;
+      const detail=t('Nhóm')+' '+team+' '+t('đã có')+' '+earlierTeam.length+'/'+cap+' '+
+        t('người ĐĂNG KÝ NGHỈ ngày này TRƯỚC đơn này')+': '+who+
+        (pnN?' ('+okN+' '+t('đã duyệt')+' · '+pnN+' '+t('chờ duyệt')+')':'')+'.';
+      if(earlierTeam.length>=cap&&cap>0)
+        say(covered?'warn':'block', detail+' '+
+          (covered?t('Có người cover nên vẫn đủ quân, nhưng người đăng ký trước nên được ưu tiên.')
+                  :t('Đủ trần nghỉ của nhóm — đơn này nên nhường hoặc phải có người OT cover.')));
+      else say('warn', detail);
+    }else{
+      pluses.push(t('Nhóm')+' '+team+' '+t('chưa ai đăng ký nghỉ ngày này trước đơn này.'));
+    }
+    /* Người đăng ký SAU đơn này (nếu có) — chỉ để người duyệt biết, không hạ bậc */
+    const later=offTeam.filter(x=>(x.at||0)>=myAt);
+    if(later.length)
+      reasons.push({lv:'ok',txt:t('Cùng nhóm còn')+' '+later.length+' '+
+        t('người đăng ký nghỉ ngày này SAU đơn này')+': '+nameList(later)+'.'});
     if(nTeamPend)
       say('warn', t('Còn')+' '+nTeamPend+' '+t('đơn cùng nhóm đang CHỜ DUYỆT cùng ngày — duyệt hết sẽ vượt trần.'));
   }
 
-  /* --- TIÊU CHÍ PHỤ: định mức ca của khối --- */
+  /* --- TIÊU CHÍ PHỤ: định mức ca của khối (đã tính người cover) --- */
   if(pulls){
     const need=minOfShift(shift);
     if(need>0){
@@ -162,20 +238,25 @@ function leaveAdvice(empId,iso,newCode,skipReqId){
         say('block', t('Ca')+' '+shift+' '+t('khối')+' '+t(POOL_LABEL[pool])+' '+t('còn')+' '+
                      after[shift]+'/'+need+' '+t('người — dưới định mức.'));
       else if(after[shift]===need)
-        say('warn',  t('Ca')+' '+shift+' '+t('khối')+' '+t(POOL_LABEL[pool])+' '+t('còn đúng')+' '+
-                     after[shift]+'/'+need+' — '+t('vừa sát định mức, không còn dự phòng.'));
+        say(covered?'ok':'warn',
+                     t('Ca')+' '+shift+' '+t('khối')+' '+t(POOL_LABEL[pool])+' '+t('còn đúng')+' '+
+                     after[shift]+'/'+need+' — '+(covered
+                       ? t('vừa đủ nhờ người OT cover.')
+                       : t('vừa sát định mức, không còn dự phòng.')));
       else
         pluses.push(t('Ca')+' '+shift+' '+t('còn')+' '+after[shift]+'/'+need+' '+t('người, vẫn đủ.'));
     }
-    if(pendSameShift)
+    if(pendSameShift&&!covered)
       say('warn', t('Cùng ca này còn')+' '+pendSameShift+' '+t('đơn đang chờ duyệt.'));
   }
 
-  /* Ai có thể huy động cover: cùng KHỐI và đang nghỉ ca R */
-  const cover=B.R.slice(0,8);
+  /* Ai có thể huy động cover: cùng KHỐI và đang nghỉ ca R.
+     Đã có người cover xác nhận rồi thì khỏi gợi ý thêm cho đỡ rối. */
+  const cover=cv.ok?[]:B.R.slice(0,8);
 
   return {empId,name:e.name||empId,iso,pool,team,teamSize,cur,shift,newCode,cap,
-          level,reasons,pluses,off,offTeam,offPool,before,after,cover,
+          level,reasons,pluses,off,offTeam,offPool,earlier,earlierTeam,
+          before,after,cover,cv,covered,myAt,
           nTeamOk,nTeamPend,pendSameShift,pulls};
 }
 
@@ -194,15 +275,23 @@ function advWorst(list){
   return list.some(a=>a.level==='block')?'block'
        : list.some(a=>a.level==='warn') ?'warn':'ok';
 }
-/* Một người đang nghỉ → viên chip có tên + mã + trạng thái đơn */
-function advOffChip(x,hi){
+/* Một người đang nghỉ → viên chip có tên + mã + trạng thái đơn.
+   `at` = mốc gửi của đơn ĐANG XÉT: ai đăng ký trước mốc đó thì gắn cờ ⏱ TRƯỚC,
+   vì đó chính là người được ưu tiên giữ ngày nghỉ. */
+function advOffChip(x,hi,at){
   const st=x.status==='approved'
     ? `<i class="st ok">✓ ${t('đã duyệt')}</i>`
     : `<i class="st pend">⏳ ${t('chờ duyệt')}</i>`;
-  return `<span class="adv-off-i${hi?' same':''}">
+  const bf=at&&(x.at||0)<at;
+  /* Nhãn để nguyên cụm 'đăng ký trước' chứ không rút gọn thành 'trước':
+     bộ dịch quét TEXT NODE, một khoá cụt lủn như 'trước' rất dễ khớp nhầm
+     chỗ khác trong giao diện. Xem js/14-i18n.js. */
+  const od=bf?`<i class="st bf" title="${t('Đăng ký trước đơn đang xét')}">⏱ ${t('đăng ký trước')}</i>`:'';
+  return `<span class="adv-off-i${hi?' same':''}${bf?' bf':''}">
     <b>${esc(shortName(x.e.name)||x.e.id)}</b>
     ${x.team?`<em>${esc(teamShort(x.team))}</em>`:''}
-    <span class="cc" style="background:${codeInfo(x.code).col}">${esc(x.code)}</span>${st}</span>`;
+    <span class="cc" style="background:${codeInfo(x.code).col}">${esc(x.code)}</span>${st}${od}
+    ${x.coverSt==='confirmed'?`<i class="st cv" title="${t('Đơn đó đã có người OT cover')}">🤝</i>`:''}</span>`;
 }
 /* Bảng quân số trước / sau khi duyệt */
 function advCountHtml(a){
@@ -216,25 +305,40 @@ function advCountHtml(a){
   return `<div class="adv-cnt">${poolChip(a.pool)}${cell('D')}${cell('N')}${cell('O')}
     <span class="adv-n rest">${chip('R')}<b>${a.before.R}</b></span></div>`;
 }
+/* Dải trạng thái người OT cover của chính đơn đang xét */
+function advCoverHtml(a){
+  const cv=a.cv;if(!cv||!cv.id)return '';
+  const cls=cv.ok?'ok':'warn';
+  const note=cv.ok?t('đã xác nhận — ca không hụt người')
+    :(!cv.samePool?t('khác khối nhân lực — không gánh ca thay được')
+    :(cv.busy?t('chính họ cũng nghỉ ngày này')
+    :t('chưa xác nhận nhận cover')));
+  return `<div class="adv-cvr ${cls}"><span class="lb">🤝 ${t('Người OT cover')}:</span>
+    <b>${esc(shortName(cv.name)||cv.id)}</b> <em>${esc(note)}</em></div>`;
+}
 /* Khối chi tiết cho MỘT ngày */
 function advDayHtml(a,mode){
   const same=a.offTeam.length, other=a.off.length-same;
+  const bf=(a.earlierTeam||[]).length;
   const why=a.reasons.map(r=>`<li class="${r.lv}">${esc(r.txt)}</li>`).join('')
           + a.pluses.map(p=>`<li class="ok">${esc(p)}</li>`).join('');
-  return `<div class="adv-day ${a.level}">
+  return `<div class="adv-day ${a.level}${bf?' hasbf':''}">
     <div class="adv-dh">
       <b>${fmtVN(a.iso)} <i>${dowOf(a.iso)}</i></b>
       ${a.cur?chip(a.cur):`<span class="muted">${t('chưa xếp ca')}</span>`}
       ${a.newCode?`<span class="arw">→</span>${chip(a.newCode)}`:''}
+      ${bf?`<span class="adv-bf">⏱ ${bf} ${t('người đăng ký trước')}</span>`:''}
+      ${a.covered?`<span class="adv-cvok">🤝 ${t('đã có cover')}</span>`:''}
       <span class="sp"></span>${advChip(a.level,mode)}
     </div>
     ${advCountHtml(a)}
+    ${advCoverHtml(a)}
     <ul class="adv-why">${why||`<li class="ok">${t('Không có vướng mắc nào.')}</li>`}</ul>
     <div class="adv-off">
       <span class="lb">${t('Đã nghỉ ngày này')}:</span>
       ${a.off.length
-        ? a.offTeam.map(x=>advOffChip(x,true)).join('')
-          + a.off.filter(x=>x.team!==a.team).map(x=>advOffChip(x,false)).join('')
+        ? a.offTeam.map(x=>advOffChip(x,true,a.myAt)).join('')
+          + a.off.filter(x=>x.team!==a.team).map(x=>advOffChip(x,false,a.myAt)).join('')
           + `<span class="adv-sum">${same} ${t('cùng nhóm')}${other?` · ${other} ${t('nhóm khác')}`:''}</span>`
         : `<span class="muted">${t('chưa có ai')}</span>`}
     </div>
@@ -298,16 +402,39 @@ function reqAdvice(r){
   const leaveDays=days.filter(d=>advCodeLeavesShift(d.code)||r.type==='leave');
   if(leaveDays.length){
     out.kind='leave';
-    out.days=leaveDays.slice(0,10).map(d=>leaveAdvice(r.empId,d.iso,d.code||'AL8',r.id));
-    out.level=advWorst(out.days);
-    if(leaveDays.length>10)out.notes.push({lv:'ok',txt:t('Đơn có')+' '+leaveDays.length+' '+t('ngày — đang hiện 10 ngày đầu.')});
+    const opt=advOptOfReq(r);
+    /* Tính hết mọi ngày (đơn dài nhất cũng chỉ một kỳ công) rồi mới chọn
+       ngày nào ĐÁNG XEM. Đơn 15 ngày mà chỉ 2 ngày vướng thì hiện 13 ngày
+       "không có gì" chỉ làm người duyệt phải cuộn, dễ bỏ sót đúng 2 ngày kia. */
+    const all=leaveDays.slice(0,31).map(d=>leaveAdvice(r.empId,d.iso,d.code||'AL8',r.id,opt));
+    out.level=advWorst(all);
+    /* NGÀY ĐÁNG XEM = ngày đã có người đăng ký nghỉ TRƯỚC, hoặc ngày có
+       cảnh báo. Đây chính là chỗ người duyệt phải cân nhắc; ngày trống trơn
+       thì chỉ cần biết số lượng. */
+    const focus=all.filter(a=>(a.earlierTeam&&a.earlierTeam.length)||a.level!=='ok');
+    const rest =all.filter(a=>focus.indexOf(a)<0);
+    out.days=(focus.length?focus:all).slice(0,10);
+    out.focusN=focus.length;out.allN=all.length;
+    if(focus.length&&rest.length)
+      out.notes.push({lv:'ok',txt:t('Đang tập trung vào')+' '+focus.length+'/'+all.length+' '+
+        t('ngày có người đã đăng ký nghỉ trước hoặc có cảnh báo')+' — '+rest.length+' '+
+        t('ngày còn lại trống, duyệt được ngay.')});
+    else if(!focus.length)
+      out.notes.push({lv:'ok',txt:t('Không ngày nào trong đơn có người đăng ký nghỉ trước — không vướng nhân lực.')+
+        ' ('+all.length+' '+t('ngày')+')'});
+    if(all.length>10&&(focus.length?focus.length>10:true))
+      out.notes.push({lv:'ok',txt:t('Đơn có')+' '+leaveDays.length+' '+t('ngày — đang hiện 10 ngày đầu.')});
     return out;
   }
 
   /* Còn lại: chỉ cho biết bối cảnh ngày đó */
-  out.days=days.slice(0,6).map(d=>leaveAdvice(r.empId,d.iso,d.code||'',r.id));
+  out.days=days.slice(0,6).map(d=>leaveAdvice(r.empId,d.iso,d.code||'',r.id,advOptOfReq(r)));
   out.level='ok';
   return out;
+}
+/* Gói thông tin của đơn mà bộ tư vấn cần: người OT cover + mốc gửi đơn */
+function advOptOfReq(r){
+  return {coverId:(r&&r.coverId)||'',coverSt:(r&&r.coverSt)||'',at:(r&&r.createdAt)||0};
 }
 /* Giờ tăng ca đã duyệt trong kỳ (không tính đơn đang xét) */
 function advOtUsedInPeriod(empId,ym,skipReqId){
@@ -325,6 +452,7 @@ function advOtUsedInPeriod(empId,ym,skipReqId){
 function reqAdviceHtml(r){
   const a=reqAdvice(r);
   const head=`<div class="adv-head">🧭 <b>${t('Trợ lý duyệt đơn')}</b>${advChip(a.level,'appr')}
+    ${a.focusN?`<span class="adv-bf">⏱ ${a.focusN}/${a.allN} ${t('ngày cần cân nhắc')}</span>`:''}
     <span class="muted sm2">${t('tính theo lịch & đơn đang có, không tải thêm dữ liệu')}</span></div>`;
   const notes=a.notes.length
     ? `<ul class="adv-why">${a.notes.map(n=>`<li class="${n.lv}">${esc(n.txt)}</li>`).join('')}</ul>`:'';
@@ -338,7 +466,7 @@ function reqAdviceHtml(r){
    Cùng một engine, đổi giọng: cho biết hôm đó ai đã nghỉ, đơn của họ
    đang ở trạng thái nào, và khả năng đơn của mình có bị vướng không.
    ------------------------------------------------------------ */
-function advForFormHtml(empId,rows,type){
+function advForFormHtml(empId,rows,type,coverId){
   if(!empId||!rows||!rows.length)return '';
   const isos=[...new Set(rows.map(r=>r.iso).filter(Boolean))].sort().slice(0,6);
   if(!isos.length)return '';
@@ -346,25 +474,30 @@ function advForFormHtml(empId,rows,type){
   if(type==='swap'){
     return '';   // đơn đổi ca đã có cảnh báo riêng ở dsFormUI()
   }
+  /* Đơn chưa gửi nên chưa có createdAt: lấy mốc HIỆN TẠI làm mốc so sánh →
+     mọi đơn đã có trên hệ thống đều tính là "đăng ký trước". Người cover mới
+     chọn trong form thì chắc chắn CHƯA xác nhận, nên truyền coverSt='pending'. */
+  const opt={coverId:coverId||'',coverSt:coverId?'pending':'',at:Date.now()};
   const leaveLike=(type==='leave')||rows.some(r=>advCodeLeavesShift(r.code));
   const list=isos.map(iso=>{
     const row=rows.find(r=>r.iso===iso)||{};
-    return leaveAdvice(empId,iso,leaveLike?(row.code||'AL8'):'');
+    return leaveAdvice(empId,iso,leaveLike?(row.code||'AL8'):'',null,opt);
   });
   const lv=leaveLike?advWorst(list):'ok';
 
   const dayHtml=list.map(a=>{
-    const same=a.offTeam.length;
+    const same=a.offTeam.length, bf=(a.earlierTeam||[]).length;
     const who=a.off.length
-      ? a.offTeam.map(x=>advOffChip(x,true)).join('')+
-        a.off.filter(x=>x.team!==a.team).map(x=>advOffChip(x,false)).join('')
+      ? a.offTeam.map(x=>advOffChip(x,true,a.myAt)).join('')+
+        a.off.filter(x=>x.team!==a.team).map(x=>advOffChip(x,false,a.myAt)).join('')
       : `<span class="muted">${t('chưa có ai')}</span>`;
     const tip=leaveLike
       ? a.reasons.filter(x=>x.lv!=='ok').map(x=>`<li class="${x.lv}">${esc(x.txt)}</li>`).join('')
       : '';
-    return `<div class="adv-day ${leaveLike?a.level:'ok'}">
+    return `<div class="adv-day ${leaveLike?a.level:'ok'}${bf?' hasbf':''}">
       <div class="adv-dh"><b>${fmtVN(a.iso)} <i>${dowOf(a.iso)}</i></b>
         ${a.cur?chip(a.cur):`<span class="muted">${t('chưa xếp ca')}</span>`}
+        ${bf?`<span class="adv-bf">⏱ ${bf} ${t('người đăng ký trước')}</span>`:''}
         <span class="sp"></span>${leaveLike?advChip(a.level,'emp'):''}</div>
       <div class="adv-off"><span class="lb">${t('Đã nghỉ ngày này')}:</span>${who}
         ${a.off.length?`<span class="adv-sum">${same} ${t('cùng nhóm')}</span>`:''}</div>

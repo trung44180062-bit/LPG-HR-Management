@@ -5,6 +5,11 @@
 /* =================== BOOT =================== */
 function renderAll(){
   syncAccounts();                 // mã NV mới → tự thành tài khoản đăng nhập
+  /* Dọn thông báo đã lỗi thời sau mỗi lượt đồng bộ Firebase: máy khác vừa
+     huỷ đơn / đổi người cover / trả ô lịch về ca chuẩn thì việc-chờ-xác-nhận
+     tương ứng ở máy này phải biến mất theo. Có tiết chế 30 giây và chỉ ghi
+     khi thật sự gỡ được cái gì (xem sweepStaleNotifs ở js/13-portal.js). */
+  if(typeof sweepStaleNotifsThrottled==='function')sweepStaleNotifsThrottled();
   applyRoleUI();
   fillMonthSelects();renderCal();renderSetup();renderAppr();renderData();refreshBadge();
   /* Băng "đang giữ thông báo lịch" — dựng lại sau mỗi lượt đồng bộ Firebase,
@@ -19,7 +24,15 @@ load();
 applyPerm();                      // quyền lấy từ cột Quyền của người đang đăng nhập
 fillMonthSelects();
 syncAccounts();
-if(typeof pruneOldNotifs==='function'){const _pn=pruneOldNotifs();if(_pn)save();}  // dọn thông báo cũ (>~2 kỳ)
+/* Dọn thông báo lúc khởi động: (1) việc chờ đã lỗi thời — đơn đã xoá, ô lịch
+   đã trả về ca chuẩn, đã đổi người cover; (2) tin cũ hơn ~2 kỳ công.
+   Gộp một lần save() cho cả hai để chỉ tốn đúng một lượt ghi Firebase. */
+{
+  let _pn=0;
+  if(typeof sweepStaleNotifs==='function')_pn+=sweepStaleNotifs(false);
+  if(typeof pruneOldNotifs==='function')  _pn+=pruneOldNotifs();
+  if(_pn)save();
+}
 renderAll();
 initFb();
 

@@ -1002,3 +1002,202 @@ cd LPGT-CongCa-Web && node _test/harness-v58.js && node _test/render-v58.js
 i18n: **+60 khoá EN** ở cuối `I18N_EN` (đã kiểm không trùng — 8 khoá trùng còn
 lại là tồn tại từ trước). Sandbox vẫn không chạy được trình duyệt → phần hiển thị
 phải mở thật trên máy để mắt nhìn.
+
+---
+
+## v6.1 — Xác nhận đã nhập hệ thống HR · tư vấn duyệt đơn hiểu người OT cover
+
+### 1. Dấu “đã nhập hệ thống HR công ty” (`js/08-requests.js`)
+
+Đơn duyệt xong trong app vẫn phải gõ lại vào hệ thống nhân sự chính thức của
+công ty. Trước đây không có chỗ nào ghi nhận việc đó → in tờ đơn ra rồi vẫn
+không biết đã nhập HR chưa, cuối kỳ dễ sót. Nay mỗi đơn mang thêm **2 khoá**:
+
+```js
+r.hrAt   // mốc thời gian đã nhập (không có = chưa nhập)
+r.hrBy   // mã NV người bấm xác nhận
+```
+
+* **2 trạng thái** thôi — `○ chưa nhập HR` ⇄ `✅ đã nhập HR`. Bấm lần 2 thì
+  **xoá hẳn 2 khoá** khỏi bản ghi chứ không ghi `false`, để đơn chưa nhập
+  không tốn thêm byte nào của gói Firebase Spark.
+* **Mọi người dùng đều bấm được** (`canSetHr()` chỉ đòi đã đăng nhập) — người
+  gõ HR có thể là thư ký, quản lý hay chính người duyệt.
+* Không sinh thông báo, không đụng lịch. Đây thuần tuý là dấu tick theo dõi.
+
+Hàm liên quan: `reqHrDone` · `reqHrChip(r,btn)` · `toggleReqHr(id)` ·
+`markPickedHr(on)` (đánh dấu hàng loạt theo ô tích).
+
+**Chỗ hiện ra trong màn Duyệt:**
+
+| Nơi | Cách hiện |
+|---|---|
+| Bảng PC | **cột “HR”** mới (giữa cột *In* và cột thao tác) — bấm thẳng vào chip để đổi |
+| Thẻ mobile | badge `✅ đã nhập HR` ở hàng tiêu đề + nút trong khối thao tác phụ |
+| Hàng chi tiết | mốc `Nhập HR: <giờ> · <người nhập>` trong `.ar-meta` |
+| Thanh chọn nhiều | 2 nút `✅ Đã nhập HR` / `↩️ Bỏ dấu HR` |
+| Xuất Excel | 2 cột mới *Nhập HR lúc* · *Người nhập HR* |
+
+**Bộ lọc** — hàng chip thứ 3 (`apprFilter.hr`), có đếm số như 2 hàng trên:
+
+| Chip | Nghĩa |
+|---|---|
+| Mọi đơn | không lọc |
+| ⏰ **Cần nhập HR** | đơn **đã duyệt chốt** mà chưa nhập — đúng việc cần làm mỗi kỳ |
+| ○ Chưa nhập HR | mọi đơn chưa nhập (kể cả đang chờ duyệt) |
+| ✅ Đã nhập HR | đã nhập rồi |
+
+> Bảng Duyệt trên PC nay **13 cột**. Sửa cột thì phải sửa đồng thời `AT_COLS`,
+> `<colgroup>` (tổng đúng 100%), số `<td>` trong `apprTr()` và `colspan` của
+> hàng chi tiết — `_test/hr-mark-harness.js` kiểm đúng chỗ này.
+
+### 2. Trợ lý duyệt đơn: hiểu người OT cover, tập trung vào ngày đã có người nghỉ (`js/18-advice.js`)
+
+**(a) Có người OT cover thì không thiếu nhân lực.** Bộ tư vấn trước đây không
+biết `r.coverId` nên vẫn kêu “dưới định mức” dù đã có người ở lại gánh ca —
+người duyệt phải tự nhẩm lại. Nay `leaveAdvice()` nhận thêm tham số thứ 5:
+
+```js
+leaveAdvice(empId, iso, newCode, skipReqId, {coverId, coverSt, at})
+```
+
+* **Chỉ cover `confirmed` mới bù quân số** (`after[shift] + 1`). Cover mới chỉ
+  định mà người ta chưa bấm đồng ý thì chưa chắc có người → chỉ nhắc.
+* Cover phải **cùng khối** (`poolOf`) mới bù — văn phòng và sản xuất không
+  gánh ca cho nhau. Cover mà chính họ cũng nghỉ ngày đó cũng không tính.
+* Có cover hợp lệ → cảnh báo hạ từ 🔴 xuống 🟡 (vấn đề còn lại chỉ là **thứ tự
+  ưu tiên**, không phải thiếu người) và thôi gợi ý danh sách huy động thêm.
+
+**(b) Tập trung vào ngày đã có người đăng ký nghỉ TRƯỚC.** `offListOfDay()` nay
+ghi kèm `at` = mốc **đăng ký** (không phải mốc duyệt) và `coverId/coverSt` của
+đơn nguồn. `leaveAdvice` so `at` với mốc gửi của đơn đang xét để tách
+`earlier` / `earlierTeam` — ai xí chỗ trước thì được ưu tiên, đơn gửi sau phải
+nhường hoặc phải có cover. Đây thành **tiêu chí số 1**, nêu đích danh tên
+người và nêu trước mọi tiêu chí khác; ô lịch quản lý gõ tay (không có đơn)
+tính `at=0` nên luôn là “trước”.
+
+`reqAdvice()` tính hết mọi ngày của đơn rồi **chỉ hiện ngày đáng xem** — ngày
+có người đăng ký nghỉ trước hoặc có cảnh báo — kèm ghi chú
+*“Đang tập trung vào 1/3 ngày… — 2 ngày còn lại trống, duyệt được ngay.”*
+Đơn 15 ngày mà chỉ 2 ngày vướng thì không bắt người duyệt cuộn qua 13 ngày trống.
+
+Dấu hiệu trên giao diện: chip `⏱ N người đăng ký trước` ở đầu ngày, viên tên
+người đăng ký trước viền cam + nhãn `⏱ đăng ký trước`, dải `🤝 Người OT cover`
+xanh/vàng theo trạng thái, chip `⏱ N/M ngày cần cân nhắc` trên đầu panel.
+
+Form gửi đơn cũng dùng chung engine: `advForFormHtml(empId, rows, type, coverId)`
+truyền `dsCoverId` vào, mốc so sánh lấy `Date.now()` (đơn chưa gửi) và
+`coverSt='pending'` (người vừa chọn chắc chắn chưa xác nhận).
+
+### 3. Danh sách uỷ quyền phê duyệt cấp cuối (`js/10-account.js`)
+
+`kdCandidates()` trước đây lọc `permOf(e.id)!=='kmgr'` → **loại sạch Quản lý
+người Hàn** khỏi danh sách chọn, với giả định họ vốn đã duyệt được. Nhưng công
+ty có **nhiều** quản lý người Hàn, và khi một người đi vắng thì người cần nhận
+uỷ quyền thường lại chính là quản lý người Hàn còn lại. Nay chỉ loại **chính
+người đang thao tác**, và xếp thứ tự `kmgr → admin/appr → sec → còn lại`
+(`KD_RANK`), mỗi nhóm sắp theo tên tiếng Việt.
+
+### Kiểm tra
+
+* `_test/advice-cover-harness.js` — **16 kịch bản**: cover đã xác nhận / chưa
+  xác nhận / khác khối, ai đăng ký trước–sau, chọn đúng ngày cần cân nhắc,
+  dựng HTML cả 2 panel.
+* `_test/hr-mark-harness.js` — **15 kịch bản**: bật/tắt dấu HR, xoá hẳn khoá,
+  4 nhánh bộ lọc, đánh dấu hàng loạt, chip HTML, số cột Excel khớp.
+
+```bash
+cd LPGT-CongCa-Web && node _test/advice-cover-harness.js && node _test/hr-mark-harness.js
+```
+
+i18n: **+44 khoá EN** ở cuối `I18N_EN` (đã kiểm không trùng — 11 khoá trùng còn
+lại là tồn tại từ trước). Cache bump **`?v=65`** trong `index.html`.
+
+---
+
+## v6.2 — Thu hồi triệt để thông báo đã lỗi thời
+
+**Triệu chứng người dùng báo:** lời nhắc *“xác nhận đổi lịch”* và lời nhờ
+*“OT cover”* vẫn nằm trong máy người nhận sau khi người tạo ra chúng đã xoá
+việc. Nhân viên bấm vào thì không có gì xảy ra, tưởng app hỏng.
+
+### Bốn lỗ hổng đã tìm ra
+
+| # | Đường đi | Vì sao lọt |
+|---|---|---|
+| 1 | Nút **⌫ Xoá ô** trên lịch thực tế | `openCell()` gọi `setCell('')` chứ không phải `setCell(null)`. `setCell` chỉ nhận `null` là “gỡ ô”, nên `''` rơi vào nhánh GHI, tạo ra ô rỗng `{code:''}`; `newCode` thành `''` nên không bao giờ bằng ca chuẩn → nhánh `revokeSchedChange()` không chạy |
+| 2 | Đơn bị **TỪ CHỐI** (khác với bị huỷ) | `cancelReq()` có dọn thông báo, nhưng `decide(id,false)` thì không → lời nhờ OT cover treo vĩnh viễn |
+| 3 | Máy khác thao tác rồi đồng bộ về | Không có đường nào dọn — thông báo chỉ được gỡ ngay tại máy vừa bấm |
+| 4 | `pruneOldNotifs()` | `newNotif()` mặc định gán `status:'pending'`, nên tin một chiều (`kind:'info'`) cũng lọt vào diện “giữ mãi” → chất đống trong Firebase, không bao giờ dọn |
+
+### Cách chữa — kiểm lại từ dữ liệu, không đuổi theo từng đường đi
+
+Vá riêng từng đường đi là trò đuổi bắt: thêm tính năng mới lại lọt tiếp. Nên
+`js/13-portal.js` có thêm **`notifStaleReason(n)`** — nhìn vào dữ liệu hiện tại
+và trả về lý do một việc-chờ-xác-nhận đã hết nghĩa:
+
+| Loại | Coi là lỗi thời khi |
+|---|---|
+| `schedChange` | `eff(to, iso).code` **khác** `n.newCode` — ô đã trả về ca chuẩn, đã bị xoá, hoặc bị một đơn khác duyệt ghi đè |
+| `coverConfirm` | đơn đã bị xoá · đơn bị từ chối · `r.coverId` đã đổi sang người khác |
+| `swapConfirm` | đơn đã bị xoá · đơn bị từ chối · `r.withId` đã đổi |
+| cả ba | người nhận đã nghỉ việc / bị vô hiệu hoá |
+
+Đúng với **mọi** đường đi, kể cả những đường sẽ thêm về sau. Ba lớp áp dụng:
+
+1. **Lớp hiển thị** — `pendingConfirms()` và `myNotifs()` lọc bỏ việc lỗi thời.
+   Kể cả khi bộ quét chưa kịp chạy (vừa nhận đồng bộ từ máy khác), nó cũng
+   không hiện ra và không được đếm vào chuông.
+2. **Lớp dữ liệu** — `sweepStaleNotifs()` gỡ hẳn. Chạy lúc **khởi động**, mỗi
+   lượt **đồng bộ Firebase** (`renderAll`, có tiết chế 30 giây, chỉ ghi khi
+   thật sự gỡ được gì), và khi **mở bảng thông báo**. Xoá là thao tác luỹ đẳng
+   nên nhiều máy cùng quét vẫn ra một kết quả.
+3. **Lớp thao tác** — `notifTake(nid)` thay cho `S.notifs[nid]` ở cả 6 hàm
+   xác nhận/từ chối. Hai người thao tác cùng lúc thì người bấm sau nhận được
+   *“Việc này đã không còn — đơn đã bị xoá”* thay vì bấm vào khoảng không.
+
+### Một cửa duy nhất để xoá thông báo — kèm rút tin Zalo
+
+Trước đây mỗi nơi tự `delete S.notifs[k]`, nên tin trong app biến mất mà bản
+đã xếp hàng ở `zaloQueue` vẫn còn → người ta **vẫn nhận tin nhắn Zalo** cho
+việc đã huỷ. Nay mọi chỗ đi qua **`notifDrop(pred)`**, hàm này tự gọi
+**`zaloWithdraw(notifId)`** (mới, `js/21-notify.js`): khoá hàng đợi chính là
+`notifId` nên rút chỉ là xoá một nhánh con — và **chỉ rút tin còn
+`state:'pending'`**, tin đã gửi thì để yên vì Zalo không cho thu hồi và xoá đi
+thì mất dấu vết. `cancelReq` · `reqSetCover` · `decide(reject)` ·
+`revokeSchedChange` · `evRevokeNotifs` đều đã chuyển sang dùng.
+
+### Sửa kèm
+
+* `setCell()` gộp `null` / `''` / `undefined` thành một nghĩa “gỡ ô đè, về ca
+  chuẩn” — không nút nào lỡ tay ghi ra ô rỗng làm lệch quân số nữa.
+  Nhãn nút đổi thành **⌫ Xoá ô (về ca chuẩn)** cho đúng việc nó làm.
+* `apprPartyIds()` thêm **`r.coverId`** — người nhận OT cover nay được báo khi
+  đơn bị huỷ / từ chối / huỷ duyệt, thay vì chỉ thấy lời nhờ biến mất.
+* `pruneOldNotifs()` chỉ giữ mãi việc chờ **thật sự còn hiệu lực**
+  (`notifKeepForever`), tin `info` cũ hơn 62 ngày nay dọn được.
+
+### Kiểm tra
+
+`_test/notif-stale-harness.js` — **22 kịch bản** dựng đúng từng lỗ hổng ở trên:
+xoá ô lịch, ô bị ghi đè, bản đã xác nhận phải được giữ, đơn bị xoá/từ chối,
+đổi người cover, đổi người đổi ca, người nhận nghỉ việc, chặn bấm việc lỗi
+thời, tin `info` không bị quét nhầm, `pruneOldNotifs` dọn được tin cũ, tiết chế
+30 giây, và **khẳng định tin trong hàng đợi Zalo được rút thật**.
+
+Hai harness cũ cũng được vá luôn (chúng cắt lát `js/13-portal.js` nên phải lấy
+thêm khối `notifDrop`; `render-v58.js` còn thiếu `document.body` khiến 4 phép
+thử báo hỏng oan):
+
+```bash
+cd LPGT-CongCa-Web
+node _test/harness-v58.js && node _test/render-v58.js \
+  && node _test/advice-cover-harness.js && node _test/hr-mark-harness.js \
+  && node _test/notif-stale-harness.js \
+  && node _test/meal-harness.js . && node _test/meal-render-smoke.js . \
+  && node _test/mp-render-smoke.js .
+```
+
+→ **199 phép thử, 0 hỏng.** Lưu ý 3 harness cuối cần **tham số thư mục** (`.`).
+
+i18n: **+9 khoá EN**. Cache bump **`?v=66`**.

@@ -235,7 +235,10 @@ function openCell(empId,iso){
   const e=empById(empId);
   $('cellTitle').innerHTML=`${esc(e.name||empId)} — ${fmtVNfull(iso)} (${dowOf(iso)})<br><span class="muted" style="font-weight:500">Ca chuẩn: ${S.base[empId]&&S.base[empId][iso]||'—'}</span>`;
   $('cellPick').innerHTML=allCodes().map(c=>`<button onclick="setCell('${c.c}')">${chip(c.c,1)}<span>${c.l}</span></button>`).join('')
-   +`<button onclick="setCell('')" style="grid-column:span 2">⌫ Xoá ô (trống)</button>`;
+   /* PHẢI là setCell(null) — setCell('') từng ghi một ô rỗng {code:''} thay vì
+      GỠ ô, nên nhánh thu hồi thông báo không chạy và lời nhắc "xác nhận đổi
+      lịch" nằm lại vĩnh viễn ở máy nhân viên. Xem setCell() ngay bên dưới. */
+   +`<button onclick="setCell(null)" style="grid-column:span 2">⌫ Xoá ô (về ca chuẩn)</button>`;
   $('cellMask').classList.add('on');
 }
 function closeCell(){$('cellMask').classList.remove('on');curCell=null;}
@@ -253,9 +256,13 @@ function setCell(code){
   const{empId,iso}=curCell;
   const oldCode=eff(empId,iso).code;              // ca trước khi sửa (để nhân viên đối chiếu)
   const stdCode=(S.base[empId]&&S.base[empId][iso])||'';   // ca chuẩn của ngày này
-  if(code===null){if(S.over[empId])delete S.over[empId][iso];}
+  /* null, '' và undefined đều có nghĩa "GỠ ô đè, trả về ca chuẩn". Gộp về một
+     mối ngay đây để không nút nào lỡ tay ghi ra ô rỗng {code:''} — ô như vậy
+     không phải mã ca nào cả, làm lệch quân số và chặn mất nhánh thu hồi. */
+  const clear=(code===null||code===undefined||code==='');
+  if(clear){if(S.over[empId])delete S.over[empId][iso];}
   else{S.over[empId]=S.over[empId]||{};S.over[empId][iso]={code:code,by:meId()||'manager',at:Date.now()};}
-  const newCode=(code===null)?stdCode:code;       // ca sau khi sửa
+  const newCode=clear?stdCode:code;               // ca sau khi sửa
 
   /* ĐANG GIỮ THÔNG BÁO (lúc nhập tàu, sửa lịch hàng loạt) → không báo ngay,
      chỉ ghi vào bộ đệm. Bấm "Gửi thông báo" mới bắn một lượt. Xem schedHold*

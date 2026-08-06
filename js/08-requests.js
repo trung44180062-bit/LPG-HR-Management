@@ -100,8 +100,12 @@ function reqSetCover(rid,newId,byId){
   const r=S.requests[rid];if(!r)return false;
   const old=r.coverId||'';
   if(old===newId)return false;
-  // dọn yêu cầu xác nhận đang chờ của người cũ
-  if(S.notifs)for(const k in S.notifs){const n=S.notifs[k];
+  /* Dọn yêu cầu xác nhận đang chờ của người cũ. Đi qua notifDrop để tin đã
+     xếp hàng sang Zalo cũng được RÚT — nếu không, người cũ vẫn nhận tin nhắn
+     nhờ cover cho một việc đã chuyển sang người khác. Xem js/13-portal.js. */
+  if(typeof notifDrop==='function')
+    notifDrop(n=>n.reqId===rid&&n.kind==='coverConfirm'&&n.status==='pending');
+  else if(S.notifs)for(const k in S.notifs){const n=S.notifs[k];
     if(n&&n.reqId===rid&&n.kind==='coverConfirm'&&n.status==='pending')delete S.notifs[k];}
   if(old&&typeof newNotif==='function')
     newNotif({kind:'info',to:old,from:byId||'',reqId:rid,zk:'coverRemoved',
@@ -112,6 +116,61 @@ function reqSetCover(rid,newId,byId){
       newNotif({kind:'coverConfirm',to:newId,from:byId||'',reqId:rid,iso:r.from});
   }else{delete r.coverId;delete r.coverSt;}
   return true;
+}
+
+/* ============================================================
+   XÁC NHẬN ĐÃ NHẬP HỆ THỐNG HR CỦA CÔNG TY
+   ------------------------------------------------------------
+   Đơn duyệt xong trong app vẫn phải được gõ lại vào hệ thống nhân sự
+   của công ty (chấm công chính thức). Trước đây không có chỗ nào đánh
+   dấu việc đó → in xong tờ đơn rồi vẫn không biết đã nhập HR chưa,
+   dễ sót cuối kỳ. Nay mỗi đơn mang thêm 2 trường:
+       r.hrAt : mốc thời gian đã nhập (0 / không có = chưa nhập)
+       r.hrBy : mã NV người bấm xác nhận
+   Chỉ 2 trạng thái — CHƯA NHẬP / ĐÃ NHẬP — và MỌI người dùng đều bấm
+   được, vì người gõ HR có thể là thư ký, quản lý hay chính người duyệt.
+   Không sinh thông báo, không đụng lịch: đây thuần tuý là dấu tick
+   theo dõi, thêm đúng 2 khoá nhỏ vào bản ghi đơn (gói Firebase Spark).
+   ============================================================ */
+function reqHrDone(r){return !!(r&&r.hrAt);}
+/* Ai được bấm: mọi người đang đăng nhập (theo yêu cầu nghiệp vụ) */
+function canSetHr(){return !!meId();}
+/* Chip hiển thị — dùng chung cho bảng PC, thẻ mobile và ô chi tiết */
+function reqHrChip(r,btn){
+  const on=reqHrDone(r);
+  const lb=on?'✅ '+t('đã nhập HR'):'○ '+t('chưa nhập HR');
+  const who=on?(empById(r.hrBy)||{}).name||r.hrBy||'':'';
+  const tip=on?`${t('Đã nhập HR')}: ${fmtDateTime(r.hrAt)}${who?' · '+who:''}`
+             : t('Bấm để xác nhận đã nhập vào hệ thống HR công ty');
+  if(!btn)return `<span class="hrs ${on?'yes':'no'}" title="${esc(tip)}">${lb}</span>`;
+  return `<button type="button" class="hrs ${on?'yes':'no'}" title="${esc(tip)}"
+    onclick="event.stopPropagation();toggleReqHr('${r.id}')">${lb}</button>`;
+}
+/* Bật / tắt dấu đã nhập HR cho MỘT đơn */
+function toggleReqHr(id){
+  const r=S.requests[id];if(!r)return;
+  if(!canSetHr()){toast(t('Bạn cần đăng nhập để đánh dấu'));return;}
+  if(reqHrDone(r)){
+    if(!confirm(t('Bỏ dấu “đã nhập HR” của đơn này?')))return;
+    delete r.hrAt;delete r.hrBy;
+  }else{
+    r.hrAt=Date.now();r.hrBy=meId()||'';
+  }
+  save();renderAppr();
+  toast(reqHrDone(r)?t('Đã đánh dấu: đã nhập hệ thống HR'):t('Đã bỏ dấu nhập HR'));
+}
+/* Đánh dấu hàng loạt cho các đơn đang tích chọn ở màn Duyệt */
+function markPickedHr(on){
+  const ids=(typeof apprPicked==='function')?apprPicked():[];
+  if(!ids.length){toast(t('Chưa chọn đơn nào'));return;}
+  if(!confirm((on?t('Đánh dấu ĐÃ NHẬP HR cho'):t('Bỏ dấu nhập HR của'))+' '+ids.length+' '+t('đơn')+'?'))return;
+  const me=meId()||'',now=Date.now();
+  ids.forEach(id=>{
+    const r=S.requests[id];if(!r)return;
+    if(on){r.hrAt=now;r.hrBy=me;}else{delete r.hrAt;delete r.hrBy;}
+  });
+  save();renderAppr();
+  toast(ids.length+' '+(on?t('đơn đã đánh dấu nhập HR'):t('đơn đã bỏ dấu nhập HR')));
 }
 
 /* ============================================================
@@ -184,8 +243,11 @@ function cancelReq(rid,notify){
   // Báo các bên liên quan TRƯỚC khi xoá (info notif không gắn dọn ở dưới)
   if(notify&&typeof notifyReqParties==='function')notifyReqParties(r,'cancelled',meId());
   delete S.requests[rid];
-  // Dọn thông báo XÁC NHẬN (swapConfirm/schedChange) gắn đơn này — giữ lại info
-  if(S.notifs)for(const k in S.notifs){const n=S.notifs[k];
+  /* Dọn mọi VIỆC CHỜ XÁC NHẬN gắn đơn này (đổi ca / OT cover / đổi lịch) và
+     rút luôn tin còn nằm trong hàng đợi Zalo — giữ lại các tin 'info' vì
+     chúng là lịch sử một chiều, chữ tự đứng được. Xem notifDrop ở 13-portal.js. */
+  if(typeof notifDropForReq==='function')notifDropForReq(rid);
+  else if(S.notifs)for(const k in S.notifs){const n=S.notifs[k];
     if(n.reqId===rid&&(n.kind==='swapConfirm'||n.kind==='schedChange'||n.kind==='coverConfirm'))delete S.notifs[k];}
   return{reverted};
 }
@@ -297,10 +359,11 @@ function apprAdviceBadge(r){
   if(r.type!=='leave'&&r.type!=='change')return '';
   const days=reqDays(r)||[];
   if(!days.length)return '';
+  const opt=(typeof advOptOfReq==='function')?advOptOfReq(r):null;
   let lv='ok';
   for(const d of days.slice(0,6)){
     if(r.type==='change'&&!advCodeLeavesShift(d.code))continue;
-    const a=leaveAdvice(r.empId,d.iso,d.code||'AL8',r.id);
+    const a=leaveAdvice(r.empId,d.iso,d.code||'AL8',r.id,opt);
     if(a.level==='block'){lv='block';break;}
     if(a.level==='warn')lv='warn';
   }
@@ -313,7 +376,7 @@ function apprAdviceBadge(r){
    Nay: 1 đơn = 1 dòng (ai · loại · ngày · trạng thái) + 2 nút chính;
    bấm vào dòng mới bung chi tiết từng ngày và các nút phụ.
    ============================================================ */
-let apprFilter={status:'pending',print:'__all',type:'__all',q:'',
+let apprFilter={status:'pending',print:'__all',hr:'__all',type:'__all',q:'',
   ym:(typeof curSchedMonth==='function'?curSchedMonth():'__all'),from:'',to:'',flag:''};
 /* Mở/đóng khối bộ lọc nâng cao (mặc định gập cho gọn màn hình điện thoại) */
 let apprAdvOpen=false;
@@ -342,7 +405,7 @@ function apprSetFilter(k,v){
 }
 function apprToggleRow(id){apprOpen[id]=!apprOpen[id];renderAppr();}
 function apprResetFilter(){
-  apprFilter={status:'pending',print:'__all',type:'__all',q:'',ym:curSchedMonth(),from:'',to:'',flag:''};
+  apprFilter={status:'pending',print:'__all',hr:'__all',type:'__all',q:'',ym:curSchedMonth(),from:'',to:'',flag:''};
   renderAppr();
 }
 /* Khoảng ngày đang lọc — trả về [from,to] hoặc null nếu không lọc theo ngày */
@@ -383,6 +446,11 @@ function apprMatch(r){
   if(apprFilter.print==='yes'&&!r.printedAt)return false;
   if(apprFilter.print==='no'&&(r.printedAt||r.noPrint))return false;   // chưa in = chưa in & vẫn cần in
   if(apprFilter.print==='none'&&!r.noPrint)return false;               // không cần in
+  // Đã nhập hệ thống HR công ty hay chưa
+  if(apprFilter.hr==='yes'&&!reqHrDone(r))return false;
+  if(apprFilter.hr==='no'&&reqHrDone(r))return false;
+  // Việc cần làm: đơn đã DUYỆT XONG mà chưa ai gõ vào HR
+  if(apprFilter.hr==='todo'&&(reqHrDone(r)||r.status!=='approved'||reqIsProvisional(r)))return false;
   if(apprFilter.type!=='__all'&&r.type!==apprFilter.type)return false;
   // Lọc theo cờ cảnh báo của bảng Tổng quan (js/17-appr-sum.js)
   if(apprFilter.flag&&typeof asFlagMatch==='function'&&!asFlagMatch(r,apprFilter.flag))return false;
@@ -482,7 +550,8 @@ function apprRow(r){
         <span class="l1"><b>${esc(e?e.name:r.empId)}</b>
           <i class="typ">${esc(REQ_LABEL[r.type]||r.type)}</i>
           <span class="st ${reqStatusClass(r)}">${reqStatusLabel(r)}</span>
-          <span class="prt ${r.printedAt?'yes':(r.noPrint?'none':'no')}">${r.printedAt?'🖨️ '+t('đã in'):(r.noPrint?'🚫 '+t('không in'):'○ '+t('chưa in'))}</span>${cfBadge}${
+          <span class="prt ${r.printedAt?'yes':(r.noPrint?'none':'no')}">${r.printedAt?'🖨️ '+t('đã in'):(r.noPrint?'🚫 '+t('không in'):'○ '+t('chưa in'))}</span>${
+            reqHrDone(r)?`<span class="hrs yes">✅ ${t('đã nhập HR')}</span>`:''}${cfBadge}${
             r.coverId?`<span class="cvw ${(COVER_ST[r.coverSt||'pending']||COVER_ST.pending).cls} mob-only">🤝</span>`:''}${apprAdviceBadge(r)}</span>
         <span class="l2">${esc(sub.join(' · '))}</span>
       </button>
@@ -509,6 +578,7 @@ function apprRow(r){
       <div class="ar-more-act">
         <button class="btn sec sm pc-only" onclick="printOne('${r.id}')">🖨️ In</button>
         <button class="btn sec sm" onclick="apprToggleNoPrint('${r.id}')">${r.noPrint?'🖨️ Đưa vào ds in':'🚫 Đánh dấu không cần in'}</button>
+        <button class="btn sec sm" onclick="toggleReqHr('${r.id}')">${reqHrDone(r)?'↩️ '+t('Bỏ dấu nhập HR'):'✅ '+t('Đã nhập hệ thống HR')}</button>
         ${canSetCover(r,meId())?`<button class="btn sec sm" onclick="openCoverPicker('${r.id}')">🤝 ${r.coverId?t('Đổi người OT cover'):t('Chỉ định người OT cover')}</button>`:''}
         ${r.status==='approved'?`<button class="btn warn sm" onclick="revokeApproval('${r.id}')">↩️ Huỷ duyệt</button>`:''}
         <button class="btn warn sm" onclick="cancelOneReq('${r.id}')">🚫 Huỷ đơn</button>
@@ -593,13 +663,14 @@ function apprTr(r){
         onclick="apprToggleNoPrint('${r.id}')"
         title="${t('Bấm để đổi giữa Chờ in và Không cần in')}">${
         r.printedAt?'🖨️ '+t('đã in'):(r.noPrint?'🚫 '+t('không in'):'○ '+t('chưa in'))}</button></td>
+    <td class="at-hr">${reqHrChip(r,true)}</td>
     <td class="at-act">
       ${canAct?`<button class="btn ok sm" onclick="decide('${r.id}',true)" title="${t('Duyệt')}">✓</button>
       <button class="btn warn sm" onclick="decide('${r.id}',false)" title="${t('Từ chối')}">✕</button>`:''}
       <button type="button" class="ar-more" onclick="apprToggleRow('${r.id}')" title="${t('Chi tiết')}">▾</button>
     </td>
   </tr>
-  <tr class="at-d ${open?'open':''}"><td colspan="12">
+  <tr class="at-d ${open?'open':''}"><td colspan="13">
     <div class="at-dbox">
       ${apprChainHtml(r)}
       ${reqDetail(r)}
@@ -611,6 +682,7 @@ function apprTr(r){
         <span>${t('Gửi')}: ${fmtDateTime(r.createdAt)}</span>
         ${r.decidedAt?`<span>${t('Duyệt')}: ${fmtDateTime(r.decidedAt)}</span>`:''}
         ${r.printedAt?`<span>${t('In')}: ${fmtDateTime(r.printedAt)}${r.printCount>1?' ×'+r.printCount:''}</span>`:''}
+        ${r.hrAt?`<span>${t('Nhập HR')}: ${fmtDateTime(r.hrAt)}${r.hrBy?' · '+esc((empById(r.hrBy)||{}).name||r.hrBy):''}</span>`:''}
         <span class="src ${esc(r.source||'web')}">${{zalo:'Zalo',app:'📱 App NV'}[r.source]||'Web'}</span>
       </div>
       <div class="ar-more-act">
@@ -644,6 +716,7 @@ function apprSortVal(r,k){
                      :reqDays(r).length);
     case 'st':   return String(r.status||'')+(reqIsProvisional(r)?'1':'0');
     case 'prt':  return r.printedAt?2:(r.noPrint?1:0);
+    case 'hr':   return reqHrDone(r)?1:0;
     default:     return 0;
   }
 }
@@ -661,7 +734,7 @@ function apprSortList(list){
 const AT_COLS=[
   ['sent','Ngày gửi'],['emp','Nhân viên'],['team','Tổ'],['typ','Loại đơn'],
   ['when','Ngày áp dụng'],[null,'Nội dung'],['met','Con số'],[null,'Cover / Đổi với'],
-  ['st','Trạng thái'],['prt','In'],[null,'']
+  ['st','Trạng thái'],['prt','In'],['hr','HR'],[null,'']
 ];
 function apprTableHtml(list){
   const th=AT_COLS.map(([k,lb])=>k
@@ -674,18 +747,19 @@ function apprTableHtml(list){
   return `<div class="at-wrap">
     <table class="at">
       <colgroup><!-- cộng lại đúng 100% → không thừa, không thiếu chỗ nào -->
-        <col style="width:2.6%">   <!-- ☑ -->
-        <col style="width:5.5%">   <!-- Ngày gửi -->
-        <col style="width:12%">    <!-- Nhân viên -->
-        <col style="width:3.4%">   <!-- Tổ -->
-        <col style="width:8.5%">   <!-- Loại đơn -->
-        <col style="width:8.5%">   <!-- Ngày áp dụng -->
-        <col style="width:18%">    <!-- Nội dung -->
-        <col style="width:6.5%">   <!-- Con số -->
-        <col style="width:11%">    <!-- Cover / Đổi với -->
-        <col style="width:10%">    <!-- Trạng thái -->
-        <col style="width:6%">     <!-- In -->
-        <col style="width:8%">     <!-- Thao tác -->
+        <col style="width:2.4%">   <!-- ☑ -->
+        <col style="width:5%">     <!-- Ngày gửi -->
+        <col style="width:11%">    <!-- Nhân viên -->
+        <col style="width:3.2%">   <!-- Tổ -->
+        <col style="width:7.5%">   <!-- Loại đơn -->
+        <col style="width:8%">     <!-- Ngày áp dụng -->
+        <col style="width:16.4%">  <!-- Nội dung -->
+        <col style="width:6%">     <!-- Con số -->
+        <col style="width:10%">    <!-- Cover / Đổi với -->
+        <col style="width:9.5%">   <!-- Trạng thái -->
+        <col style="width:5.5%">   <!-- In -->
+        <col style="width:8%">     <!-- HR -->
+        <col style="width:7.5%">   <!-- Thao tác -->
       </colgroup>
       <thead><tr>
         <th class="at-ck"><input type="checkbox" onchange="apprPickAll(this.checked)" title="${t('Chọn tất cả')}"></th>
@@ -792,6 +866,9 @@ function renderAppr(){
   };
   const stChips=[['pending','⏳ Chờ duyệt'],['approved','✅ Đã duyệt'],['rejected','❌ Từ chối'],['__all','Tất cả']];
   const prChips=[['__all','Mọi đơn'],['no','○ Chờ in'],['none','🚫 Không in'],['yes','🖨️ Đã in']];
+  /* Hàng chip thứ 3: đã gõ vào hệ thống HR của công ty hay chưa.
+     'todo' = đơn đã duyệt chốt mà chưa nhập — đúng việc cần làm mỗi kỳ. */
+  const hrChips=[['__all','Mọi đơn'],['todo','⏰ Cần nhập HR'],['no','○ Chưa nhập HR'],['yes','✅ Đã nhập HR']];
   const ms=monthsAvailable();
   const isRange=apprFilter.ym==='__range';
   const curYm=curSchedMonth();
@@ -834,6 +911,9 @@ function renderAppr(){
     <div class="ab-chips">${prChips.map(([k,l])=>
       `<button class="abc sm${apprFilter.print===k?' on':''}" onclick="apprSetFilter('print','${k}')">${l}<i>${countWith('print',k)}</i></button>`).join('')}
     </div>
+    <div class="ab-chips ab-hr">${hrChips.map(([k,l])=>
+      `<button class="abc sm hr${apprFilter.hr===k?' on':''}" onclick="apprSetFilter('hr','${k}')">${l}<i>${countWith('hr',k)}</i></button>`).join('')}
+    </div>
     <div class="ab-tools">
       <input class="inp sm" id="apprSearchBox" placeholder="Tìm theo tên nhân viên…" value="${esc(apprFilter.q)}"
              oninput="apprFilter.q=this.value;clearTimeout(window._abT);window._abT=setTimeout(renderApprList,200)">
@@ -841,7 +921,7 @@ function renderAppr(){
         <option value="__all">${t('Mọi loại đơn')}</option>
         ${Object.keys(REQ_LABEL).map(k=>`<option value="${k}"${apprFilter.type===k?' selected':''}>${esc(REQ_LABEL[k])}</option>`).join('')}
       </select>
-      ${(apprFilter.status!=='pending'||apprFilter.print!=='__all'||apprFilter.type!=='__all'||apprFilter.q||apprFilter.flag||apprFilter.ym!==curYm)
+      ${(apprFilter.status!=='pending'||apprFilter.print!=='__all'||apprFilter.hr!=='__all'||apprFilter.type!=='__all'||apprFilter.q||apprFilter.flag||apprFilter.ym!==curYm)
         ?`<button class="btn sec sm" onclick="apprResetFilter()">↺ ${t('Bỏ lọc')}</button>`:''}
       <span class="sp"></span>
       <button class="btn sec sm admin-only${apprAdvOpen?' on-adv':''}" onclick="apprAdvOpen=!apprAdvOpen;renderAppr()">⚙ ${t('Công cụ dữ liệu')}</button>
@@ -903,16 +983,20 @@ function reqExcelRow(r){
     REQ_LABEL[r.type]||r.type,days,w?w.name:'',hrs,
     (reqStatusLabel(r)||'').replace(/<[^>]*>/g,''),r.decidedBy||'',
     r.createdAt?fmtDateTime(r.createdAt):'',r.decidedAt?fmtDateTime(r.decidedAt):'',
-    r.printedAt?fmtDateTime(r.printedAt):'',r.reason||'',r.note||''];
+    r.printedAt?fmtDateTime(r.printedAt):'',
+    r.hrAt?fmtDateTime(r.hrAt):'',r.hrAt?((empById(r.hrBy)||{}).name||r.hrBy||''):'',
+    r.reason||'',r.note||''];
 }
 function exportRequests(list,fname){
   if(typeof XLSX==='undefined'){toast(t('Thiếu thư viện Excel'));return false;}
   const head=['Kỳ công','Họ tên','Mã NV','Nhóm','Loại đơn','Ngày (mã)','Đổi ca với','Giờ',
-              'Trạng thái','Người duyệt','Gửi lúc','Duyệt lúc','In lúc','Lý do','Ghi chú'];
+              'Trạng thái','Người duyệt','Gửi lúc','Duyệt lúc','In lúc',
+              'Nhập HR lúc','Người nhập HR','Lý do','Ghi chú'];
   const aoa=[['LPGT CAVERN — SAO LƯU ĐƠN',new Date().toLocaleString('vi-VN')],[],head];
   list.slice().sort((a,b)=>(a.from<b.from?-1:1)).forEach(r=>aoa.push(reqExcelRow(r)));
   const ws=XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols']=[{wch:9},{wch:20},{wch:11},{wch:7},{wch:14},{wch:34},{wch:16},{wch:7},{wch:12},{wch:12},{wch:18},{wch:18},{wch:18},{wch:20},{wch:20}];
+  ws['!cols']=[{wch:9},{wch:20},{wch:11},{wch:7},{wch:14},{wch:34},{wch:16},{wch:7},{wch:12},{wch:12},
+               {wch:18},{wch:18},{wch:18},{wch:18},{wch:16},{wch:20},{wch:20}];
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Don');
   XLSX.writeFile(wb,fname||('LPGT_SaoLuuDon_'+todayIso()+'.xlsx'));
   return true;
@@ -960,6 +1044,8 @@ function apprPickCount(){
     <button class="btn ok sm" onclick="decidePickedReqs(true)">✓ ${t('Duyệt')}</button>
     <button class="btn warn sm" onclick="decidePickedReqs(false)">✕ ${t('Từ chối')}</button>
     <button class="btn sec sm pc-only" onclick="printPickedReqs()">🖨️ ${t('In')}</button>
+    <button class="btn sec sm" onclick="markPickedHr(true)">✅ ${t('Đã nhập HR')}</button>
+    <button class="btn sec sm" onclick="markPickedHr(false)">↩️ ${t('Bỏ dấu HR')}</button>
     <button class="btn warn sm" onclick="cancelPickedReqs()">🗑️ ${t('Xoá đơn')}</button>
     <span class="sp"></span>
     <button class="btn sec sm" onclick="apprPickAll(true)">${t('Chọn hết')}</button>
@@ -1067,6 +1153,10 @@ function apprPartyIds(r){
   if(r.empId)s.add(r.empId);
   if(r.byId)s.add(r.byId);
   if(r.withId)s.add(r.withId);
+  /* Người được nhờ OT cover CŨNG là một bên liên quan: họ đã sắp xếp để ở lại
+     gánh ca, nên đơn bị huỷ / từ chối / huỷ duyệt thì phải được báo. Trước đây
+     họ bị bỏ sót, chỉ thấy lời nhờ biến mất mà không hiểu vì sao. */
+  if(r.coverId)s.add(r.coverId);
   return [...s];
 }
 /* ============================================================
@@ -1178,6 +1268,10 @@ function decide(id,ok,bulk,reasonArg){
     if(r.status==='approved')revertReqSchedule(id);        // gỡ ô lịch tạm/đã ghi
     r.status='rejected';r.reason=reason;r.decidedAt=Date.now();r.decidedBy=me||'manager';
     r.provisional=false;r.appr[lvl]={by:me,at:Date.now(),reject:true};
+    /* Đơn bị TỪ CHỐI thì mọi việc chờ xác nhận của nó cũng hết nghĩa: người
+       được nhờ OT cover / người được rủ đổi ca không còn gì để bấm. Trước đây
+       chỉ HUỶ đơn mới dọn, còn TỪ CHỐI thì lời nhờ nằm treo mãi. */
+    if(typeof notifDropForReq==='function')notifDropForReq(id);
     notifyReqParties(r,'rejected',me,lvl,reason);
     if(!bulk){save();renderAppr();if(typeof renderReal==='function')renderReal();
       if(typeof renderMe==='function')renderMe(true);if(typeof refreshBadge==='function')refreshBadge();

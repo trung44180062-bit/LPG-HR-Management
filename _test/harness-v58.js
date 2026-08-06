@@ -18,8 +18,15 @@ const calcStatsSrc=acc.slice(acc.indexOf('function calcStats'),acc.indexOf('cons
   +'const rnd1=v=>Math.round(v*10)/10;';
 const tests=src('_test/harness-v58.tests.js');
 const port=src('js/13-portal.js');
-const revokeSrc=port.slice(port.indexOf('function revokeSchedChange'),
-                           port.indexOf('/* Nhân viên XÁC NHẬN',port.indexOf('function revokeSchedChange')));
+/* Bộ dọn thông báo lỗi thời (notifDrop / notifStaleReason / sweepStaleNotifs…)
+   nằm ngay trên revokeSchedChange và được nó gọi tới → phải lấy cả hai khúc. */
+const notifSrc=port.slice(port.indexOf('const CONFIRM_KINDS='),
+                          port.indexOf('/* ---- Suy ra loại đơn'));
+/* Cắt tới dấu } CUỐI CÙNG trước khối chú thích kế tiếp — cắt thẳng vào giữa
+   một khối /* … *\/ sẽ để lại chú thích chưa đóng và làm hỏng cả script. */
+const _rA=port.indexOf('function revokeSchedChange');
+const _rB=port.indexOf('   LẤY THÔNG BÁO',_rA);
+const revokeSrc=port.slice(_rA,port.lastIndexOf('}',_rB)+1);
 const stub=`
   var t=s=>s, t2=s=>s, LANG='vi';
   var toast=()=>{};
@@ -32,6 +39,6 @@ const stub=`
 `;
 const all=[src('js/01-core.js'),stub,src('js/04-schedule.js'),src('js/07-manpower.js'),
   src('js/08-requests.js'),src('js/19-meal.js'),src('js/20-events.js'),
-  calcStatsSrc,revokeSrc,tests].join('\n;\n');
+  calcStatsSrc,notifSrc,revokeSrc,tests].join('\n;\n');
 vm.runInContext(all,ctx,{filename:'harness-v58'});
 

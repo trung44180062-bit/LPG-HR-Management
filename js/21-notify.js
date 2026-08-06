@@ -373,6 +373,38 @@ function zaloEnqueue(n){
 }
 
 /* ============================================================
+   RÚT MỘT TIN KHỎI HÀNG ĐỢI  (thu hồi)
+   ------------------------------------------------------------
+   Thông báo trong app bị gỡ (đơn huỷ, đổi người cover, ô lịch trả về ca
+   chuẩn…) thì tin tương ứng còn nằm chờ ở `zaloQueue` cũng phải biến mất —
+   nếu không, người ta vẫn nhận tin nhắn Zalo cho một việc đã không còn.
+
+   Khoá hàng đợi CHÍNH LÀ notifId (quy tắc R6 chống trùng ở zaloEnqueue),
+   nên rút chỉ là xoá đúng một nhánh con.
+
+   CHỈ rút tin còn `state:'pending'`. Tin đã gửi rồi thì thôi — Zalo không
+   cho thu hồi, và xoá bản ghi đi thì mất dấu vết đã gửi cái gì. Đọc trước
+   rồi mới xoá để không đụng vào tin Apps Script đang xử lý dở.
+   Bọc kín try/catch: Zalo hỏng thì app vẫn phải chạy nguyên vẹn.
+   ============================================================ */
+function zaloWithdraw(notifId){
+  try{
+    if(!notifId)return;
+    if(typeof firebase==='undefined')return;
+    if(typeof fbRef==='undefined'||!fbRef)return;
+    const ref=fbRef.child('zaloQueue').child(notifId);
+    ref.once('value').then(sn=>{
+      const it=sn.val();
+      if(!it)return;                       // chưa từng vào hàng đợi
+      if(it.state&&it.state!=='pending')return;   // đã gửi / đang gửi → để yên
+      ref.remove().catch(e=>console.warn('[zalo] không rút được tin',e));
+    }).catch(e=>console.warn('[zalo] không đọc được hàng đợi',e));
+  }catch(e){
+    console.warn('[zalo] bỏ qua lỗi khi rút tin, app vẫn chạy bình thường',e);
+  }
+}
+
+/* ============================================================
    DỰNG PHẦN THÂN TIN
    Trình duyệt dựng chữ vì nó có sẵn dữ liệu (tên người, mã ca, ngày).
    Apps Script chỉ ghép lại và gửi — giữ cho phía máy chủ càng ngu càng tốt,

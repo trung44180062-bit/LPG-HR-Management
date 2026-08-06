@@ -1521,7 +1521,65 @@ const I18N_EN={
 
 /* ---- v6.0 · Chuông cho người không có Trang chính — js/13-portal.js ---- */
 'Mở tab Duyệt đơn':'Open the Approvals tab',
-'Bấm để mở tab Duyệt đơn':'Tap to open the Approvals tab'
+'Bấm để mở tab Duyệt đơn':'Tap to open the Approvals tab',
+
+/* ---- v6.1 · Xác nhận đã nhập hệ thống HR công ty — js/08-requests.js ---- */
+'đã nhập HR':'in HR system',
+'chưa nhập HR':'not in HR yet',
+'Đã nhập HR':'In HR system',
+'Chưa nhập HR':'Not in HR yet',
+'Cần nhập HR':'To enter in HR',
+'Nhập HR':'Entered in HR',
+'Bỏ dấu HR':'Clear HR mark',
+'Bỏ dấu nhập HR':'Clear HR mark',
+'Đã nhập hệ thống HR':'Entered in the HR system',
+'Bấm để xác nhận đã nhập vào hệ thống HR công ty':'Click to confirm this request has been entered in the company HR system',
+'Bạn cần đăng nhập để đánh dấu':'You must be signed in to mark this',
+'Bỏ dấu “đã nhập HR” của đơn này?':'Clear the “entered in HR” mark on this request?',
+'Đã đánh dấu: đã nhập hệ thống HR':'Marked as entered in the HR system',
+'Đã bỏ dấu nhập HR':'HR mark cleared',
+'Đánh dấu ĐÃ NHẬP HR cho':'Mark as ENTERED IN HR:',
+'Bỏ dấu nhập HR của':'Clear the HR mark on',
+'đơn đã đánh dấu nhập HR':'request(s) marked as entered in HR',
+'đơn đã bỏ dấu nhập HR':'request(s) had their HR mark cleared',
+
+/* ---- v6.1 · Trợ lý duyệt đơn: người OT cover & ai đăng ký nghỉ trước — js/18-advice.js ---- */
+'nhận OT cover ngày này — ca trực không hụt người.':'has taken the overtime cover for this day — the shift is not short-handed.',
+'được chọn cover nhưng KHÁC KHỐI nhân lực — không gánh ca thay được.':'was picked as cover but belongs to a DIFFERENT manpower pool — they cannot take over the shift.',
+'được chọn cover nhưng chính họ cũng nghỉ ngày này':'was picked as cover but is off on that same day',
+'chưa xác nhận nhận OT cover — chưa chắc chắn có người gánh ca.':'has not confirmed the overtime cover yet — nobody is guaranteed to take the shift.',
+'người ĐĂNG KÝ NGHỈ ngày này TRƯỚC đơn này':'person(s) who BOOKED this day off BEFORE this request',
+'Có người cover nên vẫn đủ quân, nhưng người đăng ký trước nên được ưu tiên.':'Manpower is still fine thanks to the cover, but whoever booked first should get priority.',
+'Đủ trần nghỉ của nhóm — đơn này nên nhường hoặc phải có người OT cover.':'The team leave cap is already met — this request should give way, or needs an overtime cover.',
+'chưa ai đăng ký nghỉ ngày này trước đơn này.':'nobody booked this day off before this request.',
+'Cùng nhóm còn':'The same team also has',
+'người đăng ký nghỉ ngày này SAU đơn này':'person(s) who booked this day off AFTER this request',
+'vừa đủ nhờ người OT cover.':'just enough thanks to the overtime cover.',
+'Đăng ký trước đơn đang xét':'Booked before the request under review',
+'đăng ký trước':'booked first',
+'Đơn đó đã có người OT cover':'That request already has an overtime cover',
+'người đăng ký trước':'booked before this one',
+'đã có cover':'cover arranged',
+'đã xác nhận — ca không hụt người':'confirmed — the shift is not short-handed',
+'khác khối nhân lực — không gánh ca thay được':'different manpower pool — cannot take over the shift',
+'chính họ cũng nghỉ ngày này':'is off on that same day',
+'chưa xác nhận nhận cover':'has not confirmed the cover yet',
+'ngày cần cân nhắc':'day(s) to think about',
+'Đang tập trung vào':'Focusing on',
+'ngày có người đã đăng ký nghỉ trước hoặc có cảnh báo':'day(s) where someone booked off earlier or a warning applies',
+'ngày còn lại trống, duyệt được ngay.':'remaining day(s) are clear and can be approved right away.',
+'Không ngày nào trong đơn có người đăng ký nghỉ trước — không vướng nhân lực.':'No day in this request has an earlier leave booking — manpower is not a concern.',
+
+/* ---- v6.2 · Thu hồi thông báo đã lỗi thời — js/13-portal.js, js/06-calendar.js ---- */
+'Việc này đã không còn':'This item no longer exists',
+'người nhận không còn hoạt động':'the recipient is no longer active',
+'thiếu ngày':'the date is missing',
+'ô lịch không còn mã đã báo':'the schedule cell no longer holds the code you were told about',
+'đơn đã bị xoá':'the request has been deleted',
+'đơn đã bị từ chối':'the request was rejected',
+'đã đổi người OT cover':'the overtime cover was reassigned',
+'đã đổi người đổi ca':'the shift-swap partner was changed',
+'Xoá ô (về ca chuẩn)':'Clear cell (back to standard shift)'
 };
 
 /* ============================================================

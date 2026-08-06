@@ -105,6 +105,10 @@ function evWorkingTeams(ev){
 /* Xoá hẳn mọi thông báo gắn với sự kiện này (thu hồi). Trả về số đã xoá. */
 function evRevokeNotifs(evId){
   if(!S.notifs)return 0;
+  /* Qua notifDrop để rút luôn tin còn nằm trong hàng đợi Zalo — sự kiện bị
+     xoá mà tin vẫn bắn đi thì cả tổ nhận nhầm. Xem js/13-portal.js. */
+  if(typeof notifDrop==='function')
+    return notifDrop(x=>x.kind==='event'&&x.evId===evId);
   let n=0;
   for(const k in S.notifs){
     const x=S.notifs[k];

@@ -821,6 +821,23 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
 .adv-cv{display:inline-flex;align-items:center;gap:4px;background:#ECFDF5;border:1px solid #A7F3D0;
   border-radius:99px;padding:2px 8px;font-size:11.5px;font-weight:700;color:#065F46}
 .adv-cv em{font-style:normal;font-size:9.5px;background:#059669;color:#fff;border-radius:4px;padding:0 4px}
+/* --- Ai ĐĂNG KÝ NGHỈ TRƯỚC & người OT cover (js/18-advice.js) ---------
+   Người đăng ký trước được viền đậm hơn vì đó là tiêu chí ưu tiên số 1:
+   ngày đã có người xí chỗ thì đơn gửi sau phải nhường hoặc phải có cover. */
+.adv-off-i.bf{border-color:#F59E0B;background:#FFFBEB}
+.adv-off-i .st.bf{background:#FDE68A;color:#78350F}
+.adv-off-i .st.cv{background:#D1FAE5;color:#065F46;padding:1px 4px}
+.adv-bf{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:800;
+  background:#FEF3C7;color:#92400E;border-radius:99px;padding:2px 8px;white-space:nowrap}
+.adv-cvok{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:800;
+  background:#D1FAE5;color:#065F46;border-radius:99px;padding:2px 8px;white-space:nowrap}
+.adv-day.hasbf{border-left-width:3px;border-left-color:#F59E0B}
+.adv-cvr{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px;
+  border-radius:8px;padding:5px 9px;font-size:11.5px}
+.adv-cvr .lb{font-weight:800;white-space:nowrap}
+.adv-cvr em{font-style:normal;font-weight:600}
+.adv-cvr.ok{background:#ECFDF5;color:#065F46}
+.adv-cvr.warn{background:#FFFBEB;color:#92400E}
 @media(max-width:767px){
   .adv-box{padding:8px 9px}
   .adv-off-i{font-size:11px}
@@ -939,6 +956,19 @@ button.cmp-nm.edit{border-color:var(--brand);color:var(--brand);text-decoration:
 .at .at-prt button.prt.yes{background:#E7EFF6;color:#0B3B5C;border-color:#C9DCEB}
 .at .at-prt button.prt.no{background:#F1F5F9;color:#94A3B8}
 .at .at-prt button.prt.none{background:#FEF3C7;color:#B45309;border-color:#FDE68A}
+/* Cột HR — đã gõ vào hệ thống nhân sự của công ty hay chưa (2 trạng thái).
+   Dùng tông LÁ để phân biệt hẳn với cột In (tông xanh dương). */
+.at .at-hr{line-height:1.35}
+.hrs{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:700;
+  border-radius:99px;padding:2px 8px;white-space:nowrap;max-width:100%;
+  overflow:hidden;text-overflow:ellipsis;border:1px solid transparent}
+.hrs.yes{background:#DCFCE7;color:#166534;border-color:#BBF7D0}
+.hrs.no{background:#F1F5F9;color:#94A3B8}
+button.hrs{cursor:pointer;font-family:inherit}
+button.hrs.no{border-color:var(--line);background:#fff}
+button.hrs:hover{filter:brightness(.97)}
+.ar-txt .hrs{font-size:10.5px}
+.ab-chips .abc.hr.on{background:#166534;border-color:#166534;color:#fff}
 .at .at-act{white-space:nowrap;text-align:right;padding-right:9px}
 .at .at-act .btn.sm{padding:3px 7px;font-size:12px}
 .at .at-act .ar-more{width:24px;height:24px;border:1px solid var(--line);background:#fff;
