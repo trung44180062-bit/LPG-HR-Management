@@ -1211,13 +1211,17 @@ function notifyApprovers(r,byId){
   /* Hoàng Trung luôn nắm được đơn ngay từ lúc phát sinh, kể cả khi cấp đang
      chờ là Field Engineer (yêu cầu trong ZALO-PHUONG-AN.xlsx ô K9). */
   if(lvl==='fe'&&typeof ROOT_ADMIN!=='undefined'&&empById(ROOT_ADMIN))to.add(ROOT_ADMIN);
-  let n=0,firstZalo=true;
+  let n=0;
+  /* Trước đây chỉ người ĐẦU TIÊN trong danh sách được bắn Zalo (nz:1 cho
+     những người sau) — mẹo chống trùng thủ công, nhưng mong manh: nếu đúng
+     thông báo dẫn đầu ấy bị gỡ (đơn huỷ, đổi cấp duyệt) thì cả nhóm mất tin.
+     Nay hộp gửi ở js/21-notify.js tự gộp mọi tin trùng nội dung thành MỘT
+     và liệt kê đủ người nhận, nên cứ báo đầy đủ cho từng người. */
   [...to].forEach(pid=>{
     if(!pid||pid===byId)return;                      // người vừa bấm khỏi tự báo mình
     newNotif({kind:'info',zk:'apprNeed',to:pid,from:byId||'',reqId:r.id,lvl:lvl,
-              text:apprNeedText(r,lvl),
-              nz:firstZalo?0:1});
-    firstZalo=false;n++;
+              text:apprNeedText(r,lvl)});
+    n++;
   });
   return n;
 }

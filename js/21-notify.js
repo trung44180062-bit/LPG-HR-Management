@@ -279,6 +279,39 @@ function zChainLines(r){
   return L;
 }
 
+/* ---- Thân tin "sửa lịch nhiều người", nhóm theo NGƯỜI ----
+   Mỗi người một dòng gồm mọi ngày của họ, để ai cũng dò được tên mình mà
+   không phải đọc hết. Dùng chung cho HAI đường:
+     · schedBulk — quản lý chủ động bấm 🔕 giữ rồi 🔔 gửi (06-calendar.js)
+     · gộp tự động — quản lý quên bấm giữ, hộp gửi tự cuộn các thay đổi rời
+       rạc trong cùng một khoảng thời gian lại (zaloOutMergeSched bên dưới)
+   rows = [{to,iso,was,now}] */
+function zHoldLines(rows, fromId){
+  const L=[];
+  rows=rows||[];
+  if(!rows.length)return L;
+  const byPerson={};
+  rows.forEach(x=>{ (byPerson[x.to]=byPerson[x.to]||[]).push(x); });
+  const ids=Object.keys(byPerson)
+    .sort((a,b)=>String(zName(a)).localeCompare(String(zName(b)),'vi'));
+  L.push(ids.length+' employee(s) · '+rows.length+' change(s)');
+  if(fromId)L.push('Changed by: '+zName(fromId));
+  L.push('');
+  const MAXP=25;                          // trần người, phòng tin dài quá
+  ids.slice(0,MAXP).forEach(id=>{
+    const days=byPerson[id]
+      .sort((a,b)=>String(a.iso).localeCompare(String(b.iso)))
+      .map(x=>zDate(x.iso).replace(/\/\d{4}$/,'')+' '+(x.was||'OFF')+'→'+(x.now||'OFF'));
+    L.push('• '+zName(id)+' :  '+days.join('  ·  '));
+  });
+  if(ids.length>MAXP)L.push('• … and '+(ids.length-MAXP)+' more employee(s) — see the app');
+  return L;
+}
+/* Số người trong một bó dòng sửa lịch — dùng để đặt tiêu đề */
+function zHoldPeople(rows){
+  return new Set((rows||[]).map(x=>x.to)).size;
+}
+
 /* Tiêu đề tin — phần lớn tra bảng tĩnh, riêng tin "cần duyệt" nói rõ đang
    chờ cấp nào để người đọc biết ngay có phải việc của mình không. */
 function zaloTitle(n, zk){
@@ -311,7 +344,198 @@ function zaloFp(item){
 }
 
 /* ============================================================
-   ĐẨY MỘT THÔNG BÁO VÀO HÀNG ĐỢI
+   HỘP GỬI — GỘP TIN NGAY Ở TRÌNH DUYỆT   ★ v6.3
+   ------------------------------------------------------------
+   VÌ SAO PHẢI LÀM Ở ĐÂY, KHÔNG PHÓ MẶC MÁY CHỦ
+
+   Bản trước đặt việc gộp ở Apps Script (vân tay `fp`, cờ ONE_CHAT_DEDUPE),
+   với lý lẽ "23 trình duyệt không thể thống nhất với nhau cái gì nên gộp".
+   Lý lẽ đó SAI Ở CHỖ QUAN TRỌNG NHẤT: fan-out KHÔNG do 23 máy sinh ra.
+   Một người bấm "Tạo sự kiện" trên MỘT máy, rồi máy đó chạy một vòng lặp
+   đẻ ra 23 thông báo. Máy đó biết thừa 23 tin ấy giống hệt nhau.
+
+   Hậu quả của việc đẩy sang máy chủ: gộp chỉ chạy nếu bản Apps Script đang
+   triển khai là bản mới, và chỉ gộp được những gói CÙNG ĐẾN LƯỢT trong một
+   lượt quét. Sai một trong hai điều là cả tổ ăn 23 tin y hệt nhau.
+
+   Nay trình duyệt gom trước rồi mới ghi:
+
+       newNotif ─▶ zaloEnqueue ─▶ [hộp gửi, đệm 4 giây] ─┐
+                                                          ├─ gộp ─▶ 1 hàng đợi
+       newNotif ─▶ zaloEnqueue ─▶ [hộp gửi]  ────────────┘
+
+   BA PHÉP GỘP, theo thứ tự:
+     1. Cuộn lịch  — nhiều `schedChange` rời rạc (quản lý sửa lịch mà quên
+        bấm 🔕 Giữ) tự cuộn thành MỘT tin "WORK SCHEDULE UPDATED — N PEOPLE",
+        đúng khuôn tin gộp của nút 🔔. Trong app mỗi người vẫn nhận riêng
+        một việc-chờ-xác-nhận, không mất gì.
+     2. Vân tay   — cùng `fp` (nhóm+tiêu đề+thân+việc-phải-làm) là hai tin
+        y hệt nhau; mọi tin hiện đổ vào CÙNG một chat nhóm nên chỉ giữ một,
+        kèm dòng liệt kê người nhận.
+     3. Cùng người + cùng nhóm tin — nối thân tin, một tin nhiều mục.
+
+   Đệm 4 giây KHÔNG làm tin tới chậm: Apps Script quét mỗi phút, nên 4 giây
+   nằm gọn trong thời gian chờ vốn có.
+
+   Việc bị huỷ trong lúc còn nằm trong hộp gửi (tạo sự kiện xong xoá ngay)
+   thì tin bốc hơi mà không tốn gì — xem `zaloWithdraw`.
+   ============================================================ */
+const ZALO_FLUSH_IDLE_MS = 4000;    // ngừng thao tác 4 giây thì đẩy đi
+const ZALO_FLUSH_MAX_MS  = 20000;   // còn thao tác thì cũng không giữ quá 20 giây
+const ZALO_FLUSH_MAX_N   = 60;      // hộp đầy thì đẩy ngay, khỏi phình bộ nhớ
+
+let _zOut   = [];      // các gói đang chờ gộp
+let _zTimer = null;
+let _zFirst = 0;       // mốc gói đầu tiên vào hộp
+/* notifId → khoá hàng đợi thật sự chứa nó (sau khi gộp). Bản đồ này cũng
+   được ghi vào chính thông báo (`n.zq`) nên máy khác đồng bộ về vẫn thu hồi
+   được — xem zaloWithdraw. */
+const _zq = Object.create(null);
+
+function zaloOutPending(){ return _zOut.length; }
+
+function zaloOutPush(item){
+  /* Cùng một thông báo đẩy lại (sửa đi sửa lại một ô lịch) → ĐÈ, không cộng */
+  const i=_zOut.findIndex(x=>x.notifId===item.notifId);
+  if(i>=0)_zOut[i]=item; else _zOut.push(item);
+  if(!_zFirst)_zFirst=Date.now();
+  if(_zOut.length>=ZALO_FLUSH_MAX_N){ zaloFlush(); return; }
+  if(_zTimer)clearTimeout(_zTimer);
+  const left=Math.max(0,ZALO_FLUSH_MAX_MS-(Date.now()-_zFirst));
+  _zTimer=setTimeout(zaloFlush,Math.min(ZALO_FLUSH_IDLE_MS,left));
+}
+
+/* ---- Phép gộp 1: cuộn các thay đổi lịch rời rạc thành một tin ---- */
+function zaloOutMergeSched(list){
+  const scs=list.filter(x=>x.zk==='schedChange'&&x.sc);
+  if(scs.length<2)return list;                 // một thay đổi thì để nguyên,
+                                               // tin riêng còn rõ hơn tin gộp
+  const rows=scs.map(x=>x.sc);
+  const from=scs[0].fromId||'';
+  const rest=list.filter(x=>scs.indexOf(x)<0);
+  /* Nếu trong hộp đã có sẵn một tin gộp của nút 🔔 thì nhập chung vào đó,
+     không đẻ thêm tin thứ hai nói cùng một chuyện. */
+  const bulk=rest.find(x=>x.zk==='schedBulk');
+  const host=bulk||Object.assign({},scs[0]);
+  host.rows=(host.rows||[]).concat(rows);
+  host.zk='schedBulk';
+  host.sc=null;
+  host.group='sched';
+  host.pri='now';
+  /* Nhiều ngày nhưng CÙNG MỘT người thì vẫn là tin riêng của người đó —
+     ghi "1 PEOPLE" và bỏ tên người nhận đi thì vừa sai chữ vừa khó đọc. */
+  const np=zHoldPeople(host.rows);
+  host.bcast=np>1?1:0;                         // tin chung thì đừng ghi tên một người
+  host.action=np>1?ZALO_ACTION.schedBulk:ZALO_ACTION.schedChange;
+  host.title=np>1?('📅 WORK SCHEDULE UPDATED — '+np+' PEOPLE')
+                 :ZALO_TITLE.schedChange;
+  host.lines=zHoldLines(host.rows,host.fromId||from);
+  host.notifIds=(host.notifIds||[host.notifId]).concat(scs.map(x=>x.notifId))
+                 .filter((v,i,a)=>a.indexOf(v)===i);
+  host.tos=(host.tos||[host.to]).concat(rows.map(r=>r.to))
+            .filter((v,i,a)=>v&&a.indexOf(v)===i);
+  return bulk?rest:[host].concat(rest);
+}
+
+/* ---- Phép gộp 2 & 3: vân tay nội dung, rồi cùng người + cùng nhóm ---- */
+function zaloOutMergeFp(list){
+  const out=[],byFp=Object.create(null);
+  list.forEach(it=>{
+    it.notifIds=it.notifIds||[it.notifId];
+    it.tos=it.tos||[it.to];
+    it.fp=zaloFp(it);
+    const lead=byFp[it.fp];
+    if(!lead){ byFp[it.fp]=it; out.push(it); return; }
+    /* Trùng nội dung → nhập người nhận vào gói dẫn đầu, không ghi gói mới */
+    lead.notifIds=lead.notifIds.concat(it.notifIds);
+    it.tos.forEach(t=>{ if(t&&lead.tos.indexOf(t)<0)lead.tos.push(t); });
+    lead.merged=1;
+  });
+  /* Gói nào gộp nhiều người thì thành tin chung: bỏ dòng "👤 một người",
+     thay bằng một dòng liệt kê đủ người phải làm việc đó. */
+  out.forEach(it=>{
+    if(it.tos.length>1&&!it.bcast){
+      it.bcast=1;
+      const MAXN=12;
+      const names=it.tos.map(zName).filter(Boolean)
+        .sort((a,b)=>String(a).localeCompare(String(b),'vi'));
+      it.lines=it.lines.concat(['',
+        'For: '+names.slice(0,MAXN).join(' · ')
+        +(names.length>MAXN?(' … +'+(names.length-MAXN)):'')]);
+    }
+    it.n=it.notifIds.length;
+    it.fp=zaloFp(it);
+  });
+  return out;
+}
+function zaloOutMergeSame(list){
+  const out=[],byKey=Object.create(null);
+  list.forEach(it=>{
+    const k=it.tos.join(',')+'|'+it.group+'|'+it.pri+'|'+(it.bcast?1:0);
+    const lead=byKey[k];
+    if(!lead||lead.title!==it.title){ if(!lead)byKey[k]=it; out.push(it); return; }
+    lead.lines=lead.lines.concat(['— — —'],it.lines);
+    lead.notifIds=lead.notifIds.concat(it.notifIds);
+    lead.n=lead.notifIds.length;
+    lead.fp=zaloFp(lead);
+  });
+  return out;
+}
+
+/* ---- Đẩy hộp gửi xuống Firebase ---- */
+function zaloFlush(){
+  try{
+    if(_zTimer){clearTimeout(_zTimer);_zTimer=null;}
+    _zFirst=0;
+    let list=_zOut; _zOut=[];
+    if(!list.length)return;
+    if(typeof firebase==='undefined')return;
+    if(typeof fbRef==='undefined'||!fbRef)return;
+
+    /* Thông báo đã bị gỡ trong lúc còn nằm trong hộp → tin biến mất, miễn phí.
+       Đây là chỗ chặn rẻ nhất: chưa ghi gì thì chẳng phải thu hồi gì. */
+    list=list.filter(x=>!S.notifs||S.notifs[x.notifId]);
+    if(!list.length)return;
+
+    list=zaloOutMergeSched(list);
+    list=zaloOutMergeFp(list);
+    list=zaloOutMergeSame(list);
+
+    let touched=false;
+    list.forEach(it=>{
+      const key=it.notifIds[0];
+      /* Ghi dấu gói nào chứa thông báo nào — cả trong bộ nhớ (nhanh) lẫn
+         trong chính thông báo (đồng bộ sang máy khác) để còn thu hồi. */
+      it.notifIds.forEach(id=>{
+        _zq[id]=key;
+        if(S.notifs&&S.notifs[id]&&S.notifs[id].zq!==key){S.notifs[id].zq=key;touched=true;}
+      });
+      const row={
+        to:it.to, toName:it.toName, title:it.title, lines:it.lines,
+        action:it.action||'', group:it.group, bcast:it.bcast?1:0,
+        pri:it.pri, notifId:key, notifIds:it.notifIds, tos:it.tos,
+        n:it.notifIds.length, fp:it.fp,
+        state:'pending', createdAt:Date.now()
+      };
+      fbRef.child('zaloQueue').child(key).set(row)
+           .catch(e=>console.warn('[zalo] không ghi được hàng đợi',e));
+    });
+    if(touched&&typeof save==='function')save();
+  }catch(e){
+    console.warn('[zalo] bỏ qua lỗi khi đẩy hộp gửi, app vẫn chạy bình thường',e);
+  }
+}
+
+/* Không để tin kẹt trong hộp khi người dùng đóng tab hoặc chuyển sang app khác */
+try{
+  window.addEventListener('beforeunload',function(){ zaloFlush(); });
+  document.addEventListener('visibilitychange',function(){
+    if(document.visibilityState==='hidden')zaloFlush();
+  });
+}catch(e){}
+
+/* ============================================================
+   ĐẨY MỘT THÔNG BÁO VÀO HỘP GỬI
    Gọi từ newNotif() ở 13-portal.js. Bọc kín trong try/catch:
    Zalo hỏng thì app phải chạy y như cũ — nguyên tắc thiết kế bắt buộc,
    không được để Zalo thành điểm chết (ZALO-BOT.md mục 1).
@@ -327,8 +551,6 @@ function zaloEnqueue(n){
            nên gửi 4 người là 4 tin y hệt nhau)
        Bỏ cờ này khi đã làm xong liên kết 1-1 — xem ZALO-BOT.md mục 3.3. */
     if(n.nz)                          return;
-    if(typeof firebase==='undefined') return;
-    if(typeof fbRef==='undefined' || !fbRef) return;
 
     /* --- chọn kênh --- */
     const zk  = (n.kind==='info') ? (n.zk||'') : n.kind;
@@ -353,21 +575,23 @@ function zaloEnqueue(n){
       bcast   : zaloIsBroadcast(n, zk),
       pri     : pri,                  // now | batch
       notifId : n.id,
-      state   : 'pending',
-      createdAt: Date.now()
+
+      /* --- các trường chỉ sống trong hộp gửi, không ghi xuống Firebase --- */
+      zk      : zk,
+      fromId  : n.from || '',
+      /* một dòng sửa lịch, để phép gộp 1 cuộn nhiều người vào một tin */
+      sc      : (zk==='schedChange')
+                ? {to:n.to, iso:n.iso||'', was:n.oldCode||'', now:n.newCode||''}
+                : null,
+      /* tin gộp của nút 🔔 mang sẵn cả bó dòng */
+      rows    : (zk==='schedBulk') ? ((n.hold||[]).slice()) : null
     };
-    /* Vân tay nội dung — hai hàng đợi cùng fp là HAI TIN GIỐNG HỆT NHAU.
-       Dùng cho Apps Script gộp fan-out (việc P1 trong ZALO-PHUONG-AN tab 4):
-       một sự kiện trên lịch hiện gọi cho từng người → 23 tin trùng vào cùng
-       một chat nhóm. Trình duyệt không thể tự gộp (23 máy không biết nhau)
-       nên chỉ ghi vân tay, để phía máy chủ quyết định. */
     item.fp = zaloFp(item);
 
-    /* Khoá con = notifId → cùng một thông báo chỉ vào hàng đợi đúng 1 lần.
-       Đây là quy tắc R6 chống trùng: 02-storage.js đồng bộ theo delta nên
-       rất dễ kích hoạt lặp nếu dùng push() sinh khoá ngẫu nhiên. */
-    fbRef.child('zaloQueue').child(n.id).set(item)
-         .catch(e=>console.warn('[zalo] không ghi được hàng đợi', e));
+    /* Vào hộp gửi thay vì ghi thẳng. Khoá hàng đợi vẫn là một notifId (quy
+       tắc R6 chống trùng) — chỉ khác là sau khi gộp, một khoá có thể đại
+       diện cho nhiều thông báo, liệt kê ở `notifIds`. */
+    zaloOutPush(item);
   }catch(e){
     console.warn('[zalo] bỏ qua lỗi, app vẫn chạy bình thường', e);
   }
@@ -383,23 +607,59 @@ function zaloEnqueue(n){
    Khoá hàng đợi CHÍNH LÀ notifId (quy tắc R6 chống trùng ở zaloEnqueue),
    nên rút chỉ là xoá đúng một nhánh con.
 
-   CHỈ rút tin còn `state:'pending'`. Tin đã gửi rồi thì thôi — Zalo không
-   cho thu hồi, và xoá bản ghi đi thì mất dấu vết đã gửi cái gì. Đọc trước
-   rồi mới xoá để không đụng vào tin Apps Script đang xử lý dở.
+   ★ LỖI CŨ — THU HỒI CHƯA TỪNG CHẠY MỘT LẦN NÀO
+   Bản trước đọc `zaloQueue/<id>` trước khi xoá, để tránh đụng tin đã gửi.
+   Nhưng luật Firebase đặt `zaloQueue: {".read": false}` (cố ý — nhân viên
+   không được đọc tin gửi cho người khác), nên `once('value')` LUÔN bị từ
+   chối quyền. Lỗi đó rơi vào `.catch(console.warn)` nên im lặng: nhánh xoá
+   nằm sau lời hứa đọc, không bao giờ tới lượt chạy. Mọi tin đã vào hàng đợi
+   đều bắn đi bằng hết, kể cả tin của việc vừa bị xoá.
+
+   Nay xoá THẲNG, không đọc. An toàn: Apps Script tự xoá hàng ngay sau khi
+   gửi, nên hàng còn nằm đó tức là chưa gửi. Trường hợp xấu nhất là xoá đúng
+   lúc nó vừa gửi xong — kết quả y hệt việc Apps Script tự xoá.
+
+   Sau khi có lớp gộp, một hàng đợi đại diện cho NHIỀU thông báo. Chỉ được
+   xoá hàng khi thông báo CUỐI CÙNG trong nhóm đó biến mất, nếu không thì
+   huỷ một người là mất tin của cả 22 người còn lại. Nhóm tra bằng `n.zq`
+   (ghi lúc đẩy hộp gửi, nằm trong S.notifs nên đồng bộ sang máy khác).
+   `notifDrop` xoá tuần tự nên tới lượt cuối, những cái trước đã rời
+   S.notifs → đếm ra 0 → xoá hàng. Vừa đúng.
+
    Bọc kín try/catch: Zalo hỏng thì app vẫn phải chạy nguyên vẹn.
    ============================================================ */
 function zaloWithdraw(notifId){
   try{
     if(!notifId)return;
+
+    /* 1) Còn nằm trong hộp gửi → nhấc ra, chưa tốn gì cả */
+    const i=_zOut.findIndex(x=>x.notifId===notifId);
+    if(i>=0){
+      _zOut.splice(i,1);
+      if(!_zOut.length&&_zTimer){clearTimeout(_zTimer);_zTimer=null;_zFirst=0;}
+      return;
+    }
+
     if(typeof firebase==='undefined')return;
     if(typeof fbRef==='undefined'||!fbRef)return;
-    const ref=fbRef.child('zaloQueue').child(notifId);
-    ref.once('value').then(sn=>{
-      const it=sn.val();
-      if(!it)return;                       // chưa từng vào hàng đợi
-      if(it.state&&it.state!=='pending')return;   // đã gửi / đang gửi → để yên
-      ref.remove().catch(e=>console.warn('[zalo] không rút được tin',e));
-    }).catch(e=>console.warn('[zalo] không đọc được hàng đợi',e));
+
+    /* 2) Đã ghi xuống Firebase → tìm hàng đợi thật sự chứa nó */
+    const n=(S.notifs||{})[notifId];
+    const key=_zq[notifId]||(n&&n.zq)||notifId;
+
+    /* 3) Còn thông báo nào khác cùng hàng đó không? */
+    let others=0;
+    const all=S.notifs||{};
+    for(const k in all){
+      const x=all[k];
+      if(!x||x.id===notifId||k===notifId)continue;
+      if((_zq[x.id]||x.zq||x.id)===key){others++;break;}
+    }
+    if(others)return;                       // hàng còn phục vụ người khác
+
+    fbRef.child('zaloQueue').child(key).remove()
+         .catch(e=>console.warn('[zalo] không rút được tin',e));
+    delete _zq[notifId];
   }catch(e){
     console.warn('[zalo] bỏ qua lỗi khi rút tin, app vẫn chạy bình thường',e);
   }
@@ -437,26 +697,9 @@ function zaloLines(n, zk){
        Nhóm theo NGƯỜI: mỗi người một dòng gồm mọi ngày của họ, để ai cũng
        dò được tên mình mà không phải đọc hết. Dữ liệu nằm ở n.hold (mảng
        {to,iso,was,now}) do schedHoldFlush() ở js/06-calendar.js dựng. */
-    case 'schedBulk': {
-      const rows = (n && n.hold) || [];
-      if(!rows.length) break;
-      const byPerson = {};
-      rows.forEach(x=>{ (byPerson[x.to] = byPerson[x.to] || []).push(x); });
-      const ids = Object.keys(byPerson)
-        .sort((a,b)=>String(zName(a)).localeCompare(String(zName(b)),'vi'));
-      L.push(ids.length + ' employee(s) · ' + rows.length + ' change(s)');
-      if(n.from) L.push('Changed by: ' + zName(n.from));
-      L.push('');
-      const MAXP = 25;                      // trần người, phòng tin dài quá
-      ids.slice(0,MAXP).forEach(id=>{
-        const days = byPerson[id]
-          .sort((a,b)=>String(a.iso).localeCompare(String(b.iso)))
-          .map(x=>zDate(x.iso).replace(/\/\d{4}$/,'') + ' ' + (x.was||'OFF') + '→' + (x.now||'OFF'));
-        L.push('• ' + zName(id) + ' :  ' + days.join('  ·  '));
-      });
-      if(ids.length>MAXP) L.push('• … and ' + (ids.length-MAXP) + ' more employee(s) — see the app');
+    case 'schedBulk':
+      zHoldLines((n && n.hold) || [], n && n.from).forEach(x=>L.push(x));
       break;
-    }
 
     /* ---- Nhóm A: cần người nhận bấm xác nhận ---- */
     case 'schedChange':
