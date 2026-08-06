@@ -47,7 +47,7 @@ function memberRow(e){
      <option value="other"${sel('other',e.role)}>Khác</option></select></td>
    <td>${posSelectHtml(e,'min-width:150px')}</td>
    <td><input class="inp sm" value="${esc(e.id)}" style="width:100px;font-family:var(--mono)" onchange="changeId('${e.id}',this.value)"></td>
-   <td><input class="inp sm" value="${esc(e.name)}" style="min-width:140px" placeholder="Họ tên" onchange="updEmp('${e.id}','name',this.value)"></td>
+   <td><input class="inp sm" value="${esc(rawName(e))}" style="min-width:140px" placeholder="Họ tên" onchange="updEmp('${e.id}','name',this.value)"></td>
    <td><select class="inp sm" onchange="updType('${e.id}',this.value)">
      <option value="type1"${sel('type1',e.shiftType)}>Ca 8 ngày (OODDNNRR)</option>
      <option value="type2"${sel('type2',e.shiftType)}>Ca 6 ngày (DDNNRR)</option>

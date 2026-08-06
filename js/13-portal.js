@@ -62,10 +62,15 @@ function applyRoleUI(){
   if(noSelf&&curView==='me'&&typeof go==='function')go('real');
 }
 
-/* Tên rút gọn 2 chữ cuối: "Nguyễn Hoàng Trung" → "Hoàng Trung" */
+/* Tên rút gọn 2 chữ cuối: "Nguyễn Hoàng Trung" → "Hoàng Trung".
+   Tiền tố "Mr. " của Quản lý người Hàn được giữ lại, không tính là một chữ:
+   "Mr. Kim Jong Su" → "Mr. Jong Su". */
 function shortName(n){
-  const w=String(n||'').trim().split(/\s+/).filter(Boolean);
-  return w.slice(-2).join(' ')||String(n||'');
+  const s=String(n||'').trim();
+  const m=s.match(/^(mr\.?)\s+(.+)$/i);
+  const body=m?m[2]:s, pre=m?'Mr. ':'';
+  const w=body.trim().split(/\s+/).filter(Boolean);
+  return pre+(w.slice(-2).join(' ')||body);
 }
 
 /* ---- Đơn liên quan tới 1 ngày của 1 người ---- */

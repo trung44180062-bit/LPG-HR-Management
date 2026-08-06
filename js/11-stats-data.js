@@ -96,7 +96,7 @@ function renderAccTbl(){
     const dflt=usingDefaultPw(e.id);
     h+=`<tr>
       <td><input class="inp sm" style="width:110px;font-family:var(--mono)" value="${esc(e.id)}" onchange="changeId('${e.id}',this.value)"></td>
-      <td><input class="inp sm" style="min-width:150px" value="${esc(e.name||'')}" placeholder="Họ tên" onchange="updEmp('${e.id}','name',this.value)"></td>
+      <td><input class="inp sm" style="min-width:150px" value="${esc(rawName(e))}" placeholder="Họ tên" onchange="updEmp('${e.id}','name',this.value)"></td>
       <td><input class="inp sm" style="width:70px" value="${esc(e.team||'')}" placeholder="A" onchange="updEmp('${e.id}','team',this.value,true)"></td>
       <td>${posSelectHtml(e,'min-width:150px')}</td>
       <td><select class="inp sm" style="min-width:150px" onchange="updType('${e.id}',this.value)">

@@ -204,6 +204,73 @@ function effHours(empId,iso){
   return getHours(r.code);
 }
 function empById(id){return S.employees.find(e=>e.id===id);}
+
+/* ============================================================
+   XƯNG HÔ QUẢN LÝ NGƯỜI HÀN — "Mr. " + HỌ TÊN ĐẦY ĐỦ
+   ------------------------------------------------------------
+   Yêu cầu: ở MỌI vị trí trong app và MỌI tin nhắn Zalo bot, người có
+   quyền 'kmgr' (Quản lý người Hàn) phải hiện là "Mr. <họ tên đầy đủ>".
+
+   Cách làm: thay vì sửa hàng trăm chỗ đang đọc `e.name`, ta gắn cho bản
+   ghi nhân viên một accessor:
+     · ĐỌC  e.name  → đã kèm sẵn "Mr. " nếu người đó là kmgr;
+     · GHI  e.name  → cất tên gốc (đã bỏ tiền tố) vào e._name.
+   Nhờ vậy mọi nơi hiển thị (bảng lịch, đơn, in ấn, thống kê, thông báo,
+   Zalo…) đều tự có tiền tố mà không phải đụng tới từng chỗ.
+
+   Muốn lấy tên GỐC (ô nhập liệu khi sửa hồ sơ) thì dùng rawName(e).
+   Hàm decorateEmpName() idempotent — gọi lại bao nhiêu lần cũng an toàn.
+   ============================================================ */
+const KR_TITLE='Mr. ';
+/* Bỏ tiền tố "Mr."/"Mr" ở đầu chuỗi (không phân biệt hoa thường) */
+function stripKrTitle(n){return String(n==null?'':n).replace(/^\s*mr\.?\s+/i,'').trim();}
+/* Người này có phải Quản lý người Hàn không? */
+function isKrMgr(id){
+  if(!id)return false;
+  return (typeof permOf==='function') ? permOf(id)==='kmgr'
+                                      : (empById(id)||{}).perm==='kmgr';
+}
+/* Tên hiển thị từ tên gốc — chỉ kmgr mới được gắn tiền tố */
+function krName(id,raw){
+  const s=String(raw==null?'':raw);
+  if(!s.trim()||!isKrMgr(id))return s;
+  return KR_TITLE+stripKrTitle(s);
+}
+/* Tên GỐC, không tiền tố — dùng cho ô input sửa họ tên */
+function rawName(e){
+  if(!e)return '';
+  return (e._name!==undefined&&e._name!==null)?e._name:String(e.name||'');
+}
+function decorateEmpName(e){
+  if(!e||typeof e!=='object')return e;
+  const d=Object.getOwnPropertyDescriptor(e,'name');
+  if(d&&d.get)return e;                       // đã gắn accessor rồi
+  /* Dữ liệu cũ trên máy chủ có thể đã lưu kèm "Mr. " (do vòng lưu trước) —
+     chỉ bóc tiền tố với đúng kmgr, tên người khác giữ nguyên tuyệt đối. */
+  const cur=String(e.name==null?'':e.name);
+  const raw=isKrMgr(e.id)?stripKrTitle(cur):cur;
+  /* KHÔNG delete rồi tạo lại: định nghĩa đè lên đúng khoá cũ để 'name' giữ
+     nguyên THỨ TỰ trong object. Thứ tự đổi là JSON.stringify đổi chuỗi, mà
+     js/02-storage.js so chuỗi JSON để tính delta Firebase → sẽ ghi/vẽ thừa. */
+  Object.defineProperty(e,'_name',{value:raw,writable:true,enumerable:false,configurable:true});
+  Object.defineProperty(e,'name',{
+    get(){return krName(e.id,e._name);},
+    set(v){e._name=isKrMgr(e.id)?stripKrTitle(v):String(v==null?'':v);},
+    enumerable:true,configurable:true
+  });
+  return e;
+}
+function decorateEmpNames(list){(list||[]).forEach(decorateEmpName);return list;}
+/* Danh sách Quản lý người Hàn đang hoạt động */
+function krMgrList(){
+  return (S.employees||[]).filter(e=>e&&e.active!==false&&isKrMgr(e.id));
+}
+/* Tên hiển thị của Quản lý người Hàn, đã kèm "Mr. ". Nhiều người thì nối
+   bằng dấu phẩy. Rỗng nếu chưa đặt quyền cho ai. */
+function krMgrName(){
+  return krMgrList().map(e=>e.name).filter(n=>String(n).trim()).join(', ');
+}
+
 const ROLE_ORD={eng:0,oper:1,other:2};
 /* Người CÓ nằm trong lịch ca. Thư ký / quản lý cấp trên đặt Kiểu ca =
    "Không xếp lịch" (shiftType='none') — vẫn có tài khoản, vẫn thao tác phần
@@ -369,7 +436,7 @@ const LVL_FINAL='kmgr', LVL_PROV='trung';
 function lvlLabel(k){
   if(k==='fe')return 'Field Engineer';
   if(k==='trung'){const e=empById(ROOT_ADMIN);return (e&&e.name)||'Quản trị';}
-  if(k==='kmgr')return 'Quản lý người Hàn';
+  if(k==='kmgr'){const n=krMgrName();return n?('Quản lý người Hàn ('+n+')'):'Quản lý người Hàn';}
   return k;
 }
 

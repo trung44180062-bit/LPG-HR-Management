@@ -186,7 +186,8 @@ function zLevel(k){
   if(k==='kmgr'){
     const d=(typeof kmgrDelegate==='function')?kmgrDelegate():null;
     if(d)return 'Korean Manager — delegated to '+zName(d.to);
-    return 'Korean Manager';
+    const n=(typeof krMgrName==='function')?krMgrName():'';
+    return n?('Korean Manager ('+n+')'):'Korean Manager';
   }
   return k||'';
 }

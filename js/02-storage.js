@@ -37,6 +37,8 @@ let _fbBooted=false;     // đã xử lý xong đợt đồng bộ đầu tiên 
 
 /* =================== STORAGE =================== */
 function save(){
+  /* Nhân viên vừa thêm mới chưa có accessor tên → gắn trước khi lưu */
+  if(typeof decorateEmpNames==='function')decorateEmpNames(S.employees);
   S.rev=Date.now();
   localStorage.setItem(LS,JSON.stringify(S));
   fbPush();
@@ -52,6 +54,10 @@ function load(){
    lần nhận nhánh settings mới từ máy chủ. */
 function normalizeState(){
   S.employees=S.employees||[];
+  /* Gắn accessor tên hiển thị — Quản lý người Hàn luôn ra "Mr. <họ tên>".
+     Gọi ở đây là phủ cả lúc nạp localStorage lẫn lúc nhánh employees về
+     từ Firebase (mảng mới toanh, accessor cũ mất). Xem js/01-core.js. */
+  if(typeof decorateEmpNames==='function')decorateEmpNames(S.employees);
   S.base=S.base||{};S.over=S.over||{};S.requests=S.requests||{};
   S.accounts=S.accounts||{};S.printLog=S.printLog||{};S.notifs=S.notifs||{};
   S.events=S.events||{};                 // sự kiện trên lịch — xem js/20-events.js

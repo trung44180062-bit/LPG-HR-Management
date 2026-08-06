@@ -882,7 +882,9 @@ function chartTrend(id){
 let otlogSel=null;              // mảng các kỳ 'YYYY-MM' đang xem
 let otlogQuery='';
 /* Chuẩn hoá tên để so khớp (bỏ dấu, viết thường) */
-function otNorm(s){return noAccent(String(s||'')).replace(/\s+/g,' ').trim();}
+/* So khớp tên với dữ liệu OT nhập từ Excel — bỏ tiền tố "Mr." để tên Quản lý
+   người Hàn trong app vẫn khớp với tên trần trong file Excel. */
+function otNorm(s){return noAccent(String(s||'')).replace(/\s+/g,' ').trim().replace(/^mr\.?\s+/i,'');}
 
 /* Các kỳ có trong dữ liệu Excel đã nhập */
 function otlogImportedPeriods(){
