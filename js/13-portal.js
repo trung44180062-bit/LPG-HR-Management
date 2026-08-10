@@ -1662,11 +1662,18 @@ function cancelMyReq(rid){
   if(r.status==='approved')msg+='\n'+t('Đơn đã duyệt — lịch thực tế sẽ trả về ca chuẩn.');
   if(!confirm(msg))return;
   const x=cancelReq(rid,true);
-  save();
+  /* ★ v6.7 — chỉ báo "đã huỷ" khi Firebase xác nhận. Xem apprAfterDelete
+     ở js/08-requests.js để hiểu vì sao đây là điểm mấu chốt. */
+  save(ok=>{
+    if(ok)toast(t('Đã huỷ đơn')+(x&&x.reverted?' · '+t('hoàn tác')+' '+x.reverted+' '+t('ô lịch'):''));
+    else{
+      /* Không reconcile ở đây — xem ghi chú tại apprAfterDelete (08-requests.js) */
+      alert('⚠️ '+t('CHƯA xoá được trên máy chủ — app đang tự gửi lại. Đừng tắt tab, và kiểm tra lại sau vài giây.'));
+    }
+  });
   renderDaySheet();renderMe(true);
   if(typeof renderAppr==='function')renderAppr();
   if(typeof refreshBadge==='function')refreshBadge();
-  toast(t('Đã huỷ đơn')+(x&&x.reverted?' · '+t('hoàn tác')+' '+x.reverted+' '+t('ô lịch'):''));
 }
 
 /* ============================================================

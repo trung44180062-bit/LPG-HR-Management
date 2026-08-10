@@ -1201,3 +1201,120 @@ node _test/harness-v58.js && node _test/render-v58.js \
 → **199 phép thử, 0 hỏng.** Lưu ý 3 harness cuối cần **tham số thư mục** (`.`).
 
 i18n: **+9 khoá EN**. Cache bump **`?v=66`**.
+
+---
+
+# v6.7 — XOÁ ĐƠN LÀ XOÁ THẬT
+
+## Triệu chứng
+
+Xoá đơn ở màn *Duyệt*, màn hình báo "Đã xoá", đơn biến mất. Đăng xuất, đăng
+nhập lại → **đơn hiện lại nguyên vẹn**. Xoá bao nhiêu lần cũng vậy. Đã bỏ hẳn
+cache ở v6.6 mà vẫn bị.
+
+## Nguyên nhân thật
+
+Không phải cache, cũng không phải "đơn nằm ở nhiều cấp duyệt". Một đơn chỉ tồn
+tại **đúng một bản** ở `requests/<id>` trên Firebase; các cấp duyệt chỉ là
+trường `r.appr` *bên trong* chính đơn đó, không hề nhân bản theo tài khoản.
+
+Gốc rễ nằm ở **tên khoá của sổ bia mộ**. Từ v6.2 sổ bia mộ lưu phẳng:
+
+```js
+S.del["requests/" + id] = ts;      // ← khoá chứa dấu '/'
+```
+
+Firebase Realtime Database **cấm** các ký tự `/ . # $ [ ]` trong tên khoá. Khi
+`fbPush` gửi:
+
+```js
+fbRef.update({ "requests/r_abc": null,
+               del: { "requests/r_abc": 1754… },   // ← khoá không hợp lệ
+               rev: … });
+```
+
+SDK kiểm dữ liệu **trước khi gọi mạng** và **NÉM LỖI ĐỒNG BỘ** (`throw`, không
+phải promise bị reject). Chuỗi hậu quả:
+
+1. `update()` là **nguyên khối** → cả gói trượt, **kể cả vế `requests/<id>: null`**.
+   Máy chủ **không hề xoá đơn**.
+2. Vì là `throw` chứ không phải reject, nhánh `.catch` **không chạy** → `_fbDirty`
+   không bật, không có thử lại. Mà mốc `_fbLast` thì đã dời sang trạng thái
+   "đã xoá" → mọi lần push sau tính delta so với một **hiện trạng không có thật**,
+   nên **không bao giờ gửi lại lệnh xoá nữa**.
+3. Trên màn hình đơn đã biến mất (bộ nhớ `S` đã xoá) → người dùng tin là xong.
+   Mở lại app, v6.6 đọc thẳng từ Firebase → đơn còn nguyên.
+
+Nói gọn: **lệnh xoá chưa từng tới được Firebase, mà app lại báo là xong.**
+
+## Bốn lớp sửa
+
+**1. Sổ bia mộ lồng hai tầng** (`js/02-storage.js`)
+
+```
+del/<nhánh>/<id> = ts        (thay cho del["<nhánh>/<id>"] = ts)
+```
+
+Tên khoá nay chỉ còn tên nhánh và id — đều hợp lệ. Lệnh ghi dùng thẳng đường
+dẫn `'del/'+nhánh+'/'+id` (khoá **cấp trên** của `update()` được phép chứa `/`),
+nên hai máy xoá hai đơn khác nhau cùng lúc **không đè sổ của nhau** — trước đây
+gửi trọn object `del` thì có.
+
+Hàm mới: `tombHas()` · `tombSet()` · `tombMigrate()`. `tombMigrate()` chuyển sổ
+dạng phẳng cũ sang dạng lồng, chạy khi mở app và mỗi lần nhánh `del` bay về từ
+một máy còn chạy bản cũ. Nếu máy chủ còn giữ sổ dạng cũ, `fbBootLoad` phát hiện
+(`delFixed`) và đẩy sổ dạng mới lên **một lần duy nhất**.
+
+**2. Không lệnh ghi nào được biến mất trong im lặng** (`js/02-storage.js`)
+
+- `fbPush` rà toàn bộ tên khoá bằng `fbKeyOk()` / `fbPathOk()` / `fbBadKeyIn()`
+  **trước khi gửi**, gỡ đúng khoá hỏng ra khỏi gói và ghi rõ ra console — thay
+  vì để một khoá hỏng làm trượt cả gói.
+- `fbRef.update()` được bọc `try/catch`. Throw nay đi vào **cùng một nhánh xử lý
+  lỗi** với reject: hoàn tác mốc `_fbLast`, bật `_fbDirty`, hẹn `fbRetry()`.
+
+**3. Báo "đã xoá" chỉ khi Firebase gật đầu**
+
+`save(cb)` nay nhận callback, gọi `cb(true)` **sau khi máy chủ xác nhận**, `cb(false)`
+khi trượt. `apprAfterDelete()` (`js/08-requests.js`) và `cancelMyReq()`
+(`js/13-portal.js`) dùng nó:
+
+- thành công → *"Đã xoá N đơn — máy chủ đã xác nhận"*
+- trượt → cảnh báo **CHƯA xoá được**, app tự gửi lại nền, đèn đồng bộ đứng ở
+  *"Chưa gửi được — đang thử lại"*
+
+Cố tình **không** gọi `fbReconcile()` ở nhánh trượt: reconcile lấy máy chủ làm
+chuẩn nên sẽ dẹp luôn lệnh xoá đang chờ gửi lại.
+
+**4. Siết quyền xoá** (`js/08-requests.js`)
+
+```js
+const PURGE_PERMS = ['admin','kmgr','sec'];   // Quản trị · Quản lý người Hàn · Thư ký
+function canPurgeReqs(){ … }
+```
+
+Trước đây bất kỳ ai vào được màn *Duyệt* (`mgr` **hoặc** Field Engineer của nhóm)
+đều bấm được nút xoá hàng loạt — quá rộng so với hệ quả không hoàn tác được.
+Nay `cancelPickedReqs` · `exportThenPurgeReqs` · `apprPurgeYear` · `canCancelReq`
+đều đi qua `canPurgeReqs()`; nút 🗑️ chỉ hiện với ba vai trò trên.
+**Field Engineer và Section Chief vẫn duyệt / từ chối / in như cũ, chỉ không xoá.**
+**Nhân viên vẫn tự rút đơn của chính mình** khi còn `pending`/`approved` và chưa in.
+
+## Kiểm chứng
+
+`_test/delete-resurrect-harness.js` dựng Firebase giả **kiểm tên khoá y như thật
+và ném lỗi đồng bộ y như thật**:
+
+```
+node _test/delete-resurrect-harness.js
+```
+
+8 nhóm bài, **31 phép thử, 0 hỏng** — trong đó bài 1 *tái hiện được lỗi cũ* (chứng
+minh khoá phẳng thật sự bị Firebase chặn và máy chủ không ghi gì), bài 2–3 chứng
+minh máy chủ xoá thật và mở lại không thấy đơn, bài 6 chứng minh ghi trượt thì
+app không nói dối và lần gửi lại vẫn đủ.
+
+i18n: **+3 khoá EN**. Cache bump **`?v=70`**.
+
+> **Sau khi sửa phải đẩy lại lên GitHub Pages** — bản đang chạy trên Pages vẫn là
+> bản cũ cho tới khi push.

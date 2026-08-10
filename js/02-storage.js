@@ -98,7 +98,7 @@ function fbReady(){return _fbReady;}
 
 /* =================== STORAGE =================== */
 /* Lưu = ĐẨY THẲNG LÊN FIREBASE. Không còn bản sao nào trên máy. */
-function save(){
+function save(cb){
   /* Nhân viên vừa thêm mới chưa có accessor tên → gắn trước khi lưu */
   if(typeof decorateEmpNames==='function')decorateEmpNames(S.employees);
   if(!_fbReady){
@@ -107,12 +107,19 @@ function save(){
        cache; nay thì không. */
     console.warn('[sync] bỏ qua lệnh ghi khi chưa tải xong dữ liệu');
     if(typeof toast==='function')toast(t('Đang tải dữ liệu — thử lại sau vài giây'));
+    cb&&cb(false);
     return;
   }
   S.rev=Date.now();
-  fbPush();
+  fbPush(cb);
   refreshBadge();
 }
+/* ★ v6.7 — LƯU CÓ XÁC NHẬN TỪ MÁY CHỦ.
+   Dùng cho những việc KHÔNG HOÀN TÁC ĐƯỢC (xoá đơn). `save()` trơn chỉ bắn
+   lệnh đi rồi trả về ngay, nên nếu máy chủ từ chối thì người dùng vẫn thấy
+   màn hình "đã xong" — đúng cái bẫy khiến lỗi xoá-rồi-hiện-lại nằm im mấy
+   tháng. saveConfirm chỉ báo xong khi Firebase đã nhận thật. */
+function saveConfirm(cb){save(cb);}
 /* Mở app: KHÔNG đọc gì từ máy nữa, chỉ dựng khung rỗng rồi chờ Firebase.
    Giữ tên hàm để js/12-main.js và các chỗ khác không phải sửa. */
 function load(){
@@ -164,7 +171,7 @@ function fbSnapshot(){
    máy chủ đã xoá": cả hai đều là "local có, server không". Đơn cũ sống dậy.
 
    CÁCH SỬA: mỗi lần xoá một khoá của nhánh bảng, ghi một BIA MỘ
-   `del["<nhánh>/<id>"] = thời điểm xoá`. Sổ bia mộ đồng bộ như một nhánh nhỏ.
+   `del[<nhánh>][<id>] = thời điểm xoá`. Sổ bia mộ đồng bộ như một nhánh nhỏ.
    Vì id là DUY NHẤT (uid() không trùng), một id đã có bia mộ là CHẾT HẲN:
      · mọi máy tự xoá id đó khỏi bộ nhớ (applyTombstones),
      · fbPush KHÔNG BAO GIỜ đẩy lại id đã có bia mộ,
@@ -172,14 +179,70 @@ function fbSnapshot(){
        máy chủ ngay khi thấy (xem 'put' trong fbAttach).
    Đơn TẠO MỚI mang id mới, không có bia mộ → đồng bộ bình thường. Không phụ
    thuộc đồng hồ máy, nên hết cảnh xoá rồi lại hiện.
+   ------------------------------------------------------------
+   ★ v6.7 — VÌ SAO ĐỔI HÌNH DẠNG SỔ BIA MỘ (đây LÀ gốc của lỗi "xoá rồi
+   mở lên vẫn thấy" mà mấy bản trước không truy ra)
+
+   Bản v6.2→v6.6 lưu bia mộ PHẲNG, khoá là chuỗi ghép `"requests/<id>"`.
+   Firebase Realtime Database CẤM ký tự `/` `.` `#` `$` `[` `]` trong TÊN
+   KHOÁ của dữ liệu. Khi fbPush gửi `update({ del: {"requests/abc": 1754…},
+   "requests/abc": null, rev: … })`, SDK kiểm tra dữ liệu TRƯỚC khi gọi
+   mạng và NÉM LỖI ĐỒNG BỘ (throw, không phải promise bị reject):
+       "contains an invalid key (requests/abc)".
+   Hậu quả dây chuyền, đúng như triệu chứng người dùng gặp:
+     1. update() là NGUYÊN KHỐI → cả gói trượt, kể cả vế `requests/<id>:null`
+        → MÁY CHỦ KHÔNG HỀ XOÁ ĐƠN.
+     2. Vì là throw chứ không phải reject, nhánh `.catch` KHÔNG chạy → cờ
+        `_fbDirty` không bật, không có thử lại, mà mốc `_fbLast` thì đã dời
+        sang trạng thái "đã xoá" → mọi lần push sau tính delta so với một
+        hiện trạng KHÔNG CÓ THẬT, nên không bao giờ gửi lại lệnh xoá nữa.
+     3. Trên màn hình đơn biến mất (S trong bộ nhớ đã xoá) → người dùng tin
+        là xong. Đăng nhập lại, v6.6 đọc thẳng từ Firebase — đơn vẫn còn
+        nguyên → "đơn hồi sinh".
+   Không liên quan gì tới cache hay tới việc đơn nằm ở nhiều cấp duyệt: một
+   đơn chỉ tồn tại ĐÚNG MỘT BẢN ở `requests/<id>`, các cấp duyệt chỉ là
+   trường `r.appr` bên trong chính đơn đó, không hề nhân bản theo user.
+
+   NAY: bia mộ lồng hai tầng `del/<nhánh>/<id> = ts`. Tên khoá chỉ còn tên
+   nhánh và id (đều hợp lệ), và lệnh ghi dùng thẳng đường dẫn
+   `'del/'+nhánh+'/'+id` nên hai máy xoá hai đơn khác nhau cùng lúc không
+   đè sổ của nhau. tombMigrate() chuyển nốt sổ phẳng cũ nếu có.
    ============================================================ */
+/* Có bia mộ cho id này chưa? */
+function tombHas(branch,id){
+  const d=S.del&&S.del[branch];
+  return !!(d&&d[id]!==undefined);
+}
+/* Ghi bia mộ. Trả về true nếu đây là bia mộ MỚI (chưa từng có). */
+function tombSet(branch,id,ts){
+  if(!S.del)S.del={};
+  if(!S.del[branch]||typeof S.del[branch]!=='object')S.del[branch]={};
+  if(S.del[branch][id]!==undefined)return false;
+  S.del[branch][id]=ts||Date.now();
+  return true;
+}
+/* Dữ liệu cũ: khoá phẳng "requests/abc" → chuyển sang lồng. Gọi sau mỗi lần
+   nhận nhánh del từ máy chủ; chạy một lần là sạch, sau đó là no-op. */
+function tombMigrate(){
+  if(!S.del||typeof S.del!=='object')return 0;
+  let n=0;
+  Object.keys(S.del).forEach(k=>{
+    if(k.indexOf('/')<0)return;                  // đã đúng dạng lồng
+    const i=k.indexOf('/'), b=k.slice(0,i), id=k.slice(i+1);
+    const ts=+S.del[k]||Date.now();
+    delete S.del[k];
+    if(b&&id&&FB_MAP_BRANCHES.includes(b)){tombSet(b,id,ts);n++;}
+  });
+  return n;
+}
 function applyTombstones(){
   if(!S.del)return 0;
+  tombMigrate();
   let n=0;
   FB_MAP_BRANCHES.forEach(k=>{
     const src=S[k];if(!src)return;
     Object.keys(src).forEach(id=>{
-      if(S.del[k+'/'+id]!==undefined){delete src[id];n++;}
+      if(tombHas(k,id)){delete src[id];n++;}
     });
   });
   return n;
@@ -197,18 +260,58 @@ const TOMB_TTL_DAYS=180;
 const TOMB_TTL_MS=TOMB_TTL_DAYS*24*60*60*1000;
 function pruneTombstones(){
   if(!S.del)return 0;
+  tombMigrate();
   const cutoff=Date.now()-TOMB_TTL_MS;
   let n=0;
-  Object.keys(S.del).forEach(tk=>{
-    const ts=+S.del[tk]||0;
-    if(ts&&ts<cutoff){delete S.del[tk];n++;}
+  Object.keys(S.del).forEach(b=>{
+    const m=S.del[b];if(!m||typeof m!=='object')return;
+    Object.keys(m).forEach(id=>{
+      const ts=+m[id]||0;
+      if(ts&&ts<cutoff){delete m[id];n++;}
+    });
+    if(!Object.keys(m).length)delete S.del[b];
   });
   return n;
 }
+/* ------------------------------------------------------------
+   ★ v6.7 — KIỂM KHOÁ TRƯỚC KHI GỬI
+   Firebase ném lỗi ĐỒNG BỘ (throw) nếu dữ liệu chứa tên khoá có
+   `/ . # $ [ ]`. Throw thì `.catch` không chạy → app tưởng đã ghi xong
+   trong khi máy chủ không nhận gì (chính là lỗi xoá-rồi-hiện-lại của các
+   bản trước). Kiểm ở đây để phát hiện sớm, ghi rõ khoá hỏng ra console và
+   BỎ QUA đúng khoá đó thay vì làm trượt cả gói.
+   ------------------------------------------------------------ */
+const FB_BAD_KEY=/[.#$\/\[\]]/;   // đúng bộ ký tự Firebase cấm trong tên khoá
+function fbKeyOk(k){
+  if(typeof k!=='string'||!k.length)return false;
+  if(FB_BAD_KEY.test(k))return false;
+  for(let i=0;i<k.length;i++){const c=k.charCodeAt(i);if(c<32||c===127)return false;}
+  return true;
+}
+/* Khoá cấp trên của update() LÀ đường dẫn nên được phép chứa '/', nhưng
+   từng đoạn giữa hai dấu '/' vẫn phải là tên khoá hợp lệ. */
+function fbPathOk(p){
+  if(typeof p!=='string'||!p.length)return false;
+  return p.split('/').every(seg=>fbKeyOk(seg));
+}
+/* Rà toàn bộ tên khoá bên trong một giá trị sắp ghi. Trả về khoá hỏng đầu tiên. */
+function fbBadKeyIn(val,path){
+  if(!val||typeof val!=='object')return null;
+  if(Array.isArray(val)){
+    for(let i=0;i<val.length;i++){const b=fbBadKeyIn(val[i],path+'/'+i);if(b)return b;}
+    return null;
+  }
+  for(const k in val){
+    if(!fbKeyOk(k))return path+'/'+k;
+    const b=fbBadKeyIn(val[k],path+'/'+k);if(b)return b;
+  }
+  return null;
+}
 /* Danh sách khoá cần ghi lên máy chủ (dạng đường dẫn nhiều mức của update()) */
 function fbDiff(prev,cur){
-  const patch={};let n=0;let delTouched=false;
+  const patch={};let n=0;const tombs=[];
   FB_VAL_BRANCHES.forEach(k=>{
+    if(k==='del')return;                 // sổ bia mộ xử lý riêng bên dưới
     if(!prev||prev.v[k]!==cur.v[k]){patch[k]=(S[k]===undefined?null:S[k]);n++;}
   });
   FB_MAP_BRANCHES.forEach(k=>{
@@ -216,29 +319,60 @@ function fbDiff(prev,cur){
     Object.keys(b).forEach(id=>{if(a[id]!==b[id]){patch[k+'/'+id]=S[k][id];n++;}});
     Object.keys(a).forEach(id=>{if(b[id]===undefined){
       patch[k+'/'+id]=null;n++;
-      /* Xoá một khoá bảng → dựng bia mộ để không máy nào hồi sinh nó */
-      const tk=k+'/'+id;
-      if(!S.del)S.del={};
-      if(S.del[tk]===undefined){S.del[tk]=S.rev||Date.now();delTouched=true;}
+      /* Xoá một khoá bảng → dựng bia mộ để không máy nào hồi sinh nó.
+         Ghi theo ĐƯỜNG DẪN `del/<nhánh>/<id>` (khoá cấp trên của update()
+         được phép chứa `/`), KHÔNG gửi cả object sổ bia mộ — vừa hợp lệ,
+         vừa không đè sổ khi hai máy cùng xoá hai đơn khác nhau. */
+      const ts=S.rev||Date.now();
+      if(tombSet(k,id,ts)){patch['del/'+k+'/'+id]=ts;n++;tombs.push(k+'/'+id);}
     }});
   });
-  return {patch,n,delTouched};
+  /* Sổ bia mộ đổi vì lý do KHÁC (dọn quá hạn, chuyển dạng dữ liệu cũ) →
+     ghi lại trọn sổ. Không đi cùng lượt có bia mộ mới, vì update() cấm một
+     đường dẫn vừa là cha vừa là con của đường dẫn khác trong cùng gói. */
+  if(!tombs.length){
+    const js=JSON.stringify(S.del===undefined?null:S.del);
+    if(!prev||prev.v.del!==js){patch.del=(S.del===undefined?null:S.del);n++;}
+  }
+  return {patch,n,tombs};
 }
-function fbPush(){
-  if(!fbRef||applyingRemote)return;
-  if(!_fbReady)return;                 // ★ chưa có dữ liệu thì tuyệt đối không ghi
+function fbPush(cb){
+  const done=ok=>{try{cb&&cb(!!ok);}catch(e){console.warn(e);}};
+  if(!fbRef||applyingRemote){done(false);return;}
+  if(!_fbReady){done(false);return;}   // ★ chưa có dữ liệu thì tuyệt đối không ghi
   applyTombstones();                   // gỡ mọi id đã có bia mộ TRƯỚC khi so → không đẩy lại
   const cur=fbSnapshot();
   const d=fbDiff(_fbLast,cur);
-  if(d.delTouched){                     // fbDiff vừa thêm bia mộ mới → phải đẩy sổ bia mộ luôn
+  if(d.tombs.length){
+    /* fbDiff vừa dựng bia mộ mới → ảnh chụp `cur` đã chụp TRƯỚC lúc đó nên
+       còn giữ sổ cũ. Cập nhật lại, không thì lần push sau tưởng sổ bia mộ
+       vừa đổi và ghi thừa cả sổ lên máy chủ. */
     cur.v.del=JSON.stringify(S.del===undefined?null:S.del);
-    d.patch.del=S.del;
   }
   if(!d.n){                             // không có gì mới, nhưng có thể còn nợ lần trước
     if(!_fbDirty)_fbLast=cur;
+    done(!_fbDirty);
     return;
   }
   d.patch.rev=S.rev;
+
+  /* ★ v6.7 — CHẶN GÓI HỎNG TRƯỚC KHI GỬI.
+     Firebase kiểm dữ liệu ngay tại chỗ và NÉM LỖI (throw) nếu có tên khoá
+     chứa `/ . # $ [ ]`. Throw thì `.catch` phía dưới KHÔNG chạy → app tưởng
+     đã ghi trong khi máy chủ không nhận gì: đây chính là cách lệnh xoá đơn
+     "bốc hơi" ở các bản trước. Rà trước, gỡ đúng khoá hỏng ra khỏi gói và
+     kêu to, để phần còn lại vẫn tới được máy chủ. */
+  let dropped=0;
+  Object.keys(d.patch).forEach(k=>{
+    const bad=(!fbPathOk(k))?k:fbBadKeyIn(d.patch[k],k);
+    if(bad){
+      console.error('[sync] BỎ QUA khoá không hợp lệ với Firebase:',bad);
+      delete d.patch[k];dropped++;
+    }
+  });
+  if(!Object.keys(d.patch).length||(Object.keys(d.patch).length===1&&d.patch.rev!==undefined)){
+    _fbLast=cur;done(!dropped);return;
+  }
 
   /* ★ v6.4 — KHÔNG dời mốc trước khi máy chủ nhận.
      `prev` giữ nguyên hiện trạng máy chủ mà máy này đang tin. Ghi thành công
@@ -248,11 +382,7 @@ function fbPush(){
      `prev` để hoàn tác nếu trượt. */
   const prev=_fbLast, patch=d.patch;
   _fbLast=cur;
-  fbRef.update(patch).then(()=>{
-    _fbDirty=false;_fbRetryMs=2000;
-    clearTimeout(_fbRetryT);_fbRetryT=null;
-    setSync(true,'Đã đồng bộ');
-  }).catch(e=>{
+  const fail=e=>{
     console.warn('FB write',e);
     /* Hoàn tác mốc — chỉ khi trong lúc chờ chưa có ai dời nó (dữ liệu máy
        khác về giữa chừng cũng dời mốc qua fbMark). So tham chiếu là đủ. */
@@ -260,7 +390,19 @@ function fbPush(){
     _fbDirty=true;
     setSync(false,'Chưa gửi được — đang thử lại');
     fbRetry();
-  });
+    done(false);
+  };
+  /* try/catch là BẮT BUỘC: update() ném lỗi ĐỒNG BỘ cho dữ liệu không hợp
+     lệ, promise chưa kịp sinh ra nên .catch không đỡ được. Thiếu lớp này là
+     thay đổi mất im lặng và không bao giờ được thử lại. */
+  let pr=null;
+  try{ pr=fbRef.update(patch); }catch(e){ fail(e); return; }
+  pr.then(()=>{
+    _fbDirty=false;_fbRetryMs=2000;
+    clearTimeout(_fbRetryT);_fbRetryT=null;
+    setSync(true,'Đã đồng bộ');
+    done(!dropped);
+  }).catch(fail);
 }
 /* Thử ghi lại, giãn dần. Không có nó thì một lần rớt mạng là thay đổi nằm
    im tới khi người dùng tình cờ thao tác tiếp. */
@@ -364,16 +506,26 @@ function fbBootLoad(){
     S.rev=+srv.rev||0;
     _fbRemoteRev=S.rev;
     normalizeState();
-    applyTombstones();          // id đã có bia mộ thì không hiện, dù máy chủ còn
+    /* Sổ bia mộ máy chủ đang giữ, ở nguyên dạng thô — dùng để biết sau khi
+       chuyển dạng / dọn quá hạn thì có cần ghi lại lên máy chủ không. */
+    const delRaw=JSON.stringify(srv.del===undefined?{}:srv.del);
+    applyTombstones();          // id đã có bia mộ thì không hiện, dù máy chủ còn (kèm tombMigrate)
+    pruneTombstones();          // bia mộ quá 180 ngày thì bỏ, kẻo sổ phình mãi
     applyingRemote=false;
 
     _fbLast=fbSnapshot();       // mốc = đúng hiện trạng máy chủ
+    /* Sổ trên máy chủ còn ở dạng cũ (khoá phẳng "requests/<id>" — dạng mà
+       Firebase KHÔNG cho ghi) hoặc còn bia mộ quá hạn → đặt mốc về đúng cái
+       máy chủ đang có, rồi save() một lượt để đẩy sổ dạng mới lên. */
+    const delFixed=(delRaw!==JSON.stringify(S.del===undefined?{}:S.del));
+    if(delFixed)_fbLast.v.del=delRaw;
     _fbReady=true;              // ★ từ đây mới được ghi
     _fbBooted=true;
     _fbBootMs=3000;
     clearTimeout(_fbBootT);_fbBootT=null;
 
     fbListen();                 // bước 3
+    if(delFixed)save();         // chuẩn hoá sổ bia mộ trên máy chủ (một lần duy nhất)
     if(typeof renderAll==='function')renderAll();
     setSync(true,'Đã đồng bộ');
 
@@ -402,6 +554,7 @@ function fbListen(){
       applyingRemote=true;
       S[k]=val;
       normalizeState();
+      if(k==='del')tombMigrate();   // sổ từ máy chạy bản cũ về ở dạng phẳng → chuyển ngay
       applyingRemote=false;
       fbMark(k,null,JSON.stringify(S[k]));
       fbTouch();
@@ -418,7 +571,7 @@ function fbListen(){
       /* Id đã có bia mộ mà vẫn thấy trên máy chủ = tin lạc từ một máy CHƯA
          cập nhật bản mới (còn cache cũ) → gỡ khỏi máy chủ lần nữa và không
          nhận về. Giữ lớp này trong thời gian còn máy chạy bản cũ. */
-      if(S.del&&S.del[k+'/'+id]!==undefined){
+      if(tombHas(k,id)){
         if(!applyingRemote)fbRef.child(k).child(id).remove().catch(()=>{});
         if(S[k]&&S[k][id]!==undefined){applyingRemote=true;delete S[k][id];applyingRemote=false;fbTouch();}
         return;

@@ -771,6 +771,9 @@ const I18N_EN={
 'Đơn đã duyệt sẽ được hoàn tác khỏi lịch thực tế. Không tra lại được.':'Approved requests will be reverted from the actual schedule. This cannot be undone.',
 'Đơn xoá rồi không tra lại được.':'Deleted requests cannot be recovered.',
 'Xoá đơn':'Delete',
+'máy chủ đã xác nhận':'confirmed by the server',
+'CHƯA xoá được trên máy chủ — app đang tự gửi lại. Đừng tắt tab, và kiểm tra lại sau vài giây.':'NOT deleted on the server yet — the app is retrying. Keep this tab open and check again in a few seconds.',
+'Chỉ Quản trị, Thư ký và Quản lý người Hàn được xoá đơn':'Only Admin, Secretary and the Korean Manager can delete requests',
 'Huỷ đơn này? Đơn sẽ bị xoá hẳn.':'Cancel this request? It will be deleted permanently.',
 'In':'Print',
 

@@ -306,6 +306,23 @@ function reqSetCover(rid,newId,byId,iso){
    nên không có đường vòng nào lọt qua.
    ============================================================ */
 function apprCanAct(){return typeof canAppr==='function'&&canAppr();}
+/* ============================================================
+   ★ v6.7 — AI ĐƯỢC XOÁ ĐƠN CỦA NGƯỜI KHÁC
+   ------------------------------------------------------------
+   Xoá đơn là thao tác KHÔNG HOÀN TÁC: đơn biến mất khỏi Firebase và khỏi
+   mọi tài khoản, kèm bia mộ nên không dựng lại được. Trước đây mọi người
+   có quyền vào màn Duyệt (mgr HOẶC Field Engineer của nhóm) đều bấm được
+   nút xoá hàng loạt — quá rộng so với hệ quả.
+   Nay chỉ ba vai trò giữ sổ sách: Quản trị (admin), Thư ký (sec), Quản lý
+   người Hàn (kmgr). Field Engineer và Section Chief vẫn duyệt / từ chối /
+   in như cũ, chỉ không xoá.
+   Nhân viên vẫn tự rút được ĐƠN CỦA CHÍNH MÌNH khi chưa in — xem
+   canCancelReq() ngay dưới. ============================================ */
+const PURGE_PERMS=['admin','kmgr','sec'];
+function canPurgeReqs(){
+  if(typeof permOf!=='function'||typeof meId!=='function')return false;
+  return PURGE_PERMS.includes(permOf(meId()));
+}
 /* In được đơn này không: người duyệt in tất; còn lại chỉ in đơn của mình
    hoặc của người cùng nhóm (tổ trưởng hay cầm tờ đơn đi nộp hộ cả nhóm). */
 function canPrintReq(r,who){
@@ -413,7 +430,7 @@ function revertReqSchedule(rid){
 /* Ai được huỷ đơn nào */
 function canCancelReq(r,who){
   if(!r)return false;
-  if(mgr)return true;                        // duyệt đơn / quản trị: huỷ được mọi đơn
+  if(canPurgeReqs())return true;             // quản trị / thư ký / quản lý Hàn: huỷ được mọi đơn
   if(r.empId!==who&&r.byId!==who)return false;
   if(r.printedAt)return false;               // đã in nộp nhân sự → nhờ quản lý huỷ
   return r.status==='pending'||r.status==='approved';
@@ -785,7 +802,7 @@ function apprRow(r){
         <button class="btn sec sm" onclick="toggleReqHr('${r.id}')">${reqHrDone(r)?'↩️ '+t('Bỏ dấu nhập HR'):'✅ '+t('Đã nhập hệ thống HR')}</button>
         ${canSetCover(r,meId())?`<button class="btn sec sm" onclick="openCoverPicker('${r.id}')">🤝 ${reqCoverGroups(r).length?t('Đổi người OT cover'):t('Chỉ định người OT cover')}</button>`:''}
         ${apprCanAct()&&r.status==='approved'?`<button class="btn warn sm" onclick="revokeApproval('${r.id}')">↩️ Huỷ duyệt</button>`:''}
-        ${(apprCanAct()||canCancelReq(r,meId()))?`<button class="btn warn sm" onclick="cancelOneReq('${r.id}')">🚫 Huỷ đơn</button>`:''}
+        ${canCancelReq(r,meId())?`<button class="btn warn sm" onclick="cancelOneReq('${r.id}')">🚫 Huỷ đơn</button>`:''}
       </div>
     </div>
   </div>`;
@@ -896,7 +913,7 @@ function apprTr(r){
         <button class="btn sec sm" onclick="apprToggleNoPrint('${r.id}')">${r.noPrint?'🖨️ '+t('Đưa vào ds in'):'🚫 '+t('Đánh dấu không cần in')}</button>
         ${canSetCover(r,meId())?`<button class="btn sec sm" onclick="openCoverPicker('${r.id}')">🤝 ${reqCoverGroups(r).length?t('Đổi người OT cover'):t('Chỉ định người OT cover')}</button>`:''}
         ${r.status==='approved'?`<button class="btn warn sm" onclick="revokeApproval('${r.id}')">↩️ ${t('Huỷ duyệt')}</button>`:''}
-        <button class="btn warn sm" onclick="cancelOneReq('${r.id}')">🚫 ${t('Huỷ đơn')}</button>
+        ${canCancelReq(r,meId())?`<button class="btn warn sm" onclick="cancelOneReq('${r.id}')">🚫 ${t('Huỷ đơn')}</button>`:''}
       </div>
     </div>
   </td></tr>`;
@@ -1215,7 +1232,7 @@ function exportRequests(list,fname){
   return true;
 }
 function exportThenPurgeReqs(list,label){
-  if(!adm){toast(t('Cần quyền quản trị'));return;}
+  if(!canPurgeReqs()){toast(t('Chỉ Quản trị, Thư ký và Quản lý người Hàn được xoá đơn'));return;}
   list=(list||[]).filter(Boolean);
   if(!list.length){toast(t('Không có đơn nào trong phạm vi này.'));return;}
   const pend=list.filter(r=>r.status==='pending').length;
@@ -1225,7 +1242,7 @@ function exportThenPurgeReqs(list,label){
   const okX=exportRequests(list,'LPGT_SaoLuuDon_'+String(label).replace(/[^\w-]/g,'')+'_'+todayIso()+'.xlsx');
   if(!okX&&!confirm(t('Không xuất được Excel. Vẫn tiếp tục xoá?')))return;
   let rev=0;list.forEach(r=>{rev+=purgeReq(r.id);});
-  apprAfterChange(t('Đã sao lưu Excel & xoá')+' '+list.length+' '+t('đơn')+(rev?' · '+t('hoàn tác')+' '+rev+' '+t('ô lịch'):''));
+  apprAfterDelete(list.length,rev);
 }
 /* Xoá theo đúng bộ lọc đang xem (kỳ / nhiều kỳ / khoảng ngày) — xuất Excel trước */
 function apprPurgeFiltered(){
@@ -1237,7 +1254,7 @@ function apprPurgeFiltered(){
 }
 /* Xoá theo NĂM DƯƠNG — nhập năm, xuất Excel trước */
 function apprPurgeYear(){
-  if(!adm){toast(t('Cần quyền quản trị'));return;}
+  if(!canPurgeReqs()){toast(t('Chỉ Quản trị, Thư ký và Quản lý người Hàn được xoá đơn'));return;}
   const y=prompt(t('Xoá đơn theo NĂM (xuất Excel trước) — nhập năm, VD 2025:'),String(new Date().getFullYear()-1));
   if(!y)return;
   const r=yearRange(+y);
@@ -1260,19 +1277,46 @@ function apprPickCount(){
     <button class="btn sec sm pc-only" onclick="printPickedReqs()">🖨️ ${t('In')}</button>
     <button class="btn sec sm" onclick="markPickedHr(true)">✅ ${t('Đã nhập HR')}</button>
     <button class="btn sec sm" onclick="markPickedHr(false)">↩️ ${t('Bỏ dấu HR')}</button>
-    ${act?`<button class="btn warn sm" onclick="cancelPickedReqs()">🗑️ ${t('Xoá đơn')}</button>`:''}
+    ${canPurgeReqs()?`<button class="btn warn sm" onclick="cancelPickedReqs()">🗑️ ${t('Xoá đơn')}</button>`:''}
     <span class="sp"></span>
     <button class="btn sec sm" onclick="apprPickAll(true)">${t('Chọn hết')}</button>
     <button class="btn sec sm" onclick="apprPickAll(false)">${t('Bỏ chọn')}</button>`;
   if(typeof applyRoleUI==='function')applyRoleUI();
 }
-function apprAfterChange(msg){
-  save();renderAppr();
+function apprAfterChange(msg,cb){
+  save(cb);renderAppr();
   if(typeof renderCal==='function'&&curView==='cal')renderCal();
   if(typeof renderMe==='function')renderMe(true);
   refreshBadge();
   if(typeof refreshPrintBadge==='function')refreshPrintBadge();
-  toast(msg);
+  if(msg)toast(msg);
+}
+/* ============================================================
+   ★ v6.7 — XOÁ ĐƠN PHẢI CÓ MÁY CHỦ XÁC NHẬN
+   ------------------------------------------------------------
+   Firebase là nguồn duy nhất, nên "đã xoá" chỉ đúng khi FIREBASE đã xoá.
+   Trước đây app xoá trong bộ nhớ, gọi save() rồi toast "Đã xoá" ngay lập
+   tức — không hề chờ máy chủ. Lệnh ghi trượt (khoá bia mộ sai định dạng,
+   rớt mạng, sai luật) thì màn hình vẫn báo xong, còn máy chủ giữ nguyên
+   đơn; mở lại là đơn "hồi sinh". Đó là toàn bộ câu chuyện của lỗi này.
+   apprAfterDelete chỉ báo Đã xoá khi Firebase gật đầu; trượt thì nói thẳng
+   là CHƯA xoá và app tự thử lại nền (xem fbRetry ở js/02-storage.js).
+   ============================================================ */
+function apprAfterDelete(nDel,revN){
+  apprAfterChange('',ok=>{
+    if(ok){
+      toast(t('Đã xoá')+' '+nDel+' '+t('đơn')+' — '+t('máy chủ đã xác nhận')
+            +(revN?' · '+t('hoàn tác')+' '+revN+' '+t('ô lịch'):''));
+    }else{
+      /* KHÔNG gọi fbReconcile ở đây. Reconcile lấy máy chủ làm chuẩn nên sẽ
+         DẸP luôn lệnh xoá đang chờ gửi lại, thành ra vừa không xoá được vừa
+         mất cơ hội thử lại. Cứ để fbRetry gửi lại; đèn đồng bộ trên thanh
+         tiêu đề đang đứng ở "Chưa gửi được — đang thử lại" nên người dùng
+         thấy rõ, và nếu đóng tab thì mở lại là thấy đơn còn nguyên (đúng sự
+         thật) chứ không mất dữ liệu. */
+      alert('⚠️ '+t('CHƯA xoá được trên máy chủ — app đang tự gửi lại. Đừng tắt tab, và kiểm tra lại sau vài giây.'));
+    }
+  });
 }
 /* Duyệt / từ chối hàng loạt */
 function decidePickedReqs(ok){
@@ -1300,19 +1344,20 @@ function cancelWarnText(list){
 }
 function cancelOneReq(rid){
   const r=S.requests[rid];if(!r)return;
+  if(!canCancelReq(r,meId())){toast(t('Bạn không có quyền xoá đơn'));return;}
   if(!confirm(cancelWarnText([r])))return;
   const x=cancelReq(rid,true);
-  apprAfterChange(t('Đã xoá đơn')+(x&&x.reverted?' · '+t('hoàn tác')+' '+x.reverted+' '+t('ô lịch'):''));
+  apprAfterDelete(1,x?x.reverted:0);
 }
 function purgeOneReq(rid){cancelOneReq(rid);}
 function cancelPickedReqs(){
-  if(!apprCanAct()){toast(t('Bạn không có quyền xoá đơn'));return;}
+  if(!canPurgeReqs()){toast(t('Chỉ Quản trị, Thư ký và Quản lý người Hàn được xoá đơn'));return;}
   const ids=apprPicked();
   if(!ids.length){toast(t('Chưa chọn đơn nào'));return;}
   const list=ids.map(id=>S.requests[id]).filter(Boolean);
   if(!confirm(cancelWarnText(list)))return;
   let rev=0;list.forEach(r=>{const x=cancelReq(r.id);if(x)rev+=x.reverted;});
-  apprAfterChange(t('Đã xoá')+' '+list.length+' '+t('đơn')+(rev?' · '+t('hoàn tác')+' '+rev+' '+t('ô lịch'):''));
+  apprAfterDelete(list.length,rev);
 }
 function purgePickedReqs(){cancelPickedReqs();}
 /* In ngay các đơn đang chọn */
