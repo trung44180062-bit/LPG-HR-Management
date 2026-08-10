@@ -91,6 +91,62 @@ const ZALO_INFO_CHANNEL = {
   coverOk     : null        // C5 tin tốt xuôi chiều
 };
 
+/* ============================================================
+   ★ v6.8 — KÊNH 'digest': GOM VỀ MỘT BẢN TIN 08:00 MỖI SÁNG
+   ------------------------------------------------------------
+   VÌ SAO CẦN
+
+   Hộp gửi `zaloOut*` (v6.3) chỉ gộp được những tin sinh ra TRÊN CÙNG MỘT
+   MÁY trong vòng 4 giây. Đơn tăng ca thì ngược hẳn: 20 người gửi từ 20
+   điện thoại, rải rác cả ngày. Không có hai tin nào rơi vào cùng một hộp
+   gửi, nên KHÔNG có phép gộp nào chạm tới được — mỗi đơn một tin Zalo.
+   Đây là lý do "gom OT lúc 08:00" trước nay không hoạt động: nó chưa từng
+   được viết, và hộp gửi thì về nguyên lý không làm nổi việc này.
+
+   CÁCH LÀM
+
+   Tin thuộc kênh 'digest' KHÔNG đi vào `zaloQueue` ngay. Nó nằm ở sổ chờ
+   `S.digest` trên Firebase — mọi máy đều thấy. Máy nào mở app từ 08:00 trở
+   đi sẽ:
+     1. giành quyền bằng transaction trên `meta/digestDay` (đúng MỘT máy
+        thắng trong ngày, kể cả 5 máy cùng mở lúc 08:00:00),
+     2. gom sổ chờ theo THỂ LOẠI (khoá `group`) → mỗi thể loại đúng một tin,
+     3. ghi các tin đó vào `zaloQueue`, rồi dọn sổ chờ.
+
+   Không phụ thuộc Apps Script: phía máy chủ vẫn chỉ thấy những hàng
+   `zaloQueue` bình thường như mọi khi.
+
+   ĐÁNH ĐỔI đã cân nhắc: nếu cả ngày không ai mở app thì bản tin dời sang
+   lần mở kế tiếp, và khi đó tiêu đề ghi rõ khoảng thời gian gom. Chấp nhận
+   được vì đây là tin KHÔNG GẤP — việc gấp (đổi ca, cover, sửa lịch) vẫn đi
+   kênh 'now' như cũ, không hề bị chạm tới.
+   ============================================================ */
+const DIGEST_HOUR      = 8;        // 08:00 giờ máy người dùng
+const DIGEST_MAX_LINES = 60;       // quá dài thì cắt, kèm dòng "… và N mục nữa"
+/* Loại ĐƠN được gom. Chỉ những loại thuần giấy tờ, không loại nào mà biết
+   muộn vài giờ là đi làm sai giờ. */
+const DIGEST_REQ_TYPES = ['ot','multi','late','wt'];
+/* Loại TIN được gom:
+     · apprNeed  — "có đơn chờ duyệt", đúng cái đang bắn rời rạc
+     · approved  — ★ v6.9: KẾT QUẢ DUYỆT của các đơn trên cũng gom nốt.
+                   App chỉ để phê duyệt và lưu dữ liệu; hệ thống chấm công
+                   chính thức nằm ở HR ngoài app, nên báo từng đơn "đã
+                   duyệt" ngay lập tức không đổi được việc gì ở hiện trường
+                   — chỉ tốn tin. Bản tin sáng liệt kê đủ ai · OT kiểu gì ·
+                   mấy giờ là dùng được cho cả việc đối chiếu.
+     · cancelled — đơn bị huỷ, vốn đã là kênh 'batch' (không gấp)
+   KHÔNG gom `rejected` và `revoked`: người đã đăng ký OT tối nay mà bị từ
+   chối thì phải biết SỚM, không thì họ đi làm thừa. Hai tin này ở lại kênh
+   'now'. Nghỉ phép và đổi ca thì mọi tin đều 'now' như cũ — chúng đổi lịch
+   đi làm thật, biết muộn là đi sai ca. */
+const DIGEST_ZK        = ['apprNeed','approved','cancelled'];
+/* Tiêu đề bản tin gom, theo khoá nhóm (ZALO_GROUP_KEY) */
+const DIGEST_TITLE = {
+  apprNeed :'📥 DAILY DIGEST — APPROVAL REQUIRED',
+  reqResult:'✅ DAILY DIGEST — REQUESTS APPROVED / CLOSED',
+  misc     :'🗂 DAILY DIGEST'
+};
+
 /* Khoá gộp: cùng người nhận + cùng khoá này trong 10 phút → gộp 1 tin. */
 const ZALO_GROUP_KEY = {
   apprNeed:'apprNeed', schedBulk:'sched',
@@ -215,8 +271,10 @@ function zOt(d){
   const h=(typeof reqDayHours==='function')?reqDayHours(d):(d.hours||0);
   const from=d.timeIn||'', to=d.timeOut||'';
   const t=(from||to)?('OT '+from+'–'+to):zShift(d.code||'OTD');
-  return t+((d.isoEnd&&d.isoEnd!==d.iso)?' (+1d)':'')
-          +(h?(' ('+(Math.round(h*10)/10)+'h)'):'');
+  /* ★ v6.9 — nói rõ đã trừ nghỉ trưa, không thì người đọc thấy 08:00–20:00
+     mà chỉ 11h sẽ tưởng app tính sai. */
+  const hh=h?(Math.round(h*10)/10)+'h'+(d.noLunch?', −1h lunch':''):'';
+  return t+((d.isoEnd&&d.isoEnd!==d.iso)?' (+1d)':'')+(hh?(' ('+hh+')'):'');
 }
 
 /* ---- Từ vựng tiếng Anh dùng để dựng thân tin ---- */
@@ -682,8 +740,9 @@ function zaloEnqueue(n){
 
     /* --- chọn kênh --- */
     const zk  = (n.kind==='info') ? (n.zk||'') : n.kind;
-    const pri = (n.kind==='info') ? ZALO_INFO_CHANNEL[zk] : ZALO_CHANNEL[n.kind];
+    let   pri = (n.kind==='info') ? ZALO_INFO_CHANNEL[zk] : ZALO_CHANNEL[n.kind];
     if(!pri) return;                  // ⚪ APP-ONLY hoặc kind lạ → im lặng
+    if(digestApplies(n,zk)) pri='digest';   // ★ v6.8 — hạ xuống bản tin 08:00
 
     /* --- người nhận --- */
     const emp = (typeof empById==='function') ? empById(n.to) : null;
@@ -716,6 +775,11 @@ function zaloEnqueue(n){
     };
     item.fp = zaloFp(item);
 
+    /* Kênh 'digest' KHÔNG vào hộp gửi 4 giây (hộp đó chỉ gộp được tin cùng
+       máy cùng lúc — vô dụng với đơn rải rác cả ngày). Nó vào sổ chờ chung
+       trên Firebase, sáng hôm sau gom một thể. */
+    if(pri==='digest'){ digestHold(item); return; }
+
     /* Vào hộp gửi thay vì ghi thẳng. Khoá hàng đợi vẫn là một notifId (quy
        tắc R6 chống trùng) — chỉ khác là sau khi gộp, một khoá có thể đại
        diện cho nhiều thông báo, liệt kê ở `notifIds`. */
@@ -723,6 +787,218 @@ function zaloEnqueue(n){
   }catch(e){
     console.warn('[zalo] bỏ qua lỗi, app vẫn chạy bình thường', e);
   }
+}
+
+/* ============================================================
+   SỔ CHỜ BẢN TIN 08:00
+   ------------------------------------------------------------
+   S.digest[notifId] = { to,toName,title,lines,action,group,bcast,zk,at }
+   Là một NHÁNH BẢNG của Firebase (xem FB_MAP_BRANCHES ở js/02-storage.js)
+   nên mọi máy thấy như nhau, và xoá khỏi sổ là xoá thật (có bia mộ) — cùng
+   một cơ chế đã sửa ở v6.7, không đẻ thêm đường đồng bộ riêng.
+   ============================================================ */
+/* Tin này có thuộc diện gom về 08:00 không? */
+function digestApplies(n,zk){
+  if(!n||DIGEST_ZK.indexOf(zk)<0)return false;
+  if(!n.reqId)return false;
+  const r=(typeof S!=='undefined'&&S.requests)?S.requests[n.reqId]:null;
+  if(!r)return false;
+  return DIGEST_REQ_TYPES.indexOf(r.type)>=0;
+}
+function digestHold(item){
+  S.digest=S.digest||{};
+  S.digest[item.notifId]={
+    to:item.to, toName:item.toName, title:item.title, lines:item.lines,
+    action:item.action||'', group:item.group||'misc', bcast:item.bcast?1:0,
+    zk:item.zk||'', at:Date.now()
+  };
+  if(typeof save==='function')save();
+}
+function digestDrop(notifId){
+  if(!notifId||!S.digest||S.digest[notifId]===undefined)return false;
+  delete S.digest[notifId];
+  return true;
+}
+/* Khoá ngày dùng cho transaction. Ngày ĐỊA PHƯƠNG của máy đang mở — cả tổ
+   cùng một múi giờ nên không có chuyện hai máy hiểu khác ngày. */
+function digestDayKey(dt){
+  const d=dt||new Date();
+  return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+}
+/* Đã tới giờ bắn chưa, và hôm nay đã bắn chưa. */
+function digestDue(now){
+  if(!zaloOn())return false;
+  const d=now||new Date();
+  if(d.getHours()<DIGEST_HOUR)return false;
+  const last=(S.meta&&S.meta.digestDay)||'';
+  if(last===digestDayKey(d))return false;
+  return true;
+}
+/* Sổ chờ còn mục nào ĐÁNG gửi không — bỏ mục đã lỗi thời (thông báo bị gỡ,
+   đơn bị xoá). Không lọc thì bản tin sáng sẽ nhắc những việc đã không còn. */
+function digestLive(){
+  const out=[];
+  const all=S.digest||{};
+  Object.keys(all).forEach(id=>{
+    if(!S.notifs||!S.notifs[id])return;      // thông báo đã bị gỡ
+    out.push(Object.assign({notifId:id},all[id]));
+  });
+  return out.sort((a,b)=>(a.at||0)-(b.at||0));
+}
+/* Gom sổ chờ thành CÁC GÓI, mỗi THỂ LOẠI một gói. */
+function digestBuild(rows,dayLabel){
+  const byGroup=Object.create(null);
+  rows.forEach(r=>{(byGroup[r.group||'misc']=byGroup[r.group||'misc']||[]).push(r);});
+  return Object.keys(byGroup).map(g=>{
+    const list=byGroup[g];
+    const tos=[];list.forEach(r=>{if(r.to&&tos.indexOf(r.to)<0)tos.push(r.to);});
+    let lines=[];
+    list.forEach((r,i)=>{
+      if(i)lines.push('— — —');
+      lines=lines.concat(r.lines||[]);
+    });
+    if(lines.length>DIGEST_MAX_LINES){
+      const cut=lines.length-DIGEST_MAX_LINES;
+      lines=lines.slice(0,DIGEST_MAX_LINES).concat(['','… and '+cut+' more line(s) — open the app to see all']);
+    }
+    const item={
+      to:list[0].to,
+      toName:tos.length>1?(tos.length+' employees'):(list[0].toName||''),
+      title:(DIGEST_TITLE[g]||DIGEST_TITLE.misc)+' · '+list.length+' item(s)'+(dayLabel?(' · '+dayLabel):''),
+      lines:lines,
+      action:list[0].action||'',
+      group:g, bcast:1, pri:'batch',
+      notifId:list[0].notifId,
+      notifIds:list.map(r=>r.notifId),
+      tos:tos
+    };
+    item.n=item.notifIds.length;
+    item.fp=zaloFp(item);
+    return item;
+  });
+}
+/* ------------------------------------------------------------
+   BẮN BẢN TIN — chỉ MỘT máy được làm việc này mỗi ngày.
+   Transaction trên `meta/digestDay`: máy nào ghi được khoá ngày hôm nay thì
+   thắng, các máy khác thấy khoá đã đúng ngày nên bỏ cuộc (trả undefined =
+   huỷ transaction). Đây là cách duy nhất chắc chắn khi 23 máy có thể cùng
+   mở app lúc 08:00 — so giờ ở phía máy thì máy nào cũng thấy "chưa ai bắn".
+   ------------------------------------------------------------ */
+let _digestBusy=false;
+function digestFlush(force,cb){
+  const done=ok=>{_digestBusy=false;cb&&cb(!!ok);};
+  try{
+    if(_digestBusy){cb&&cb(false);return;}
+    if(typeof fbRef==='undefined'||!fbRef){cb&&cb(false);return;}
+    if(typeof fbReady==='function'&&!fbReady()){cb&&cb(false);return;}
+    if(!force&&!digestDue()){cb&&cb(false);return;}
+    const rows=digestLive();
+    /* Sổ chờ chỉ toàn mục lỗi thời → vẫn phải dọn, nhưng KHÔNG gửi tin rỗng
+       (quy tắc R5 ở ZALO-BOT.md). */
+    if(!rows.length){
+      digestSweep([]);
+      digestStamp();
+      done(true);return;
+    }
+    _digestBusy=true;
+    const day=digestDayKey();
+    const prevDay=(S.meta&&S.meta.digestDay)||'';
+    fbRef.child('meta').child('digestDay').transaction(cur=>{
+      if(!force&&cur===day)return;          // máy khác vừa bắn xong → bỏ cuộc
+      return day;
+    },(err,committed)=>{
+      if(err||!committed){done(false);return;}
+      /* Ghi mốc vào bộ nhớ NGAY, không đợi listener `meta` bay về. Nếu trong
+         khoảng chờ đó có một save() vì việc khác, nó sẽ đẩy nguyên nhánh
+         `meta` cũ (chưa có digestDay) đè lên máy chủ → hôm sau bắn lại lần
+         hai. Một dòng gán chặn đứt được chuyện đó. */
+      S.meta=S.meta||{};S.meta.digestDay=day;
+      /* Thắng quyền bắn. Từ đây mới được ghi hàng đợi.
+         ★ Dọn sổ chờ theo TỪNG GÓI GHI ĐƯỢC, không dọn cả lượt. Ghi trượt
+         gói nào thì mục của gói đó Ở LẠI sổ chờ, và mốc ngày được trả về
+         để lần mở app sau bắn lại — đúng bài học của v6.7: không bao giờ
+         coi là xong khi máy chủ chưa nhận. */
+      const label=digestSpanLabel(rows);
+      const items=digestBuild(rows,label);
+      const jobs=items.map(it=>{
+        const row={
+          to:it.to, toName:it.toName, title:it.title, lines:it.lines,
+          action:it.action||'', group:it.group, bcast:1,
+          pri:it.pri, notifId:it.notifId, notifIds:it.notifIds, tos:it.tos,
+          n:it.n, fp:it.fp, digest:1,
+          state:'pending', createdAt:Date.now()
+        };
+        let pr;
+        try{ pr=fbRef.child('zaloQueue').child(it.notifId).set(row); }
+        catch(e){ console.warn('[zalo] gói bản tin gom không hợp lệ',e); return Promise.resolve(null); }
+        return pr.then(()=>it).catch(e=>{
+          console.warn('[zalo] không ghi được bản tin gom',e);return null;
+        });
+      });
+      Promise.all(jobs).then(res=>{
+        const sentIds=[];
+        res.filter(Boolean).forEach(it=>{ sentIds.push.apply(sentIds,it.notifIds); });
+        digestSweep(rows.filter(r=>sentIds.indexOf(r.notifId)>=0));
+        const allOk=res.every(Boolean);
+        if(!allOk){
+          /* Trả mốc ngày về để hôm nay còn bắn lại phần còn thiếu */
+          S.meta.digestDay=prevDay;
+          fbRef.child('meta').child('digestDay').set(prevDay||null).catch(()=>{});
+        }
+        done(allOk);
+      });
+    });
+  }catch(e){
+    console.warn('[zalo] bỏ qua lỗi bản tin gom, app vẫn chạy bình thường',e);
+    done(false);
+  }
+}
+/* Nhãn khoảng thời gian đã gom — để người đọc biết bản tin phủ từ bao giờ.
+   Quan trọng khi cả ngày không ai mở app và bản tin dồn sang hôm sau. */
+function digestSpanLabel(rows){
+  if(!rows.length)return '';
+  const a=new Date(rows[0].at||Date.now()), b=new Date(rows[rows.length-1].at||Date.now());
+  const f=x=>pad(x.getDate())+'/'+pad(x.getMonth()+1);
+  return f(a)===f(b)?f(a):(f(a)+'→'+f(b));
+}
+/* Dọn sổ chờ: bỏ các mục vừa gửi + mọi mục đã lỗi thời còn sót. */
+function digestSweep(sent){
+  const keep=Object.create(null);
+  (sent||[]).forEach(r=>{keep[r.notifId]=1;});
+  let touched=false;
+  Object.keys(S.digest||{}).forEach(id=>{
+    if(keep[id]||!S.notifs||!S.notifs[id]){ delete S.digest[id]; touched=true; }
+  });
+  if(touched&&typeof save==='function')save();
+}
+function digestStamp(){
+  const day=digestDayKey();
+  S.meta=S.meta||{};S.meta.digestDay=day;
+  if(typeof fbRef==='undefined'||!fbRef)return;
+  fbRef.child('meta').child('digestDay').set(day).catch(()=>{});
+}
+/* Bao nhiêu mục đang chờ bản tin sáng — cho màn Dữ liệu và cho harness. */
+function digestPending(){return digestLive().length;}
+/* Bấm tay: gửi ngay không cần chờ 08:00 (nút ở màn Dữ liệu, quản trị dùng). */
+function digestSendNow(){
+  if(!digestPending()){toast(t('Chưa có mục nào chờ bản tin sáng'));return;}
+  if(!confirm(t('Gửi ngay bản tin gom? Sổ chờ sẽ được dọn.')))return;
+  digestFlush(true,ok=>toast(ok?t('Đã gửi bản tin gom'):t('Chưa gửi được — thử lại sau')));
+}
+/* ------------------------------------------------------------
+   HẸN GIỜ: kiểm lúc mở app và mỗi 5 phút sau đó. Máy để mở qua đêm cũng
+   bắn đúng 08:00 mà không cần ai đụng vào.
+   ------------------------------------------------------------ */
+const DIGEST_TICK_MS=5*60*1000;
+let _digestTick=null;
+function digestStartTimer(){
+  if(_digestTick)return;
+  _digestTick=setInterval(()=>{ try{ digestFlush(); }catch(e){} },DIGEST_TICK_MS);
+  try{
+    document.addEventListener('visibilitychange',function(){
+      if(document.visibilityState==='visible')try{digestFlush();}catch(e){}
+    });
+  }catch(e){}
 }
 
 /* ============================================================
@@ -759,6 +1035,14 @@ function zaloEnqueue(n){
 function zaloWithdraw(notifId){
   try{
     if(!notifId)return;
+
+    /* 0) Còn nằm ở sổ chờ bản tin sáng → gỡ ra, chưa tốn tin nào.
+       Thiếu nhánh này thì đơn OT huỷ lúc 15h hôm nay vẫn được nhắc trong
+       bản tin 08:00 sáng mai. */
+    if(digestDrop(notifId)){
+      if(typeof save==='function')save();
+      return;
+    }
 
     /* 1) Còn nằm trong hộp gửi → nhấc ra, chưa tốn gì cả */
     const i=_zOut.findIndex(x=>x.notifId===notifId);

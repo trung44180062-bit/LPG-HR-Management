@@ -15,10 +15,10 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 
 <!-- ===== CSS ===== -->
-<link rel="stylesheet" href="css/app.css?v=70">
-<link rel="stylesheet" href="css/portal.css?v=70">
-<link rel="stylesheet" href="css/print.css?v=70">
-<link rel="stylesheet" href="css/ui.css?v=70">
+<link rel="stylesheet" href="css/app.css?v=72">
+<link rel="stylesheet" href="css/portal.css?v=72">
+<link rel="stylesheet" href="css/print.css?v=72">
+<link rel="stylesheet" href="css/ui.css?v=72">
 <style id="pageDyn">@page{size:A4 portrait;margin:8mm}</style>
 </head>
 <body class="locked">
@@ -291,6 +291,18 @@
     <p class="muted" style="margin-top:8px">Nghi ngờ máy này lệch với máy khác (đơn đã xoá vẫn hiện, sửa lịch không thấy) thì bấm <b>Đồng bộ lại</b>: máy chủ là bản đúng, máy này khớp theo.</p>
   </div>
 
+  <!-- ★ v6.8 — sổ chờ bản tin Zalo 08:00. Xem js/21-notify.js -->
+  <div class="card admin-only">
+    <h3>🌅 Bản tin Zalo gom lúc 08:00</h3>
+    <p class="muted" style="margin-bottom:8px">Đơn <b>Tăng ca · Làm liên tục nhiều ngày · Đi trễ/Về sớm · Bổ sung công</b> không bắn Zalo ngay từng cái nữa. Chúng nằm ở sổ chờ dưới đây, đến <b>08:00</b> hôm sau máy nào mở app trước sẽ gom thành <b>một tin mỗi thể loại</b>. Việc gấp (đổi ca, OT cover, sửa lịch) vẫn báo ngay như cũ.</p>
+    <div class="row" style="margin-top:9px">
+      <span class="muted">Đang chờ: <b id="digestN">0</b> mục</span>
+      <span class="muted" id="digestLast"></span>
+      <span class="sp"></span>
+      <button class="btn sec" onclick="digestSendNow()" title="Không đợi 08:00, gửi bản tin gom ngay bây giờ">📨 Gửi ngay bản tin gom</button>
+    </div>
+  </div>
+
   <div class="card">
     <h3>⏱️ Khai báo giờ công theo mã ca</h3>
     <p class="muted" style="margin-bottom:8px">Số giờ dùng cho tab <b>📊 Thống kê</b>. Có thể chỉnh giờ từng mã hoặc <b>thêm mã ca mới</b> (mã mới sẽ xuất hiện trong bảng chọn ca khi sửa lịch / đăng ký).</p>
@@ -425,32 +437,32 @@
      config.js PHAI dung dau tien (khong co trong repo GitHub,
      copy tu js/config.example.js)
      ============================================================ -->
-<script src="js/config.js?v=70"></script>
-<script src="js/01-core.js?v=70"></script>
+<script src="js/config.js?v=72"></script>
+<script src="js/01-core.js?v=72"></script>
 <!-- i18n phai nap ngay sau 01-core (can bien LS) va truoc moi man hinh -->
-<script src="js/14-i18n.js?v=70"></script>
-<script src="js/00-icons.js?v=70"></script>
-<script src="js/02-storage.js?v=70"></script>
-<script src="js/03-nav.js?v=70"></script>
-<script src="js/04-schedule.js?v=70"></script>
-<script src="js/05-roster.js?v=70"></script>
-<script src="js/06-calendar.js?v=70"></script>
-<script src="js/07-manpower.js?v=70"></script>
-<script src="js/08-requests.js?v=70"></script>
-<script src="js/09-print.js?v=70"></script>
-<script src="js/10-account.js?v=70"></script>
-<script src="js/11-stats-data.js?v=70"></script>
-<script src="js/13-portal.js?v=70"></script>
-<script src="js/16-otlog-data.js?v=70"></script>
-<script src="js/15-report.js?v=70"></script>
-<script src="js/17-appr-sum.js?v=70"></script>
-<script src="js/18-advice.js?v=70"></script>
-<script src="js/19-meal.js?v=70"></script>
-<script src="js/20-events.js?v=70"></script>
+<script src="js/14-i18n.js?v=72"></script>
+<script src="js/00-icons.js?v=72"></script>
+<script src="js/02-storage.js?v=72"></script>
+<script src="js/03-nav.js?v=72"></script>
+<script src="js/04-schedule.js?v=72"></script>
+<script src="js/05-roster.js?v=72"></script>
+<script src="js/06-calendar.js?v=72"></script>
+<script src="js/07-manpower.js?v=72"></script>
+<script src="js/08-requests.js?v=72"></script>
+<script src="js/09-print.js?v=72"></script>
+<script src="js/10-account.js?v=72"></script>
+<script src="js/11-stats-data.js?v=72"></script>
+<script src="js/13-portal.js?v=72"></script>
+<script src="js/16-otlog-data.js?v=72"></script>
+<script src="js/15-report.js?v=72"></script>
+<script src="js/17-appr-sum.js?v=72"></script>
+<script src="js/18-advice.js?v=72"></script>
+<script src="js/19-meal.js?v=72"></script>
+<script src="js/20-events.js?v=72"></script>
 <!-- Tên file cố tình KHÔNG chứa chữ "zalo": mạng công ty chặn mọi URL có tên
      ứng dụng nhắn tin, file cũ js/21-zalo.js bị proxy cắt với lỗi HTTP 499. -->
-<script src="js/21-notify.js?v=70"></script>
-<script src="js/12-main.js?v=70"></script>
+<script src="js/21-notify.js?v=72"></script>
+<script src="js/12-main.js?v=72"></script>
 
 </body>
 </html>

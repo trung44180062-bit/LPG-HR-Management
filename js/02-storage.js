@@ -52,7 +52,9 @@
    ============================================================ */
 
 /* Nhánh dạng bảng: khoá là mã NV / id đơn → nghe & ghi ở mức con */
-const FB_MAP_BRANCHES=['base','over','requests','accounts','printLog','notifs','events'];
+/* 'digest' = SỔ CHỜ BẢN TIN 08:00 (★ v6.8) — tin không gấp nằm đây tới sáng
+   hôm sau mới gom thành một tin Zalo. Xem js/21-notify.js. */
+const FB_MAP_BRANCHES=['base','over','requests','accounts','printLog','notifs','events','digest'];
 /* Nhánh nghe trọn gói (nhỏ, và luôn cần đủ để render).
    'del' = SỔ BIA MỘ: id nào đã bị xoá thì mọi máy tôn trọng, không hồi sinh —
    xem applyTombstones() và mục "CHỐNG HỒI SINH" bên dưới. */
@@ -136,6 +138,7 @@ function normalizeState(){
   S.base=S.base||{};S.over=S.over||{};S.requests=S.requests||{};
   S.accounts=S.accounts||{};S.printLog=S.printLog||{};S.notifs=S.notifs||{};
   S.events=S.events||{};                 // sự kiện trên lịch — xem js/20-events.js
+  S.digest=S.digest||{};                 // sổ chờ bản tin 08:00 — xem js/21-notify.js
   S.del=S.del||{};                       // sổ bia mộ id đã xoá — xem applyTombstones()
   S.settings=S.settings||{minD:3,minN:3};
   S.settings.hours=S.settings.hours||{};
@@ -526,6 +529,9 @@ function fbBootLoad(){
 
     fbListen();                 // bước 3
     if(delFixed)save();         // chuẩn hoá sổ bia mộ trên máy chủ (một lần duy nhất)
+    /* ★ v6.8 — tới đây mới có đủ dữ liệu để biết sổ chờ có gì và hôm nay đã
+       bắn bản tin chưa. Gọi sớm hơn là đọc phải S rỗng. */
+    try{ if(typeof digestStartTimer==='function'){digestStartTimer();digestFlush();} }catch(e){}
     if(typeof renderAll==='function')renderAll();
     setSync(true,'Đã đồng bộ');
 

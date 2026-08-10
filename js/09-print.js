@@ -73,10 +73,13 @@ function buildOtRows(reqs){
         if(b==='N'&&!toIso)toIso=addDaysIso(d.iso,1);
       }
       if(!toIso)toIso=(tOut<=tIn)?addDaysIso(d.iso,1):d.iso;
-      const hrs=d.hours||otHours(d.iso,tIn,toIso,tOut)||getHours(code);
+      const hrs=d.hours||otNetHours(d.iso,tIn,toIso,tOut,d.noLunch)||getHours(code);
+      /* ★ v6.9 — tờ đơn nộp nhân sự phải tự giải thích được: giờ vào 08:00,
+         giờ ra 20:00 mà tổng 11h thì bắt buộc ghi rõ đã trừ nghỉ trưa. */
+      const nlNote=d.noLunch?' (trừ 1h nghỉ trưa / minus 1h lunch)':'';
       rows.push({name:e?e.name:r.empId,id:r.empId,dept:deptOf(r.empId),
         fromTime:tIn,fromDate:fmtVNfull(d.iso),toTime:tOut,toDate:fmtVNfull(toIso),
-        hours:rnd1(hrs),note:printReason(r)});
+        hours:rnd1(hrs),note:printReason(r)+nlNote});
     });
   });
   return rows;

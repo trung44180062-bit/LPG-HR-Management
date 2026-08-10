@@ -566,12 +566,25 @@ function repPMonths(){
   }
   return repPSel?ms.filter(m=>m.slice(0,4)===repPSel):[];
 }
+/* ★ v6.8 — nhóm vị trí ở Báo cáo. Đặt SAU khi đã chọn nhóm/cá nhân: người
+   dùng chọn "Nhóm C" rồi lọc tiếp Operator thì ra Operator của nhóm C, đúng
+   thứ tự suy nghĩ. Chọn đích danh cá nhân thì KHÔNG lọc tiếp — đã chỉ đúng
+   người thì lọc thêm chỉ làm họ biến mất một cách khó hiểu. */
+let repPg=(typeof pgRecall==='function')?pgRecall():'__all';
+function repSetPg(v){
+  repPg=v;
+  if(typeof pgRemember==='function')pgRemember(v);
+  renderReport();
+}
 function repPEmps(){
   if(!repSeeAll()){const e=empById(meId());return e?[e]:[];}
   let out=[];
   if(repPTeams.length)out=schedEmps().filter(e=>repPTeams.includes(e.team||''));
-  repPIds.forEach(id=>{if(!out.some(e=>e.id===id)){const e=empById(id);if(e)out.push(e);}});
+  const picked=[];
+  repPIds.forEach(id=>{if(!out.some(e=>e.id===id)){const e=empById(id);if(e){out.push(e);picked.push(e.id);}}});
   if(!out.length)out=schedEmps();
+  if(repPg&&repPg!=='__all')
+    out=out.filter(e=>picked.includes(e.id)||posGroupOf(e)===repPg);
   return out;
 }
 
@@ -600,6 +613,12 @@ function repPersonal(){
     h+=`<div class="repp-pick">
       <div class="repp-row"><span class="lbl">Nhóm:</span>
         ${teams.map(tm=>`<button type="button" class="fchip${repPTeams.includes(tm)?' on':''}" onclick="repPToggleTeam('${esc(tm)}')">Nhóm ${esc(tm||'(chưa phân)')}</button>`).join('')||'<span class="muted sm2">Chưa có nhóm.</span>'}
+      </div>
+      <div class="repp-row"><span class="lbl">${t('Vị trí')}:</span>
+        ${(typeof pgChips==='function'?pgChips():[]).map(([k,l])=>{
+          const n=k==='__all'?schedEmps().length:schedEmps().filter(e=>posGroupOf(e)===k).length;
+          return `<button type="button" class="abc sm pg${repPg===k?' on':''}" onclick="repSetPg('${k}')">${t(l)}<i>${n}</i></button>`;
+        }).join('')}
       </div>
       <div class="repp-row"><span class="lbl">Cá nhân:</span>
         <input class="inp sm" style="min-width:170px" placeholder="Gõ tên để tìm… (không dấu cũng được)"
@@ -969,6 +988,39 @@ function otlogFilterName(v){
   otlogQuery=v||'';
   const box=$('otlogBox');if(box)box.innerHTML=otlogTableHtml();
 }
+/* ============================================================
+   ★ v6.8 — LỌC NHÓM VỊ TRÍ Ở NHẬT KÝ TĂNG CA
+   ------------------------------------------------------------
+   Dòng OT nhập từ Excel chỉ có TÊN, không có mã NV, nên phải bắc cầu qua
+   tên đã chuẩn hoá (otNorm — đã bỏ dấu và bỏ tiền tố "Mr." sẵn cho tên
+   Quản lý người Hàn). Tên nào không tra ra người thì xếp vào 'other' chứ
+   không giấu đi: giấu là mất số liệu mà không ai biết vì sao.
+   Dùng chung PG_CHIPS / pgRemember / pgRecall của js/08-requests.js để bộ
+   lọc ở hai màn LUÔN nói cùng một thứ tiếng và nhớ chung một lựa chọn.
+   ============================================================ */
+let otlogPg=(typeof pgRecall==='function')?pgRecall():'__all';
+let _otPgMap=null, _otPgRev=-1;
+function otPgOfName(n){
+  /* Bảng tên→nhóm dựng lại khi dữ liệu nhân sự đổi (khoá theo S.rev) */
+  if(_otPgMap===null||_otPgRev!==S.rev){
+    _otPgMap=Object.create(null);_otPgRev=S.rev;
+    (S.employees||[]).forEach(e=>{
+      const k=otNorm(e.name);if(k)_otPgMap[k]=posGroupOf(e);
+    });
+  }
+  return _otPgMap[otNorm(n)]||POSG_OTHER;
+}
+function otlogSetPg(v){
+  otlogPg=v;
+  if(typeof pgRemember==='function')pgRemember(v);
+  renderReport();
+}
+function otlogPgChipsHtml(rowsAll){
+  if(typeof pgChips!=='function')return '';
+  const cnt=k=>k==='__all'?rowsAll.length:rowsAll.filter(r=>otPgOfName(r.n)===k).length;
+  return `<div class="ab-chips ab-pg">${pgChips().map(([k,l])=>
+    `<button type="button" class="abc sm pg${otlogPg===k?' on':''}" onclick="otlogSetPg('${k}')">${t(l)}<i>${cnt(k)}</i></button>`).join('')}</div>`;
+}
 
 /* Dòng tăng ca của MỘT kỳ: ưu tiên dữ liệu Excel đã nhập; kỳ nào Excel chưa có
    thì TỔNG HỢP TỪ PHẦN MỀM (đơn tăng ca đã duyệt + ô lịch thực tế mã OT). */
@@ -983,7 +1035,7 @@ function otlogRowsForPeriod(m){
       if(!days.includes(d.iso))return;
       const e=empById(r.empId)||{};
       out.push({src:'app',d:d.iso,n:e.name||r.empId,s:d.timeIn||'',e:d.timeOut||'',
-        h:d.hours||otHours(d.iso,d.timeIn,d.isoEnd,d.timeOut)||getHours(d.code||'OTD'),
+        h:d.hours||otNetHours(d.iso,d.timeIn,d.isoEnd,d.timeOut,d.noLunch)||getHours(d.code||'OTD'),
         r:r.note||'',st:'app'});
       seen.add(r.empId+'|'+d.iso);
     });
@@ -1001,7 +1053,9 @@ function otlogRowsForPeriod(m){
   });
   return out;
 }
-function otlogRows(){
+/* Các dòng TRƯỚC bộ lọc nhóm vị trí — để con số trên chip là tổng thật của
+   từng nhóm, không phải tổng sau khi đã lọc chính nó. */
+function otlogRowsRaw(){
   otlogInit();
   let rows=[];
   otlogSel.forEach(m=>{rows=rows.concat(otlogRowsForPeriod(m));});
@@ -1012,6 +1066,11 @@ function otlogRows(){
   }
   const q=otNorm(otlogQuery);
   if(q)rows=rows.filter(r=>otNorm(r.n).includes(q)||otNorm(r.r).includes(q));
+  return rows;
+}
+function otlogRows(){
+  let rows=otlogRowsRaw();
+  if(otlogPg&&otlogPg!=='__all')rows=rows.filter(r=>otPgOfName(r.n)===otlogPg);
   rows.sort((a,b)=>a.d<b.d?1:a.d>b.d?-1:0);   // mới nhất trước
   return rows;
 }
@@ -1069,6 +1128,7 @@ function repOtLog(){
       ${repSeeAll()?`<input class="inp sm" style="min-width:180px;margin-left:auto" placeholder="${t('Tìm tên / lý do…')}"
         value="${esc(otlogQuery)}" oninput="otlogFilterName(this.value)">`:''}
     </div>
+    ${repSeeAll()?otlogPgChipsHtml(otlogRowsRaw()):''}
     <details class="xp"><summary>${t('Giải thích')}</summary><div class="xp-b">${t('Kỳ có sẵn từ Excel hiện dữ liệu gốc; kỳ mới tổng hợp thẳng từ đơn tăng ca đã duyệt trong phần mềm. Mặc định chỉ tải kỳ hiện tại cho nhẹ — bấm chọn thêm kỳ hoặc tải toàn bộ.')} ${t('Dấu • là kỳ tổng hợp từ phần mềm (chưa có trong Excel).')}</div></details>
   </div>
   <div id="otlogBox">${otlogTableHtml()}</div>`;

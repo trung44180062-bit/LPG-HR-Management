@@ -1318,3 +1318,186 @@ i18n: **+3 khoá EN**. Cache bump **`?v=70`**.
 
 > **Sau khi sửa phải đẩy lại lên GitHub Pages** — bản đang chạy trên Pages vẫn là
 > bản cũ cho tới khi push.
+
+---
+
+# v6.8 — LỌC THEO VỊ TRÍ · BẢN TIN ZALO GOM 08:00
+
+## 1. Lọc nhóm vị trí (Kỹ sư / Operator / Khác)
+
+Người ngồi gõ đơn vào hệ thống HR của công ty làm hộ **theo từng nhóm** chứ không
+làm lẫn lộn. Trước đây phải tự dò tên từng người trong danh sách chung.
+
+Nhóm vị trí lấy thẳng từ `posGroupOf()` (`js/01-core.js`): `field_eng` + `boardman`
+= **Kỹ sư**, `operator` = **Operator**, còn lại = **Khác** — đúng cách phân nhóm mà
+bảng *Nhân lực* đang dùng, không đẻ khái niệm mới.
+
+| Màn | Chỗ đặt | Ghi chú |
+|---|---|---|
+| **Duyệt** | hàng chip dưới hàng lọc HR | `apprFilter.pg` → vào `apprMatch()` nên **danh sách, xuất Excel và in đều theo** |
+| **Báo cáo** (Tổng hợp cá nhân/nhóm) | hàng "Vị trí" | lọc **sau** khi đã chọn nhóm/cá nhân; đã chỉ đích danh ai thì không lọc tiếp |
+| **Nhật ký tăng ca** | hàng chip dưới ô tìm | dòng Excel chỉ có TÊN → bắc cầu qua `otNorm()`; tên không tra ra người xếp vào *Khác* chứ không giấu |
+
+Ba màn **dùng chung một lựa chọn** (`pgRemember` / `pgRecall`, nhớ trên máy, không
+đồng bộ). Nút **↺ Bỏ lọc** ở màn Duyệt **không** xoá nhóm vị trí — đó là "tôi đang
+làm hộ nhóm nào", không phải điều kiện lọc nhất thời.
+
+Số trên mỗi chip là **tổng thật của nhóm đó**, không phải tổng sau khi đã lọc chính nó.
+
+## 2. Bản tin Zalo gom lúc 08:00
+
+### Vì sao trước nay không chạy
+
+**Chưa từng được viết.** Không có dòng code nào về digest/08:00 trong `js/`, cũng
+không có trong `ZALO-BOT.md`. Đơn tăng ca sinh thông báo `apprNeed` với kênh `'now'`
+→ bắn ngay.
+
+Và hộp gửi `zaloOut*` (v6.3) **về nguyên lý không làm nổi việc này**: nó chỉ gộp
+những tin sinh ra **trên cùng một máy trong 4 giây**. Đơn tăng ca thì ngược hẳn —
+20 người gửi từ 20 điện thoại, rải rác cả ngày. Không có hai tin nào rơi vào cùng
+một hộp gửi.
+
+### Cách làm — kênh thứ ba `'digest'`
+
+```
+newNotif ──▶ zaloEnqueue ──▶ pri='now'    ──▶ hộp gửi 4s ──▶ zaloQueue   (như cũ)
+                        └──▶ pri='digest' ──▶ S.digest ──┐
+                                                          │ 08:00 hôm sau
+                                          gom theo thể loại ──▶ zaloQueue
+```
+
+- **Sổ chờ `S.digest`** là một nhánh bảng của Firebase (`FB_MAP_BRANCHES`) → mọi máy
+  thấy như nhau, xoá là xoá thật (có bia mộ, cùng cơ chế đã sửa ở v6.7).
+- **Giành quyền bắn** bằng `transaction` trên `meta/digestDay`. Đúng **một** máy
+  thắng trong ngày, kể cả khi 23 máy cùng mở lúc 08:00:00 — so giờ ở phía máy thì
+  máy nào cũng thấy "chưa ai bắn".
+- **Gom theo THỂ LOẠI** (khoá `group`): mỗi thể loại đúng **một** tin.
+- Kiểm lúc mở app, mỗi 5 phút, và mỗi lần tab quay lại — máy để mở qua đêm cũng bắn
+  đúng 08:00.
+- **Không cần sửa Apps Script.** Phía máy chủ vẫn chỉ thấy những hàng `zaloQueue`
+  bình thường.
+
+### Phạm vi — cố ý hẹp
+
+| | Vào bản tin 08:00 |
+|---|---|
+| Loại **đơn** | `ot` · `multi` · `late` · `wt` |
+| Loại **tin** | `apprNeed` (có đơn chờ duyệt) · `cancelled` (đơn bị huỷ) |
+
+**KHÔNG** gom `approved` / `rejected` / `revoked`: đơn tăng ca tối nay mà sáng mai
+mới báo kết quả thì tin đến sau khi việc đã xong. Việc gấp (đổi ca, OT cover, sửa
+lịch) vẫn đi kênh `'now'` như cũ, **không hề bị chạm tới**.
+
+### Các mép đã bịt
+
+- **Đơn huỷ trước 08:00** → `zaloWithdraw` gỡ khỏi sổ chờ, tin bốc hơi mà không tốn gì.
+- **Mục lỗi thời** (thông báo đã bị gỡ) bị loại trước khi dựng tin; sổ chờ chỉ toàn
+  mục lỗi thời thì **không gửi tin rỗng** (quy tắc R5).
+- **Ghi trượt** thì mục **ở lại** sổ chờ và mốc ngày được trả về để lần mở app sau
+  bắn lại — đúng bài học v6.7, không bao giờ coi là xong khi máy chủ chưa nhận.
+- **Cả ngày không ai mở app** → bản tin dồn sang lần mở kế tiếp, tiêu đề ghi rõ
+  khoảng ngày đã gom (`10/08→12/08`).
+- Tin quá dài thì cắt ở 60 dòng, kèm `… and N more line(s)`.
+
+### Chỗ theo dõi
+
+Màn **Dữ liệu** → thẻ *🌅 Bản tin Zalo gom lúc 08:00*: số mục đang chờ, ngày gom gần
+nhất, và nút **📨 Gửi ngay bản tin gom** (quản trị, không cần đợi 08:00).
+
+## Kiểm chứng
+
+```
+node _test/digest-pg-harness.js     # 40 phép thử
+```
+
+A1–A9 phủ bản tin gom (kể cả hai máy cùng bắn, không bắn lại trong ngày, đơn huỷ,
+tin rỗng, dồn nhiều ngày); B1–B4 phủ bộ lọc vị trí.
+
+Toàn bộ 12 harness xanh. i18n **+10 khoá EN**. Cache bump **`?v=71`**.
+
+> `pgChips()` là HÀM chứ không phải hằng — hằng sẽ đọc `POSG_*` ngay lúc nạp file,
+> mà thứ tự nạp script chỉ đúng trong trình duyệt; các harness nạp lẻ `08-requests.js`
+> sẽ nổ `POSG_OPER is not defined`. Đã vấp một lần, ghi lại để khỏi vấp lại.
+
+---
+
+# v6.9 — KẾT QUẢ DUYỆT OT GOM VỀ 08:00 · TRỪ GIỜ NGHỈ TRƯA
+
+## 1. "Đã duyệt" của đơn OT cũng gom về bản tin sáng
+
+**Lý do nghiệp vụ:** app chỉ để **phê duyệt và lưu dữ liệu**; hệ thống chấm công
+chính thức nằm ở HR **ngoài app**. Báo từng đơn "đã duyệt" ngay lập tức không đổi
+được việc gì ở hiện trường — chỉ tốn tin Zalo.
+
+`DIGEST_ZK` nay là `['apprNeed','approved','cancelled']`.
+
+| Tin | Đơn `ot·multi·late·wt` | Đơn `leave·swap·change` |
+|---|---|---|
+| `apprNeed` (chờ duyệt) | 🌅 gom 08:00 | 🔴 ngay |
+| `approved` (đã duyệt) | 🌅 **gom 08:00** ← mới | 🔴 ngay |
+| `rejected` (bị từ chối) | 🔴 **ngay** | 🔴 ngay |
+| `revoked` (thu hồi) | 🔴 ngay | 🔴 ngay |
+| `cancelled` (bị huỷ) | 🌅 gom 08:00 | 🟡 batch |
+
+**Vì sao `rejected` KHÔNG gom:** người đã đăng ký OT tối nay mà bị từ chối phải biết
+sớm, không thì họ đi làm thừa. Nghỉ phép và đổi ca thì **mọi tin đều `now`** — chúng
+đổi lịch đi làm thật, biết muộn là đi sai ca.
+
+**Cấu trúc tin gom** dùng lại `zReqLines()` sẵn có nên mỗi mục đã đủ *ai · OT kiểu gì*:
+
+```
+✅ DAILY DIGEST — REQUESTS APPROVED / CLOSED · 5 item(s) · 12/08
+
+Wed 12/08  NGUYEN VAN A  D → D + OT 08:00–20:00 (11h, −1h lunch)
+Final: HONG GIL DONG — schedule updated
+— — —
+Wed 12/08  TRAN VAN B  R → OT 17:00–20:00 (3h)
+Final: HONG GIL DONG — schedule updated
+```
+
+## 2. Ô tích "Không làm trưa" — trừ 1 giờ khỏi giờ OT
+
+Tăng ca 08:00→20:00 mà vẫn nghỉ trưa như thường thì công thực nhận là **11h** chứ
+không phải 12h. Trước đây app lấy trọn hiệu hai mốc giờ, nên người khai phải tự bịa
+giờ (khai 08:00→19:00) cho ra đúng số — dữ liệu sai so với thực tế đi làm, mà bản in
+nộp nhân sự cũng sai theo.
+
+**Ba hàm mới ở `js/01-core.js`:**
+
+```js
+const LUNCH_BREAK_H = 1;                    // cố định 1 giờ
+otSpansLunch(iso,tFrom,isoEnd,tTo)          // khung giờ có phủ 12:00–13:00?
+otNetHours(iso,tFrom,isoEnd,tTo,noLunch)    // giờ THỰC NHẬN, đã trừ
+otDayHours(d)                               // tiện cho chỗ đã có sẵn cả dòng
+```
+
+**Hai chốt để không trừ nhầm:**
+
+1. Ô tích **chỉ hiện** khi khung giờ khai thật sự phủ 12:00–13:00. OT 17:00–20:00 thì
+   không có ô để mà tích nhầm.
+2. Người khai sửa giờ / đổi ngày / đổi mẫu OT thành không còn phủ trưa → **cờ tự rơi**.
+   Thiếu chốt này thì cờ cũ nằm lại và trừ oan 1 giờ.
+
+Thêm: dòng ra **0 giờ** (khai đúng đoạn 12:00–13:00 rồi tích) bị **chặn ngay lúc gửi**.
+
+**Số giờ chảy đi đâu:** `d.hours` lưu xuống Firebase **là số đã trừ**, nên bản in ·
+Excel · suất cơm · Nhật ký tăng ca · Tổng quan tự khớp. Mọi chỗ còn gọi `otHours()`
+trực tiếp đã đổi sang `otNetHours()` — harness C5 canh không cho lọt lại.
+
+**Hiển thị:** dấu hổ phách `−1h trưa` ở màn Duyệt (dòng tóm tắt và chi tiết), Excel ghi
+`12/08(OTD)[-1h trưa]` trong ô *Ngày (mã)*, tờ đơn in ghi *(trừ 1h nghỉ trưa / minus 1h
+lunch)* trong phần lý do, tin Zalo ghi `(11h, −1h lunch)`. Người đọc thấy 08:00–20:00
+mà chỉ 11h thì phải hiểu ngay vì sao — không thì họ tưởng app tính sai.
+
+**Dữ liệu cũ không đổi số:** dòng đơn không có `d.noLunch` tính y như trước.
+
+## Kiểm chứng
+
+```
+node _test/digest-pg-harness.js     # 67 phép thử (A·B·C·D)
+```
+
+C1–C6 phủ phép trừ giờ trưa (kể cả biên 12:00 / 13:00, dữ liệu cũ, và quét không cho
+chỗ nào lọt `otHours` trần); D1–D3 phủ kênh của `approved` / `rejected`.
+
+Toàn bộ harness xanh. i18n **+4 khoá EN**. Cache bump **`?v=72`**.

@@ -109,7 +109,7 @@ function otIndex(){
       if(!w)return;
       const k=r.empId+'|'+d.iso;
       (idx[k]=idx[k]||[]).push({win:w,st:r.status||'pending',code:d.code||'',
-        reqId:r.id,src:'req',hours:d.hours||otHours(d.iso,d.timeIn,d.isoEnd,d.timeOut)||0});
+        reqId:r.id,src:'req',hours:d.hours||otNetHours(d.iso,d.timeIn,d.isoEnd,d.timeOut,d.noLunch)||0});
     });
   }
   _otIdx=idx;_otIdxRev=S.rev;

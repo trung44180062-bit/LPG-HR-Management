@@ -210,6 +210,12 @@ function exportXlsx(){
 /* =================== DỮ LIỆU / SETTINGS =================== */
 function renderData(){
   fillMonthSelects();
+  /* ★ v6.8 — sổ chờ bản tin Zalo 08:00 (js/21-notify.js) */
+  if($('digestN')&&typeof digestPending==='function'){
+    $('digestN').textContent=digestPending();
+    const last=(S.meta&&S.meta.digestDay)||'';
+    $('digestLast').textContent=last?('· lần gom gần nhất: '+last):'· chưa gom lần nào';
+  }
   $('setMinD').value=S.settings.minD;$('setMinN').value=S.settings.minN;
   $('setMinD').onchange=()=>{S.settings.minD=+$('setMinD').value||0;save();};
   $('setMinN').onchange=()=>{S.settings.minN=+$('setMinN').value||0;save();};

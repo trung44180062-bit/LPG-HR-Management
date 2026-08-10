@@ -125,6 +125,55 @@ function otHours(iso,tFrom,isoEnd,tTo){
   const h=(b-a)/3600000;
   return (h>0&&h<=72)?Math.round(h*10)/10:0;
 }
+/* ============================================================
+   ★ v6.9 — TRỪ GIỜ NGHỈ TRƯA KHỎI GIỜ TĂNG CA
+   ------------------------------------------------------------
+   Tăng ca 08:00→20:00 mà vẫn nghỉ trưa như thường thì công thực nhận là
+   11h chứ không phải 12h. Trước đây app lấy trọn hiệu hai mốc giờ, nên
+   người khai phải tự bịa giờ (khai 08:00→19:00) cho ra đúng số — dữ liệu
+   sai so với thực tế đi làm, mà bản in nộp nhân sự cũng sai theo.
+
+   Nay có ô tích "Không làm trưa" trên từng dòng OT. Tích thì trừ đúng
+   LUNCH_BREAK_H giờ.
+
+   HAI CHỐT ĐỂ KHÔNG TRỪ NHẦM:
+     · Ô tích CHỈ HIỆN khi khung giờ khai thật sự phủ 12:00–13:00
+       (otSpansLunch). OT 17:00–20:00 thì không có ô để mà tích nhầm.
+     · Người khai sửa giờ lại thành không phủ trưa → cờ tự tắt
+       (xem dsSetRow ở js/13-portal.js). Không thì cờ cũ nằm lại và trừ
+       oan 1 giờ của người ta.
+
+   Số giờ lưu trong `d.hours` LÀ SỐ ĐÃ TRỪ — mọi nơi đọc `d.hours` (bản in,
+   Excel, suất cơm, nhật ký tăng ca, Tổng quan) tự khớp mà không phải sửa.
+   Dòng đơn cũ không có `d.noLunch` → tính y như trước, không đổi số.
+   ============================================================ */
+const LUNCH_BREAK_H = 1;              // giờ nghỉ trưa bị trừ
+const LUNCH_FROM='12:00', LUNCH_TO='13:00';
+/* Khung giờ khai có phủ giờ nghỉ trưa của ngày BẮT ĐẦU không? */
+function otSpansLunch(iso,tFrom,isoEnd,tTo){
+  if(!iso||!tFrom||!tTo)return false;
+  const a=new Date(iso+'T'+tFrom+':00');
+  let b=new Date((isoEnd||iso)+'T'+tTo+':00');
+  if(b<=a)b=new Date(b.getTime()+86400000);
+  const l1=new Date(iso+'T'+LUNCH_FROM+':00'), l2=new Date(iso+'T'+LUNCH_TO+':00');
+  return a<l2 && b>l1;                // giao nhau thật sự
+}
+/* Giờ OT THỰC NHẬN của một dòng ngày — đã trừ nghỉ trưa nếu có tích.
+   Không bao giờ trả số âm: khai 12:00–13:00 rồi tích trưa thì ra 0h, và
+   dòng 0h sẽ bị chặn ngay lúc gửi đơn (xem dsSubmit). */
+function otNetHours(iso,tFrom,isoEnd,tTo,noLunch){
+  let h=otHours(iso,tFrom,isoEnd,tTo);
+  if(h&&noLunch&&otSpansLunch(iso,tFrom,isoEnd,tTo))
+    h=Math.max(0,Math.round((h-LUNCH_BREAK_H)*10)/10);
+  return h;
+}
+/* Tiện cho các chỗ đã có sẵn cả dòng `d` */
+function otDayHours(d){
+  if(!d)return 0;
+  return (d.hours!==undefined&&d.hours!==null&&d.hours!=='')
+    ? (+d.hours||0)
+    : otNetHours(d.iso,d.timeIn,d.isoEnd,d.timeOut,d.noLunch);
+}
 let S={
   employees:[],           // {id,name,pos,role,team,empType,shiftType,a1,a2,order,active}
   base:{},                // base[empId][iso] = code   (bảng chuẩn, do generator điền)
@@ -135,6 +184,7 @@ let S={
   printLog:{},            // printLog[batchId] = {ts, by, formType, reqIds:[...], rows, pages, reprint}
   notifs:{},              // notifs[id] = {kind, to, from, status, createdAt, ...payload} — xác nhận đổi lịch / đổi ca
   events:{},              // events[id] = {title, from, to, days?, scope, teams, notify} — sự kiện trên lịch (js/20-events.js)
+  digest:{},              // digest[notifId] = {to,toName,title,lines,group,zk,at} — sổ chờ bản tin 08:00 (js/21-notify.js)
   meta:{schedFrom:'',schedTo:''},
   rev:0
 };

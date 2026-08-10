@@ -437,6 +437,8 @@ Mục 3, 4, 7, 8 không cần liên kết từng người — chúng vốn hợp
 | R4 — giờ im lặng | ⚠️ nửa vời | 21:30–06:30 chặn tin 🟡; **ca đêm N (20:00–08:00) chưa được miễn trừ** — câu Q1 chưa ai trả lời |
 | R5 — không gửi bản tin rỗng | — | chưa có bản tin nào |
 | R6 — chống trùng | ✅ đã cài | khoá hàng đợi chính là `notifId` |
+| R11 — bản tin gom 08:00 | ✅ đã cài 10/08/2026 | kênh `'digest'` + sổ chờ `S.digest`; transaction trên `meta/digestDay` chọn đúng 1 máy bắn. Áp cho đơn `ot/multi/late/wt`, tin `apprNeed`/`cancelled`. Hộp gửi `zaloOut*` KHÔNG làm nổi việc này vì chỉ gộp được tin cùng máy trong 4 giây. Xem `js/21-notify.js` và README mục v6.8 |
+| R12 — kết quả duyệt OT không bắn lẻ | ✅ đã cài 10/08/2026 | `approved` của đơn `ot/multi/late/wt` vào bản tin 08:00. `rejected` GIỮ kênh 'now' (bị từ chối mà biết muộn thì đi làm thừa). Nghỉ phép / đổi ca vẫn 'now' toàn bộ |
 
 ---
 

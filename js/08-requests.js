@@ -495,11 +495,11 @@ function reqDetail(r){
     }).join('');
   }else if(r.type==='ot'){
     rows=days.map(d=>{
-      const hrs=d.hours||otHours(d.iso,d.timeIn,d.isoEnd,d.timeOut)||getHours(d.code||'OTD');
+      const hrs=d.hours||otNetHours(d.iso,d.timeIn,d.isoEnd,d.timeOut,d.noLunch)||getHours(d.code||'OTD');
       const end=(d.isoEnd&&d.isoEnd!==d.iso)?(' '+fmtVN(d.isoEnd)):'';
       return `<div class="dt"><span class="dtd">${fmtVN(d.iso)} ${dowOf(d.iso)}</span>
         ${codeChip(d.code)}<span>${esc(d.timeIn||'')} → ${esc(d.timeOut||'')}${end}</span>
-        <span><b>${rnd1(hrs)}h</b></span></div>`;
+        <span><b>${rnd1(hrs)}h</b>${d.noLunch?' <i class="nolu">'+t('đã trừ 1h nghỉ trưa')+'</i>':''}</span></div>`;
     }).join('');
   }else{
     rows=days.map(d=>{
@@ -587,8 +587,43 @@ function apprAdviceBadge(r){
    Nay: 1 đơn = 1 dòng (ai · loại · ngày · trạng thái) + 2 nút chính;
    bấm vào dòng mới bung chi tiết từng ngày và các nút phụ.
    ============================================================ */
-let apprFilter={status:'pending',print:'__all',hr:'__all',type:'__all',q:'',
+let apprFilter={status:'pending',print:'__all',hr:'__all',type:'__all',pg:'__all',q:'',
   ym:(typeof curSchedMonth==='function'?curSchedMonth():'__all'),from:'',to:'',flag:''};
+/* ============================================================
+   ★ v6.8 — LỌC THEO NHÓM VỊ TRÍ (Kỹ sư / Operator / Khác)
+   ------------------------------------------------------------
+   Người ngồi gõ đơn vào hệ thống HR của công ty làm hộ theo TỪNG NHÓM chứ
+   không làm lẫn lộn: xong hết Operator rồi mới sang Kỹ sư. Trước đây phải
+   tự dò tên từng người trong danh sách chung — vừa chậm vừa dễ sót.
+   Nhóm vị trí lấy từ posGroupOf() ở js/01-core.js (field_eng + boardman =
+   kỹ sư · operator = operator · còn lại = khác), tức là DÙNG CHUNG đúng
+   cách phân nhóm mà bảng Nhân lực đang dùng — không đẻ thêm khái niệm mới.
+   Lựa chọn được nhớ trên máy (không đồng bộ) để mở lại vẫn ở đúng nhóm
+   mình đang làm dở. ============================================ */
+/* HÀM chứ không phải hằng: hằng sẽ đọc POSG_* ngay lúc nạp file, mà thứ tự
+   nạp script chỉ đúng trong trình duyệt — các harness nạp lẻ file này sẽ nổ.
+   Gọi lúc vẽ thì lúc đó js/01-core.js chắc chắn đã chạy. */
+function pgChips(){
+  return [['__all','Mọi vị trí'],[POSG_OPER,'⚙️ Operator'],[POSG_ENG,'🛠️ Kỹ sư'],[POSG_OTHER,'👤 Khác']];
+}
+const PG_LS_KEY='lpgt_pgFilter';
+function pgOfReq(r){
+  if(!r)return POSG_OTHER;
+  return (typeof posGroupOfId==='function')?posGroupOfId(r.empId):POSG_OTHER;
+}
+function pgMatch(r,pg){return !pg||pg==='__all'||pgOfReq(r)===pg;}
+/* Ba màn (Duyệt · Báo cáo · Nhật ký tăng ca) dùng CHUNG một lựa chọn: người
+   đang làm hộ nhóm Operator thì mọi màn đều nên đang ở Operator, không phải
+   chỉnh lại ba lần. */
+function pgRemember(pg){
+  pg=pg||'__all';
+  try{localStorage.setItem(PG_LS_KEY,pg);}catch(e){}
+  apprFilter.pg=pg;
+  try{ if(typeof otlogPg!=='undefined')otlogPg=pg; }catch(e){}
+  try{ if(typeof repPg!==   'undefined')repPg   =pg; }catch(e){}
+}
+function pgRecall(){try{return localStorage.getItem(PG_LS_KEY)||'__all';}catch(e){return '__all';}}
+apprFilter.pg=pgRecall();      // nhớ nhóm đang làm dở giữa các phiên
 /* Mở/đóng khối bộ lọc nâng cao (mặc định gập cho gọn màn hình điện thoại) */
 let apprAdvOpen=false;
 /* Dời kỳ đang xem ở màn Duyệt (◀ ▶) */
@@ -610,13 +645,17 @@ let apprOpen={};                       // id đơn đang bung chi tiết
 
 function apprSetFilter(k,v){
   apprFilter[k]=v;
+  if(k==='pg')pgRemember(v);
   if(k==='ym'&&v!=='__all'&&v!=='__range'){apprFilter.from='';apprFilter.to='';}
   if(k==='from'||k==='to')apprFilter.ym='__range';
   renderAppr();
 }
 function apprToggleRow(id){apprOpen[id]=!apprOpen[id];renderAppr();}
 function apprResetFilter(){
-  apprFilter={status:'pending',print:'__all',hr:'__all',type:'__all',q:'',ym:curSchedMonth(),from:'',to:'',flag:''};
+  /* Nhóm vị trí KHÔNG bị reset: đó là "tôi đang làm hộ nhóm nào", không phải
+     một điều kiện lọc nhất thời như trạng thái hay từ khoá. */
+  apprFilter={status:'pending',print:'__all',hr:'__all',type:'__all',pg:apprFilter.pg||'__all',
+              q:'',ym:curSchedMonth(),from:'',to:'',flag:''};
   renderAppr();
 }
 /* Khoảng ngày đang lọc — trả về [from,to] hoặc null nếu không lọc theo ngày */
@@ -663,6 +702,8 @@ function apprMatch(r){
   // Việc cần làm: đơn đã DUYỆT XONG mà chưa ai gõ vào HR
   if(apprFilter.hr==='todo'&&(reqHrDone(r)||r.status!=='approved'||reqIsProvisional(r)))return false;
   if(apprFilter.type!=='__all'&&r.type!==apprFilter.type)return false;
+  // Nhóm vị trí của NGƯỜI ĐỨNG ĐƠN — để người nhập HR làm hộ theo từng nhóm
+  if(!pgMatch(r,apprFilter.pg))return false;
   // Lọc theo cờ cảnh báo của bảng Tổng quan (js/17-appr-sum.js)
   if(apprFilter.flag&&typeof asFlagMatch==='function'&&!asFlagMatch(r,apprFilter.flag))return false;
   const rg=apprRange();
@@ -697,7 +738,9 @@ function apprDayBrief(r,d){
   if(r.type==='ot'){
     const h=(typeof reqDayHours==='function')?reqDayHours(d):(d.hours||0);
     const over=(d.isoEnd&&d.isoEnd!==d.iso)?'<i class="ovn">+1</i>':'';
-    return `<span class="aq-d">${dt}${codeChip(d.code)}<i>${esc(d.timeIn||'')}–${esc(d.timeOut||'')}${over}</i><u>${rnd1(h)}h</u></span>`;
+    /* ★ v6.9 — người duyệt phải thấy NGAY vì sao 08:00–20:00 mà chỉ 11h */
+    const nl=d.noLunch?'<i class="nolu" title="Đã trừ 1h nghỉ trưa">−1h trưa</i>':'';
+    return `<span class="aq-d">${dt}${codeChip(d.code)}<i>${esc(d.timeIn||'')}–${esc(d.timeOut||'')}${over}</i><u>${rnd1(h)}h</u>${nl}</span>`;
   }
   if(r.type==='wt'||r.type==='late')
     return `<span class="aq-d">${dt}<i>${esc(d.timeIn||'')}–${esc(d.timeOut||'')}</i></span>`;
@@ -1140,6 +1183,9 @@ function renderAppr(){
     <div class="ab-chips ab-hr">${hrChips.map(([k,l])=>
       `<button class="abc sm hr${apprFilter.hr===k?' on':''}" onclick="apprSetFilter('hr','${k}')">${l}<i>${countWith('hr',k)}</i></button>`).join('')}
     </div>
+    <div class="ab-chips ab-pg">${pgChips().map(([k,l])=>
+      `<button class="abc sm pg${apprFilter.pg===k?' on':''}" onclick="apprSetFilter('pg','${k}')" title="${t('Lọc theo vị trí của người đứng đơn — để nhập hộ vào hệ thống HR theo từng nhóm')}">${t(l)}<i>${countWith('pg',k)}</i></button>`).join('')}
+    </div>
     <div class="ab-tools">
       <input class="inp sm" id="apprSearchBox" placeholder="Tìm theo tên nhân viên…" value="${esc(apprFilter.q)}"
              oninput="apprFilter.q=this.value;clearTimeout(window._abT);window._abT=setTimeout(renderApprList,200)">
@@ -1147,7 +1193,7 @@ function renderAppr(){
         <option value="__all">${t('Mọi loại đơn')}</option>
         ${Object.keys(REQ_LABEL).map(k=>`<option value="${k}"${apprFilter.type===k?' selected':''}>${esc(REQ_LABEL[k])}</option>`).join('')}
       </select>
-      ${(apprFilter.status!=='pending'||apprFilter.print!=='__all'||apprFilter.hr!=='__all'||apprFilter.type!=='__all'||apprFilter.q||apprFilter.flag||apprFilter.ym!==curYm)
+      ${(apprFilter.status!=='pending'||apprFilter.print!=='__all'||apprFilter.hr!=='__all'||apprFilter.type!=='__all'||apprFilter.pg!=='__all'||apprFilter.q||apprFilter.flag||apprFilter.ym!==curYm)
         ?`<button class="btn sec sm" onclick="apprResetFilter()">↺ ${t('Bỏ lọc')}</button>`:''}
       <span class="sp"></span>
       <button class="btn sec sm admin-only${apprAdvOpen?' on-adv':''}" onclick="apprAdvOpen=!apprAdvOpen;renderAppr()">⚙ ${t('Công cụ dữ liệu')}</button>
@@ -1207,7 +1253,9 @@ function reqExcelRow(r){
           :wGs.map(g=>nmOf(g.id)+' ('+reqGroupDays(g)+')').join('; '))}:null;
   const days=(r.type==='multi')
     ? fmtVNfull(r.from)+'→'+fmtVNfull(r.to)
-    : reqDays(r).map(d=>fmtVN(d.iso)+(d.code?'('+d.code+')':'')).join('; ');
+    /* ★ v6.9 — đánh dấu ngày đã trừ nghỉ trưa ngay trong ô "Ngày (mã)", để
+       người đối chiếu với hệ thống HR không phải hỏi vì sao lệch 1 giờ. */
+    : reqDays(r).map(d=>fmtVN(d.iso)+(d.code?'('+d.code+')':'')+(d.noLunch?'[-1h trưa]':'')).join('; ');
   const hrs=(typeof reqHours==='function')?rnd1(reqHours(r)):'';
   return [schedMonthOf(r.from),(e&&e.name)||r.empId,r.empId,(e&&e.team)||'',
     REQ_LABEL[r.type]||r.type,days,w?w.name:'',hrs,
@@ -1397,7 +1445,7 @@ function writeReqToSchedule(r,prov){
     const byDay={};
     reqDays(r).forEach(d=>{
       if(!d.code)return;
-      const h=d.hours||otHours(d.iso,d.timeIn,d.isoEnd,d.timeOut)||getHours(d.code);
+      const h=d.hours||otNetHours(d.iso,d.timeIn,d.isoEnd,d.timeOut,d.noLunch)||getHours(d.code);
       const g=byDay[d.iso]||(byDay[d.iso]={hours:0,code:d.code,best:0});
       g.hours+=h;if(h>g.best){g.best=h;g.code=d.code;}
     });

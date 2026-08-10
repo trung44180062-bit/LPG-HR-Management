@@ -1005,10 +1005,18 @@ function dsSetPreset(i,v){
   const p=otPreset(v);
   r.preset=v;r.code=p.code;
   if(p.from){r.timeIn=p.from;r.timeOut=p.to;r.isoEnd=p.overnight?addDaysIso(r.iso,1):'';}
+  /* Mẫu mới không phủ giờ trưa thì cờ nghỉ trưa cũ phải rơi theo */
+  if(r.noLunch&&!otSpansLunch(r.iso,r.timeIn,r.isoEnd,r.timeOut))r.noLunch=0;
   dsRenderForm();
 }
-/* Số giờ của một dòng OT */
-function dsRowOtHours(r){return otHours(r.iso,r.timeIn,r.isoEnd,r.timeOut);}
+/* Số giờ của một dòng OT — ĐÃ trừ nghỉ trưa nếu có tích (js/01-core.js) */
+function dsRowOtHours(r){return otNetHours(r.iso,r.timeIn,r.isoEnd,r.timeOut,r.noLunch);}
+/* Bật/tắt ô "Không làm trưa" rồi vẽ lại để số giờ đổi ngay trước mắt */
+function dsSetNoLunch(i,on){
+  const r=dsRows[i];if(!r)return;
+  r.noLunch=on?1:0;
+  dsRenderForm();
+}
 function dsAddRow(){
   const t=pvSheetForm;if(!t)return;
   if(dsRows.length>=DS_MAX_ROWS){toast(t2('Một đơn tối đa')+' '+DS_MAX_ROWS+' '+t2('dòng — gửi thêm đơn mới'));return;}
@@ -1034,6 +1042,15 @@ function dsSetRow(i,k,v){
     const cell=$('dsCur'+i);
     if(cell)cell.innerHTML=dsRowCurHtml(pvSheetForm,row);
   }
+  /* ★ v6.9 — đổi giờ / đổi ngày mà khung mới KHÔNG còn phủ 12:00–13:00 thì
+     bỏ luôn cờ nghỉ trưa. Thiếu nhánh này thì người khai chọn mẫu 08–20 rồi
+     tích trưa, sau đó sửa thành 17–20, cờ cũ nằm lại và trừ oan 1 giờ. */
+  if(pvSheetForm==='ot'&&row.noLunch&&['iso','isoEnd','timeIn','timeOut'].includes(k)
+     &&!otSpansLunch(row.iso,row.timeIn,row.isoEnd,row.timeOut)){
+    row.noLunch=0;
+    dsRenderForm();return;
+  }
+  if(pvSheetForm==='ot'&&['iso','isoEnd','timeIn','timeOut'].includes(k)){dsRenderForm();return;}
   dsFormUI();
 }
 /* Ô chọn mã cho đơn nghỉ phép / đổi mã ca. Riêng đơn nghỉ có thêm lựa chọn
@@ -1345,8 +1362,14 @@ function dsFormHtml(t){
           <span class="c1"><input type="date" class="inp" value="${row.isoEnd||''}" placeholder="cùng ngày"
                  title="Bỏ trống nếu tăng ca trong cùng ngày" onchange="dsSetRow(${i},'isoEnd',this.value)"></span>
           <span class="c2"><input type="time" class="inp" value="${row.timeOut||''}" onchange="dsSetRow(${i},'timeOut',this.value)"></span>
-          <span class="c3 othr">${hrs?rnd1(hrs)+'h':'—'}${over?' <i class="ovn">qua đêm</i>':''}</span>
+          <span class="c3 othr">${hrs?rnd1(hrs)+'h':'—'}${over?' <i class="ovn">qua đêm</i>':''}${
+            row.noLunch?' <i class="nolu" title="Đã trừ 1h nghỉ trưa">−1h trưa</i>':''}</span>
           <span class="c4"><button type="button" class="rowx" onclick="dsDelRow(${i})" title="Xoá dòng">✕</button></span>
+          ${otSpansLunch(row.iso,row.timeIn,row.isoEnd,row.timeOut)?`
+          <label class="ds-nolunch" title="Vẫn nghỉ trưa như thường → trừ 1 giờ khỏi tổng giờ tăng ca">
+            <input type="checkbox" ${row.noLunch?'checked':''} onchange="dsSetNoLunch(${i},this.checked)">
+            <span>Không làm trưa <b>(−1h)</b></span>
+          </label>`:''}
         </div>`;}).join('')}
       </div>
       <button type="button" class="btn sec sm addrow" onclick="dsAddRow()">＋ Thêm lần tăng ca</button>
@@ -1548,7 +1571,10 @@ function dsSubmit(t){
         d.timeIn=row.timeIn||p.from||'';
         d.timeOut=row.timeOut||p.to||'';
         if(row.isoEnd&&row.isoEnd!==row.iso)d.isoEnd=row.isoEnd;
-        d.hours=otHours(d.iso,d.timeIn,d.isoEnd,d.timeOut);
+        /* Chỉ giữ cờ khi khung giờ thật sự phủ trưa — chốt cuối cùng trước
+           khi ghi xuống Firebase, không tin vào trạng thái form. */
+        if(row.noLunch&&otSpansLunch(d.iso,d.timeIn,d.isoEnd,d.timeOut))d.noLunch=1;
+        d.hours=otNetHours(d.iso,d.timeIn,d.isoEnd,d.timeOut,d.noLunch);
       }
       if(t==='wt'||t==='late'){
         const hrs=dsDefaultTimes(row.iso);
@@ -1557,6 +1583,13 @@ function dsSubmit(t){
       days.push(d);
     });
     if(!days.length){toast('Thêm ít nhất 1 ngày cho đơn');return;}
+    /* ★ v6.9 — dòng OT ra 0 giờ thì chặn ngay. Xảy ra khi khai đúng đoạn
+       12:00–13:00 rồi tích "Không làm trưa": trừ xong còn 0h, gửi lên chỉ
+       làm người duyệt bối rối. */
+    if(t==='ot'){
+      const z=days.find(d=>!(+d.hours>0));
+      if(z){toast(t2('Dòng')+' '+fmtVN(z.iso)+' '+t2('ra 0 giờ — bỏ tích "Không làm trưa" hoặc sửa lại khung giờ'));return;}
+    }
     if(t==='swap'){
       /* ★ v6.5 — mỗi ngày có thể đổi với MỘT người khác nhau */
       const byDay={};

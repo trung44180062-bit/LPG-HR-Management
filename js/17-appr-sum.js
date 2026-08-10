@@ -46,7 +46,7 @@ function asScopeLabel(){return periodFor(asPeriod()).label;}
    Nhờ vậy tăng ca 14:00–19:30 tính đúng 5.5h chứ không phải 12h. */
 function reqDayHours(d){
   return (+d.hours>0?+d.hours:0)
-      || otHours(d.iso,d.timeIn,d.isoEnd,d.timeOut)
+      || otNetHours(d.iso,d.timeIn,d.isoEnd,d.timeOut,d.noLunch)
       || getHours(d.code)||0;
 }
 /* Tổng giờ của cả đơn — dùng cho MỌI loại đơn, không riêng tăng ca */
