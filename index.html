@@ -15,10 +15,10 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 
 <!-- ===== CSS ===== -->
-<link rel="stylesheet" href="css/app.css?v=67">
-<link rel="stylesheet" href="css/portal.css?v=67">
-<link rel="stylesheet" href="css/print.css?v=67">
-<link rel="stylesheet" href="css/ui.css?v=67">
+<link rel="stylesheet" href="css/app.css?v=68">
+<link rel="stylesheet" href="css/portal.css?v=68">
+<link rel="stylesheet" href="css/print.css?v=68">
+<link rel="stylesheet" href="css/ui.css?v=68">
 <style id="pageDyn">@page{size:A4 portrait;margin:8mm}</style>
 </head>
 <body class="locked">
@@ -89,7 +89,7 @@
 <nav class="topbar" id="tabs">
   <button class="tab on self-only" data-v="me" onclick="go('me')"><span class="ic">🏠</span>Trang chính</button>
   <button class="tab" data-v="cal" onclick="go('cal')"><span class="ic">📅</span>Lịch</button>
-  <button class="tab mgr-only" data-v="appr" onclick="go('appr')" style="position:relative"><span class="ic">✅</span>Duyệt<span class="bdg" id="pendBdg" style="display:none">0</span></button>
+  <button class="tab" data-v="appr" onclick="go('appr')" style="position:relative"><span class="ic">✅</span>Duyệt<span class="bdg" id="pendBdg" style="display:none">0</span></button>
   <button class="tab rep-tab" data-v="rep" onclick="go('rep')"><span class="ic">📊</span>Báo cáo</button>
 </nav>
 
@@ -98,7 +98,7 @@
   <button class="bb on self-only" data-v="me" onclick="go('me')"><span class="ic">🏠</span>Trang chính</button>
   <button class="bb" data-v="cal" onclick="go('cal')"><span class="ic">📅</span>Lịch</button>
   <button class="bb rep-tab" data-v="rep" onclick="go('rep')"><span class="ic">📊</span>Báo cáo</button>
-  <button class="bb mgr-only" data-v="appr" onclick="go('appr')"><span class="ic">✅</span>Duyệt<span class="bdg" id="pendBdgM" style="display:none">0</span></button>
+  <button class="bb" data-v="appr" onclick="go('appr')"><span class="ic">✅</span>Duyệt<span class="bdg" id="pendBdgM" style="display:none">0</span></button>
   <button class="bb" onclick="openMoreSheet()"><span class="ic">☰</span>Thêm</button>
 </nav>
 
@@ -285,8 +285,10 @@
     <div class="row" style="margin-top:9px">
       <button class="btn" onclick="saveFbCfg()">Lưu &amp; kết nối</button>
       <button class="btn sec" onclick="clearFbCfg()">Về mặc định</button>
+      <button class="btn ok" onclick="fbResync()" title="Đọc lại toàn bộ dữ liệu máy chủ và khớp lại máy này">🔄 Đồng bộ lại</button>
       <span class="muted" id="fbStatus"></span>
     </div>
+    <p class="muted" style="margin-top:8px">Nghi ngờ máy này lệch với máy khác (đơn đã xoá vẫn hiện, sửa lịch không thấy) thì bấm <b>Đồng bộ lại</b>: máy chủ là bản đúng, máy này khớp theo.</p>
   </div>
 
   <div class="card">
@@ -423,32 +425,32 @@
      config.js PHAI dung dau tien (khong co trong repo GitHub,
      copy tu js/config.example.js)
      ============================================================ -->
-<script src="js/config.js?v=67"></script>
-<script src="js/01-core.js?v=67"></script>
+<script src="js/config.js?v=68"></script>
+<script src="js/01-core.js?v=68"></script>
 <!-- i18n phai nap ngay sau 01-core (can bien LS) va truoc moi man hinh -->
-<script src="js/14-i18n.js?v=67"></script>
-<script src="js/00-icons.js?v=67"></script>
-<script src="js/02-storage.js?v=67"></script>
-<script src="js/03-nav.js?v=67"></script>
-<script src="js/04-schedule.js?v=67"></script>
-<script src="js/05-roster.js?v=67"></script>
-<script src="js/06-calendar.js?v=67"></script>
-<script src="js/07-manpower.js?v=67"></script>
-<script src="js/08-requests.js?v=67"></script>
-<script src="js/09-print.js?v=67"></script>
-<script src="js/10-account.js?v=67"></script>
-<script src="js/11-stats-data.js?v=67"></script>
-<script src="js/13-portal.js?v=67"></script>
-<script src="js/16-otlog-data.js?v=67"></script>
-<script src="js/15-report.js?v=67"></script>
-<script src="js/17-appr-sum.js?v=67"></script>
-<script src="js/18-advice.js?v=67"></script>
-<script src="js/19-meal.js?v=67"></script>
-<script src="js/20-events.js?v=67"></script>
+<script src="js/14-i18n.js?v=68"></script>
+<script src="js/00-icons.js?v=68"></script>
+<script src="js/02-storage.js?v=68"></script>
+<script src="js/03-nav.js?v=68"></script>
+<script src="js/04-schedule.js?v=68"></script>
+<script src="js/05-roster.js?v=68"></script>
+<script src="js/06-calendar.js?v=68"></script>
+<script src="js/07-manpower.js?v=68"></script>
+<script src="js/08-requests.js?v=68"></script>
+<script src="js/09-print.js?v=68"></script>
+<script src="js/10-account.js?v=68"></script>
+<script src="js/11-stats-data.js?v=68"></script>
+<script src="js/13-portal.js?v=68"></script>
+<script src="js/16-otlog-data.js?v=68"></script>
+<script src="js/15-report.js?v=68"></script>
+<script src="js/17-appr-sum.js?v=68"></script>
+<script src="js/18-advice.js?v=68"></script>
+<script src="js/19-meal.js?v=68"></script>
+<script src="js/20-events.js?v=68"></script>
 <!-- Tên file cố tình KHÔNG chứa chữ "zalo": mạng công ty chặn mọi URL có tên
      ứng dụng nhắn tin, file cũ js/21-zalo.js bị proxy cắt với lỗi HTTP 499. -->
-<script src="js/21-notify.js?v=67"></script>
-<script src="js/12-main.js?v=67"></script>
+<script src="js/21-notify.js?v=68"></script>
+<script src="js/12-main.js?v=68"></script>
 
 </body>
 </html>

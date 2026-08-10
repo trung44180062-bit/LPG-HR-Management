@@ -26,9 +26,14 @@ function go(v,opts){
 }
 function refreshBadge(){
   const rs=Object.values(S.requests||{});
-  const n=(typeof reqNeedsMyAction==='function')
-    ? rs.filter(reqNeedsMyAction).length
-    : rs.filter(r=>r.status==='pending').length;
+  /* ★ v6.5 — tab Duyệt nay mở cho mọi người, nhưng con số đỏ là LỜI GỌI
+     HÀNH ĐỘNG: chỉ hiện với người thật sự phải bấm duyệt. Nhân viên vào đó
+     để XEM, đeo huy hiệu "12 đơn chờ" cho họ là báo động giả. */
+  const canAct=(typeof apprCanAct==='function')?apprCanAct():true;
+  const n=!canAct ? 0
+    : ((typeof reqNeedsMyAction==='function')
+        ? rs.filter(reqNeedsMyAction).length
+        : rs.filter(r=>r.status==='pending').length);
   [$('pendBdg'),$('pendBdgM')].forEach(b=>{if(!b)return;b.style.display=n?'':'none';b.textContent=n;});
   if(typeof refreshPrintBadge==='function')refreshPrintBadge();
   if(typeof refreshMealBadge==='function')refreshMealBadge();

@@ -76,16 +76,149 @@ function reqWriter(r){return r.byId&&r.byId!==r.empId?r.byId:r.empId;}
 const COVER_ST={pending:{ic:'⏳',lb:'chờ xác nhận',cls:'pending'},
                 confirmed:{ic:'✓',lb:'đã nhận cover',cls:'confirmed'},
                 declined:{ic:'✕',lb:'từ chối cover',cls:'declined'}};
-function reqCoverName(r){
-  if(!r||!r.coverId)return '';
-  const e=empById(r.coverId);
-  return shortName((e&&e.name)||r.coverId);
+
+/* ============================================================
+   ★ v6.5 — MỖI NGÀY MỘT NGƯỜI COVER / MỘT NGƯỜI ĐỔI CA
+   ------------------------------------------------------------
+   Trước đây một đơn chỉ có ĐÚNG MỘT r.coverId cho mọi ngày. Thực tế nghỉ
+   3 ngày thì hôm thứ Hai anh A rảnh, thứ Ba anh B rảnh — ép một người gánh
+   cả ba ngày là sai với cách tổ đang chạy.
+
+   Nay lưu theo ngày:
+       r.covers = { "2026-08-19": {id:'e3', st:'pending'}, … }   ← đơn nghỉ phép
+       r.withs  = { "2026-08-19": {id:'e2', st:'pending'}, … }   ← đơn đổi ca
+
+   TƯƠNG THÍCH NGƯỢC — đây là phần quan trọng nhất:
+     · Đơn CŨ không có `covers` → đọc r.coverId và hiểu là người đó gánh MỌI
+       ngày của đơn. Không phải chuyển đổi dữ liệu, không phải sửa Firebase.
+     · r.coverId / r.coverSt (và r.withId / r.confirmW) vẫn được GIỮ như một
+       BẢN TÓM TẮT: một người thì y như cũ; nhiều người thì coverId = người
+       đầu tiên và coverSt = trạng thái gộp (có ai từ chối → declined; tất cả
+       đồng ý → confirmed; còn lại → pending). Nhờ vậy mọi chỗ đang đọc hai
+       trường cũ (bộ lọc màn Duyệt, js/18-advice.js, thống kê…) vẫn chạy
+       đúng nghĩa mà không phải sửa hàng chục nơi cùng lúc.
+   ============================================================ */
+
+/* Bản đồ theo ngày, dựng từ dữ liệu mới hoặc suy ra từ đơn cũ */
+function reqDayMap(r,kind){
+  const out={};
+  if(!r)return out;
+  const key=(kind==='with')?'withs':'covers';
+  const oldId=(kind==='with')?r.withId:r.coverId;
+  const oldSt=(kind==='with')?r.confirmW:r.coverSt;
+  const m=r[key];
+  if(m&&typeof m==='object'&&Object.keys(m).length){
+    Object.keys(m).forEach(iso=>{
+      const v=m[iso];
+      if(v&&v.id)out[iso]={id:v.id,st:v.st||'pending'};
+    });
+    return out;
+  }
+  if(oldId)reqDays(r).forEach(d=>{out[d.iso]={id:oldId,st:oldSt||'pending'};});
+  return out;
 }
-/* Chip trạng thái cover — dùng cả ở màn Duyệt lẫn "Đơn của tôi" */
+function reqCoverMap(r){return reqDayMap(r,'cover');}
+function reqWithMap(r){return reqDayMap(r,'with');}
+/* Người phụ trách một NGÀY cụ thể */
+function reqDayCover(r,iso){return reqCoverMap(r)[iso]||{id:'',st:''};}
+function reqDayWith(r,iso){return reqWithMap(r)[iso]||{id:'',st:''};}
+
+/* Gộp theo NGƯỜI → [{id, st, isos:[…]}], xếp theo ngày đầu tiên.
+   Dùng để hiển thị "A: 19/08, 20/08 · B: 21/08" mà không lặp tên. */
+function reqPartyGroups(r,kind){
+  const m=reqDayMap(r,kind), g={};
+  Object.keys(m).sort().forEach(iso=>{
+    const v=m[iso];
+    const k=v.id;
+    if(!g[k])g[k]={id:v.id,st:v.st,isos:[]};
+    g[k].isos.push(iso);
+    /* Trạng thái xấu nhất thắng: một ngày bị từ chối là cả người đó "có vấn đề" */
+    if(v.st==='declined')g[k].st='declined';
+    else if(g[k].st!=='declined'&&v.st==='pending')g[k].st='pending';
+  });
+  return Object.keys(g).map(k=>g[k]).sort((a,b)=>String(a.isos[0]).localeCompare(String(b.isos[0])));
+}
+function reqCoverGroups(r){return reqPartyGroups(r,'cover');}
+function reqWithGroups(r){return reqPartyGroups(r,'with');}
+/* Mọi mã NV có mặt trong vai trò đó (không trùng) */
+function reqCoverIds(r){return reqCoverGroups(r).map(x=>x.id);}
+function reqWithIds(r){return reqWithGroups(r).map(x=>x.id);}
+
+/* Trạng thái gộp của cả đơn: xấu nhất thắng */
+function reqPartySt(r,kind){
+  const gs=reqPartyGroups(r,kind);
+  if(!gs.length)return '';
+  if(gs.some(g=>g.st==='declined'))return 'declined';
+  if(gs.every(g=>g.st==='confirmed'))return 'confirmed';
+  return 'pending';
+}
+/* Ghi bản đồ theo ngày xuống đơn + cập nhật hai trường tóm tắt cũ */
+function reqPartyWrite(r,kind,map){
+  if(!r)return;
+  const key=(kind==='with')?'withs':'covers';
+  const clean={};
+  Object.keys(map||{}).forEach(iso=>{
+    const v=map[iso];
+    if(v&&v.id)clean[iso]={id:v.id,st:v.st||'pending'};
+  });
+  if(Object.keys(clean).length)r[key]=clean; else delete r[key];
+
+  /* ★ Gộp từ `clean` CHỨ KHÔNG đọc lại từ r.
+     Bẫy: gỡ hết người → xoá r.covers → reqDayMap không thấy bản đồ mới nên
+     rơi về nhánh tương thích ngược, đọc r.coverId CŨ và dựng lại y nguyên
+     người vừa gỡ. Kết quả: bấm "Bỏ người cover" xong tên vẫn còn. */
+  const tmp={};tmp[key]=clean;
+  const gs=Object.keys(clean).length?reqPartyGroups(tmp,kind):[];
+  const st=Object.keys(clean).length?reqPartySt(tmp,kind):'';
+  if(kind==='with'){
+    if(gs.length){r.withId=gs[0].id;r.confirmW=st;}
+    else{delete r.withId;delete r.confirmW;}
+  }else{
+    if(gs.length){r.coverId=gs[0].id;r.coverSt=st;}
+    else{delete r.coverId;delete r.coverSt;}
+  }
+}
+/* Đặt người cho MỘT ngày. id rỗng = gỡ ngày đó. */
+function reqPartySetDay(r,kind,iso,id){
+  const m=reqDayMap(r,kind);
+  if(id)m[iso]={id,st:'pending'};
+  else delete m[iso];
+  reqPartyWrite(r,kind,m);
+}
+/* Đổi trạng thái của một người — họ bấm Đồng ý / Từ chối.
+   iso rỗng = áp cho MỌI ngày người đó phụ trách (nút bấm một phát). */
+function reqPartySetSt(r,kind,who,st,iso){
+  const m=reqDayMap(r,kind);
+  Object.keys(m).forEach(k=>{
+    if(m[k].id!==who)return;
+    if(iso&&k!==iso)return;
+    m[k]={id:who,st};
+  });
+  reqPartyWrite(r,kind,m);
+}
+
+function reqCoverName(r){
+  const gs=reqCoverGroups(r);
+  if(!gs.length)return '';
+  const nm=id=>{const e=empById(id);return shortName((e&&e.name)||id);};
+  return gs.length===1?nm(gs[0].id):gs.map(g=>nm(g.id)).join(' · ');
+}
+/* Ngày rút gọn "19/08" để ghép sau tên người cover */
+function reqIsoShort(iso){const p=String(iso||'').split('-');return p.length===3?(p[2]+'/'+p[1]):iso;}
+function reqGroupDays(g){return g.isos.map(reqIsoShort).join(', ');}
+
+/* Chip trạng thái cover — dùng cả ở màn Duyệt lẫn "Đơn của tôi".
+   Nhiều người thì mỗi người một chip, kèm đúng ngày của họ. */
 function reqCoverChip(r){
-  if(!r||!r.coverId)return '';
-  const s=COVER_ST[r.coverSt||'pending']||COVER_ST.pending;
-  return `<span class="cvw ${s.cls}" title="${t('Người ở lại tăng ca gánh ca thay')}">🤝 ${t('Cover')}: ${esc(reqCoverName(r))} · ${s.ic} ${t(s.lb)}</span>`;
+  const gs=reqCoverGroups(r);
+  if(!gs.length)return '';
+  const one=gs.length===1;
+  const nm=id=>{const e=empById(id);return shortName((e&&e.name)||id);};
+  return gs.map(g=>{
+    const s=COVER_ST[g.st||'pending']||COVER_ST.pending;
+    const days=one?'':(' <u>'+esc(reqGroupDays(g))+'</u>');
+    return `<span class="cvw ${s.cls}" title="${t('Người ở lại tăng ca gánh ca thay')}">🤝 ${t('Cover')}: ${esc(nm(g.id))}${days} · ${s.ic} ${t(s.lb)}</span>`;
+  }).join(' ');
 }
 /* Ai được đổi người cover: người duyệt, hoặc chính người làm đơn */
 function canSetCover(r,who){
@@ -94,27 +227,52 @@ function canSetCover(r,who){
   if(typeof canAppr==='function'&&canAppr())return true;
   return r.empId===who||r.byId===who;
 }
-/* Đặt / đổi / gỡ người cover. newId rỗng = gỡ hẳn.
-   Gỡ thông báo chờ của người cũ, báo cho người cũ biết, gửi yêu cầu cho người mới. */
-function reqSetCover(rid,newId,byId){
+/* ------------------------------------------------------------
+   Đặt / đổi / gỡ người cover.  newId rỗng = gỡ.
+   iso rỗng  → áp cho MỌI ngày của đơn (giữ nguyên hành vi cũ)
+   iso có    → chỉ đổi đúng NGÀY đó, các ngày khác giữ người cũ
+   ------------------------------------------------------------ */
+function reqSetCover(rid,newId,byId,iso){
   const r=S.requests[rid];if(!r)return false;
-  const old=r.coverId||'';
-  if(old===newId)return false;
-  /* Dọn yêu cầu xác nhận đang chờ của người cũ. Đi qua notifDrop để tin đã
+  const before=reqCoverMap(r);
+  const isos=iso?[iso]:reqDays(r).map(d=>d.iso);
+  /* Không đổi gì thì thôi — tránh bắn thông báo thừa */
+  if(isos.every(k=>((before[k]||{}).id||'')===(newId||'')))return false;
+
+  const after=Object.assign({},before);
+  isos.forEach(k=>{ if(newId)after[k]={id:newId,st:'pending'}; else delete after[k]; });
+  reqPartyWrite(r,'cover',after);
+
+  /* Ai KHÔNG còn ngày nào trong đơn nữa thì mới thật sự bị "gỡ" và cần báo.
+     Người còn ngày khác thì đừng báo — họ vẫn đang cover, báo là gây hoang mang. */
+  const stillIn=new Set(Object.keys(after).map(k=>after[k].id));
+  const dropped=[...new Set(Object.keys(before).map(k=>before[k].id))].filter(id=>id&&!stillIn.has(id));
+
+  /* Dọn yêu cầu xác nhận đang chờ của người bị gỡ. Đi qua notifDrop để tin đã
      xếp hàng sang Zalo cũng được RÚT — nếu không, người cũ vẫn nhận tin nhắn
      nhờ cover cho một việc đã chuyển sang người khác. Xem js/13-portal.js. */
-  if(typeof notifDrop==='function')
-    notifDrop(n=>n.reqId===rid&&n.kind==='coverConfirm'&&n.status==='pending');
-  else if(S.notifs)for(const k in S.notifs){const n=S.notifs[k];
-    if(n&&n.reqId===rid&&n.kind==='coverConfirm'&&n.status==='pending')delete S.notifs[k];}
-  if(old&&typeof newNotif==='function')
-    newNotif({kind:'info',to:old,from:byId||'',reqId:rid,zk:'coverRemoved',
-      text:t2('đã gỡ bạn khỏi vai trò OT cover')+' · '+fmtVN(r.from)});
-  if(newId){
-    r.coverId=newId;r.coverSt='pending';
+  const dropOne=who=>{
+    if(typeof notifDrop==='function')
+      notifDrop(n=>n.reqId===rid&&n.kind==='coverConfirm'&&n.to===who&&n.status==='pending');
+    else if(S.notifs)for(const k in S.notifs){const n=S.notifs[k];
+      if(n&&n.reqId===rid&&n.kind==='coverConfirm'&&n.to===who&&n.status==='pending')delete S.notifs[k];}
+  };
+  dropped.forEach(who=>{
+    dropOne(who);
     if(typeof newNotif==='function')
-      newNotif({kind:'coverConfirm',to:newId,from:byId||'',reqId:rid,iso:r.from});
-  }else{delete r.coverId;delete r.coverSt;}
+      newNotif({kind:'info',to:who,from:byId||'',reqId:rid,zk:'coverRemoved',
+        text:t2('đã gỡ bạn khỏi vai trò OT cover')+' · '+fmtVN(r.from)});
+  });
+
+  /* Người mới: một việc-chờ-xác-nhận cho MỖI người, không phải mỗi ngày —
+     nút Đồng ý của họ áp cho tất cả ngày họ phụ trách. nz:1 nên KHÔNG tốn
+     tin Zalo riêng, nội dung đã nằm trong tin "chờ duyệt". */
+  if(newId&&typeof newNotif==='function'){
+    dropOne(newId);
+    const mine=Object.keys(after).filter(k=>after[k].id===newId).sort();
+    newNotif({kind:'coverConfirm',to:newId,from:byId||'',reqId:rid,
+              iso:mine[0]||r.from,nz:1});
+  }
   return true;
 }
 
@@ -132,6 +290,33 @@ function reqSetCover(rid,newId,byId){
    Không sinh thông báo, không đụng lịch: đây thuần tuý là dấu tick
    theo dõi, thêm đúng 2 khoá nhỏ vào bản ghi đơn (gói Firebase Spark).
    ============================================================ */
+/* ============================================================
+   ★ v6.5 — MÀN DUYỆT MỞ CHO MỌI NGƯỜI, NHƯNG CHỈ XEM
+   ------------------------------------------------------------
+   Trước đây tab Duyệt mang class mgr-only nên nhân viên không vào được, dù
+   thứ họ cần chỉ là NHÌN: hôm nào tổ đông người nghỉ, đơn của mình tới đâu,
+   in lại tờ đơn của nhóm mình. Nay ai đăng nhập cũng vào được:
+
+     · XEM      — mọi người, mọi đơn
+     · IN       — đơn của chính mình và đơn của người CÙNG NHÓM
+     · TÍCH HR  — mọi người (người gõ HR có thể là thư ký hay nhân viên)
+     · DUYỆT / TỪ CHỐI / HUỶ / ĐỔI NGƯỜI COVER — chỉ người có quyền duyệt
+
+   apprCanAct() là cái chốt duy nhất: mọi nút thay đổi dữ liệu đều hỏi nó,
+   nên không có đường vòng nào lọt qua.
+   ============================================================ */
+function apprCanAct(){return typeof canAppr==='function'&&canAppr();}
+/* In được đơn này không: người duyệt in tất; còn lại chỉ in đơn của mình
+   hoặc của người cùng nhóm (tổ trưởng hay cầm tờ đơn đi nộp hộ cả nhóm). */
+function canPrintReq(r,who){
+  if(!r)return false;
+  if(apprCanAct())return true;
+  who=who||(typeof meId==='function'?meId():'');
+  if(!who)return false;
+  if(r.empId===who||r.byId===who)return true;
+  const a=empById(who), b=empById(r.empId);
+  return !!(a&&b&&a.team&&b.team&&a.team===b.team);
+}
 function reqHrDone(r){return !!(r&&r.hrAt);}
 /* Ai được bấm: mọi người đang đăng nhập (theo yêu cầu nghiệp vụ) */
 function canSetHr(){return !!meId();}
@@ -268,7 +453,9 @@ function reqDetail(r){
   const days=reqDays(r);
   if(!days.length)return '';
   const beA=iso=>(r.before&&r.before[iso]!==undefined)?r.before[iso]:eff(r.empId,iso).code;
-  const beB=iso=>(r.beforeW&&r.beforeW[iso]!==undefined)?r.beforeW[iso]:eff(r.withId,iso).code;
+  /* ★ v6.5 — đối tác đổi ca lấy THEO NGÀY (mỗi ngày có thể một người) */
+  const wOf=iso=>reqDayWith(r,iso).id||r.withId||'';
+  const beB=iso=>(r.beforeW&&r.beforeW[iso]!==undefined)?r.beforeW[iso]:eff(wOf(iso),iso).code;
   let rows='';
   if(r.type==='wt'){
     const g=r.guarantorId?empById(r.guarantorId):null;
@@ -281,8 +468,9 @@ function reqDetail(r){
     rows=days.map(d=>`<div class="dt"><span class="dtd">${fmtVN(d.iso)} ${dowOf(d.iso)}</span>
       <span><b>${tn}</b></span><span>${esc(d.timeIn||'')} → ${esc(d.timeOut||'')}</span></div>`).join('');
   }else if(r.type==='swap'){
-    const a=empById(r.empId),b=empById(r.withId);
+    const a=empById(r.empId);
     rows=days.map(d=>{
+      const b=empById(wOf(d.iso));
       const ca=beA(d.iso), cb=beB(d.iso);
       return `<div class="dt"><span class="dtd">${fmtVN(d.iso)} ${dowOf(d.iso)}</span>
         <span><b>${esc(a?a.name:'')}</b>: ${codeChip(ca)} → ${codeChip(cb)}</span>
@@ -303,16 +491,21 @@ function reqDetail(r){
         <span>${codeChip(cur)} → ${codeChip(d.code)}</span></div>`;
     }).join('');
   }
-  if(r.coverId){
-    const cv=empById(r.coverId), s=COVER_ST[r.coverSt||'pending']||COVER_ST.pending;
-    rows+=`<div class="dt"><span>🤝 ${t('Người OT cover')}: <b>${esc((cv&&cv.name)||r.coverId)}</b>${
-      cv&&cv.team?` <i class="muted">${t('Nhóm')} ${esc(cv.team)}</i>`:''}</span>
-      <span class="cvw ${s.cls}">${s.ic} ${t(s.lb)}</span></div>`;
-  }
+  /* ★ v6.5 — mỗi người cover một dòng, kèm đúng ngày họ nhận */
+  const cvGs=reqCoverGroups(r);
+  cvGs.forEach(g=>{
+    const cv=empById(g.id), st=COVER_ST[g.st||'pending']||COVER_ST.pending;
+    rows+=`<div class="dt"><span>🤝 ${t('Người OT cover')}: <b>${esc((cv&&cv.name)||g.id)}</b>${
+      cv&&cv.team?` <i class="muted">${t('Nhóm')} ${esc(cv.team)}</i>`:''}${
+      cvGs.length>1?` <i class="muted">${esc(reqGroupDays(g))}</i>`:''}</span>
+      <span class="cvw ${st.cls}">${st.ic} ${t(st.lb)}</span></div>`;
+  });
   return `<div class="reqdt">${rows}</div>`;
 }
 function reqDesc(r){
-  const e=empById(r.empId),w=r.withId?empById(r.withId):null;
+  const e=empById(r.empId);
+  const _wg=reqWithGroups(r);
+  const w=_wg.length?empById(_wg[0].id):null;
   const nd=r.type==='multi'?0:reqDays(r).length;
   const range=r.type==='multi'
     ? fmtVNfull(r.from)+' → '+fmtVNfull(r.to)
@@ -340,7 +533,8 @@ function apprWarnLine(r){
     const B=mpBuckets(iso,pool);let cD=B.D.length,cN=B.N.length;
     const applyDelta=(fromCode,toCode)=>{const fc=catOf(fromCode),tc=catOf(toCode);if(fc==='D')cD--;if(fc==='N')cN--;if(tc==='D')cD++;if(tc==='N')cN++;};
     const curA=eff(r.empId,iso).code;
-    if(r.type==='swap'&&r.withId){const curB=eff(r.withId,iso).code;applyDelta(curA,curB);applyDelta(curB,curA);}
+    const wid=(r.type==='swap')?(reqDayWith(r,iso).id||r.withId||''):'';
+    if(wid){const curB=eff(wid,iso).code;applyDelta(curA,curB);applyDelta(curB,curA);}
     else applyDelta(curA,d.code);
     if(cD<S.settings.minD||cN<S.settings.minN)warnings.push({iso,cD,cN});
   }
@@ -458,8 +652,11 @@ function apprMatch(r){
   if(rg&&!reqInRange(r,rg[0],rg[1]))return false;
   const q=noAccent(apprFilter.q||'');
   if(q){
-    const e=empById(r.empId),w=r.withId?empById(r.withId):null;
-    const hay=noAccent([e&&e.name,r.empId,w&&w.name,r.note].filter(Boolean).join(' '));
+    const e=empById(r.empId);
+    /* ★ v6.5 — gõ tên BẤT KỲ người cover / người đổi ca nào cũng tìm ra đơn */
+    const others=[].concat(reqWithIds(r),reqCoverIds(r))
+                   .map(id=>{const x=empById(id);return (x&&x.name)||id;});
+    const hay=noAccent([e&&e.name,r.empId,r.note].concat(others).filter(Boolean).join(' '));
     if(!hay.includes(q))return false;
   }
   return true;
@@ -474,7 +671,9 @@ function apprMatch(r){
 const AQ_MAX_DAYS=4;                    // quá số ngày này thì gộp "+N ngày"
 function apprDayBrief(r,d){
   const beA=iso=>(r.before&&r.before[iso]!==undefined)?r.before[iso]:eff(r.empId,iso).code;
-  const beB=iso=>(r.beforeW&&r.beforeW[iso]!==undefined)?r.beforeW[iso]:eff(r.withId,iso).code;
+  /* ★ v6.5 — đối tác đổi ca lấy THEO NGÀY (mỗi ngày có thể một người) */
+  const wOf=iso=>reqDayWith(r,iso).id||r.withId||'';
+  const beB=iso=>(r.beforeW&&r.beforeW[iso]!==undefined)?r.beforeW[iso]:eff(wOf(iso),iso).code;
   const dt=`<b>${fmtVN(d.iso)}</b><em>${dowOf(d.iso)}</em>`;
   if(r.type==='swap')
     return `<span class="aq-d">${dt}${codeChip(beA(d.iso))}<i>⇄</i>${codeChip(beB(d.iso))}</span>`;
@@ -527,20 +726,25 @@ function apprQuickHtml(r){
 }
 /* Một dòng đơn */
 function apprRow(r){
-  const e=empById(r.empId), w=r.withId?empById(r.withId):null;
+  const e=empById(r.empId);
+  const wGs=reqWithGroups(r);
+  const w=wGs.length?empById(wGs[0].id):null;
+  const wName=wGs.length===1
+    ? shortName((w&&w.name)||wGs[0].id)
+    : wGs.map(g=>{const x=empById(g.id);return shortName((x&&x.name)||g.id);}).join(' · ');
   const open=!!apprOpen[r.id];
   const days=r.type==='multi'?0:reqDays(r).length;
   const when=r.type==='multi'
     ? fmtVN(r.from)+' → '+fmtVN(r.to)
     : (days<=1?fmtVNfull(r.from):`${fmtVN(r.from)} → ${fmtVN(r.to)} · ${days} ${t('ngày')}`);
   const sub=[when];
-  if(w)sub.push(t('với')+' '+shortName(w.name||r.withId));
+  if(wGs.length)sub.push(t('với')+' '+wName);
   if(r.byId&&r.byId!==r.empId)sub.push(t('khai hộ'));
   // Cờ xác nhận đổi ca của người B
   const cfBadge=(r.type==='swap'&&r.confirmW)
-    ?`<span class="cfw ${r.confirmW}">${{pending:'⏳ '+t('chờ')+' '+shortName((w&&w.name)||r.withId)+' '+t('xác nhận'),
-        confirmed:'✓ '+shortName((w&&w.name)||r.withId)+' '+t('đã xác nhận'),
-        declined:'✕ '+shortName((w&&w.name)||r.withId)+' '+t('từ chối')}[r.confirmW]||''}</span>`
+    ?`<span class="cfw ${r.confirmW}">${{pending:'⏳ '+t('chờ')+' '+wName+' '+t('xác nhận'),
+        confirmed:'✓ '+wName+' '+t('đã xác nhận'),
+        declined:'✕ '+wName+' '+t('từ chối')}[r.confirmW]||''}</span>`
     :'';
   return `<div class="ar ${r.status}${open?' open':''}${r.printedAt?' printed':''}">
     <div class="ar-h">
@@ -552,11 +756,11 @@ function apprRow(r){
           <span class="st ${reqStatusClass(r)}">${reqStatusLabel(r)}</span>
           <span class="prt ${r.printedAt?'yes':(r.noPrint?'none':'no')}">${r.printedAt?'🖨️ '+t('đã in'):(r.noPrint?'🚫 '+t('không in'):'○ '+t('chưa in'))}</span>${
             reqHrDone(r)?`<span class="hrs yes">✅ ${t('đã nhập HR')}</span>`:''}${cfBadge}${
-            r.coverId?`<span class="cvw ${(COVER_ST[r.coverSt||'pending']||COVER_ST.pending).cls} mob-only">🤝</span>`:''}${apprAdviceBadge(r)}</span>
+            reqCoverGroups(r).length?`<span class="cvw ${(COVER_ST[reqPartySt(r,'cover')||'pending']||COVER_ST.pending).cls} mob-only">🤝</span>`:''}${apprAdviceBadge(r)}</span>
         <span class="l2">${esc(sub.join(' · '))}</span>
       </button>
       <span class="ar-act">
-        ${(r.status!=='rejected'&&!(r.status==='approved'&&!reqIsProvisional(r)))?`<button class="btn ok sm" onclick="decide('${r.id}',true)" title="Duyệt">✓</button>
+        ${(apprCanAct()&&r.status!=='rejected'&&!(r.status==='approved'&&!reqIsProvisional(r)))?`<button class="btn ok sm" onclick="decide('${r.id}',true)" title="Duyệt">✓</button>
         <button class="btn warn sm" onclick="decide('${r.id}',false)" title="Từ chối">✕</button>`:''}
         <button type="button" class="ar-more" onclick="apprToggleRow('${r.id}')" title="Chi tiết">▾</button>
       </span>
@@ -576,12 +780,12 @@ function apprRow(r){
         <span class="src ${esc(r.source||'web')}">${{zalo:'Zalo',app:'📱 App NV'}[r.source]||'Web'}</span>
       </div>
       <div class="ar-more-act">
-        <button class="btn sec sm pc-only" onclick="printOne('${r.id}')">🖨️ In</button>
-        <button class="btn sec sm" onclick="apprToggleNoPrint('${r.id}')">${r.noPrint?'🖨️ Đưa vào ds in':'🚫 Đánh dấu không cần in'}</button>
+        ${canPrintReq(r,meId())?`<button class="btn sec sm pc-only" onclick="printOne('${r.id}')">🖨️ In</button>`:''}
+        ${apprCanAct()?`<button class="btn sec sm" onclick="apprToggleNoPrint('${r.id}')">${r.noPrint?'🖨️ Đưa vào ds in':'🚫 Đánh dấu không cần in'}</button>`:''}
         <button class="btn sec sm" onclick="toggleReqHr('${r.id}')">${reqHrDone(r)?'↩️ '+t('Bỏ dấu nhập HR'):'✅ '+t('Đã nhập hệ thống HR')}</button>
-        ${canSetCover(r,meId())?`<button class="btn sec sm" onclick="openCoverPicker('${r.id}')">🤝 ${r.coverId?t('Đổi người OT cover'):t('Chỉ định người OT cover')}</button>`:''}
-        ${r.status==='approved'?`<button class="btn warn sm" onclick="revokeApproval('${r.id}')">↩️ Huỷ duyệt</button>`:''}
-        <button class="btn warn sm" onclick="cancelOneReq('${r.id}')">🚫 Huỷ đơn</button>
+        ${canSetCover(r,meId())?`<button class="btn sec sm" onclick="openCoverPicker('${r.id}')">🤝 ${reqCoverGroups(r).length?t('Đổi người OT cover'):t('Chỉ định người OT cover')}</button>`:''}
+        ${apprCanAct()&&r.status==='approved'?`<button class="btn warn sm" onclick="revokeApproval('${r.id}')">↩️ Huỷ duyệt</button>`:''}
+        ${(apprCanAct()||canCancelReq(r,meId()))?`<button class="btn warn sm" onclick="cancelOneReq('${r.id}')">🚫 Huỷ đơn</button>`:''}
       </div>
     </div>
   </div>`;
@@ -618,13 +822,15 @@ function atContent(r){
 /* Ô "Cover / Đổi với" */
 function atPartner(r){
   const bits=[];
-  if(r.withId){
-    const w=empById(r.withId);
-    bits.push(`<span class="at-w">⇄ ${esc(shortName((w&&w.name)||r.withId))}</span>`);
-    if(r.confirmW)bits.push(`<span class="cfw ${r.confirmW}">${
-      {pending:'⏳ '+t('chờ'),confirmed:'✓ '+t('đã xác nhận'),declined:'✕ '+t('từ chối')}[r.confirmW]||''}</span>`);
-  }
-  if(r.coverId)bits.push(reqCoverChip(r));
+  const wGs=reqWithGroups(r);
+  wGs.forEach(g=>{
+    const w=empById(g.id);
+    const days=wGs.length>1?(' <u>'+esc(reqGroupDays(g))+'</u>'):'';
+    bits.push(`<span class="at-w">⇄ ${esc(shortName((w&&w.name)||g.id))}${days}</span>`);
+    if(g.st)bits.push(`<span class="cfw ${g.st}">${
+      {pending:'⏳ '+t('chờ'),confirmed:'✓ '+t('đã xác nhận'),declined:'✕ '+t('từ chối')}[g.st]||''}</span>`);
+  });
+  if(reqCoverGroups(r).length)bits.push(reqCoverChip(r));
   if(r.type==='wt'&&r.guarantorId){
     const g=empById(r.guarantorId);
     bits.push(`<span class="at-w">🛡️ ${esc(shortName((g&&g.name)||r.guarantorId))}</span>`);
@@ -688,7 +894,7 @@ function apprTr(r){
       <div class="ar-more-act">
         <button class="btn sec sm" onclick="printOne('${r.id}')">🖨️ ${t('In')}</button>
         <button class="btn sec sm" onclick="apprToggleNoPrint('${r.id}')">${r.noPrint?'🖨️ '+t('Đưa vào ds in'):'🚫 '+t('Đánh dấu không cần in')}</button>
-        ${canSetCover(r,meId())?`<button class="btn sec sm" onclick="openCoverPicker('${r.id}')">🤝 ${r.coverId?t('Đổi người OT cover'):t('Chỉ định người OT cover')}</button>`:''}
+        ${canSetCover(r,meId())?`<button class="btn sec sm" onclick="openCoverPicker('${r.id}')">🤝 ${reqCoverGroups(r).length?t('Đổi người OT cover'):t('Chỉ định người OT cover')}</button>`:''}
         ${r.status==='approved'?`<button class="btn warn sm" onclick="revokeApproval('${r.id}')">↩️ ${t('Huỷ duyệt')}</button>`:''}
         <button class="btn warn sm" onclick="cancelOneReq('${r.id}')">🚫 ${t('Huỷ đơn')}</button>
       </div>
@@ -809,7 +1015,9 @@ function apprSetTab(v){
 }
 function renderApprTabs(){
   const box=$('apprTabs');if(!box)return;
-  const feOnly=myFE&&!mgr;
+  /* Nhân viên thường & FE: chỉ có Danh sách đơn. Các sub-tab còn lại là
+     số liệu điều hành của quản lý. */
+  const feOnly=(myFE&&!mgr)||!apprCanAct();
   const nPend=feOnly
     ? Object.values(S.requests||{}).filter(reqNeedsMyAction).length
     : Object.values(S.requests||{}).filter(r=>r&&r.status==='pending').length;
@@ -833,12 +1041,13 @@ function renderApprTabs(){
 function renderAppr(){
   const lock=$('apprLock'),body=$('apprBody');
   if(!lock||!body)return;
-  const ok=canAppr();
+  /* Mở cho mọi người đã đăng nhập — nội dung tự giới hạn theo apprCanAct() */
+  const ok=!!meId();
   lock.style.display=ok?'none':'';
   body.style.display=ok?'':'none';
   if(!ok)return;
-  // Field Engineer (không phải quản lý) chỉ có Danh sách đơn của nhóm mình
-  if(myFE&&!mgr)apprTab='list';
+  // Field Engineer (không phải quản lý) và nhân viên thường: chỉ Danh sách đơn
+  if((myFE&&!mgr)||!apprCanAct())apprTab='list';
   if(!apprTabOn(apprTab))apprTab='list';        // sub-tab đã tắt (xem APPR_TABS_OFF)
   renderApprTabs();
   // Chỉ dựng đúng sub-tab đang mở — khỏi tính thừa
@@ -974,7 +1183,11 @@ function renderApprList(){
    Trước khi xoá đơn (theo kỳ / nhiều kỳ / năm) BẮT BUỘC xuất file Excel sao lưu.
    Giữ dung lượng Firebase gói Spark thấp mà vẫn còn hồ sơ tra cứu offline. */
 function reqExcelRow(r){
-  const e=empById(r.empId),w=r.withId?empById(r.withId):null;
+  const e=empById(r.empId);
+  const nmOf=id=>{const x=empById(id);return (x&&x.name)||id;};
+  const wGs=reqWithGroups(r);
+  const w=wGs.length?{name:(wGs.length===1?nmOf(wGs[0].id)
+          :wGs.map(g=>nmOf(g.id)+' ('+reqGroupDays(g)+')').join('; '))}:null;
   const days=(r.type==='multi')
     ? fmtVNfull(r.from)+'→'+fmtVNfull(r.to)
     : reqDays(r).map(d=>fmtVN(d.iso)+(d.code?'('+d.code+')':'')).join('; ');
@@ -1040,13 +1253,14 @@ function apprPickCount(){
   if(!box)return;
   if(!n){box.className='appr-bulk';box.innerHTML='';return;}
   box.className='appr-bulk on';
+  const act=apprCanAct();
   box.innerHTML=`<b>${n} ${t('đơn đã chọn')}</b>
-    <button class="btn ok sm" onclick="decidePickedReqs(true)">✓ ${t('Duyệt')}</button>
-    <button class="btn warn sm" onclick="decidePickedReqs(false)">✕ ${t('Từ chối')}</button>
+    ${act?`<button class="btn ok sm" onclick="decidePickedReqs(true)">✓ ${t('Duyệt')}</button>
+    <button class="btn warn sm" onclick="decidePickedReqs(false)">✕ ${t('Từ chối')}</button>`:''}
     <button class="btn sec sm pc-only" onclick="printPickedReqs()">🖨️ ${t('In')}</button>
     <button class="btn sec sm" onclick="markPickedHr(true)">✅ ${t('Đã nhập HR')}</button>
     <button class="btn sec sm" onclick="markPickedHr(false)">↩️ ${t('Bỏ dấu HR')}</button>
-    <button class="btn warn sm" onclick="cancelPickedReqs()">🗑️ ${t('Xoá đơn')}</button>
+    ${act?`<button class="btn warn sm" onclick="cancelPickedReqs()">🗑️ ${t('Xoá đơn')}</button>`:''}
     <span class="sp"></span>
     <button class="btn sec sm" onclick="apprPickAll(true)">${t('Chọn hết')}</button>
     <button class="btn sec sm" onclick="apprPickAll(false)">${t('Bỏ chọn')}</button>`;
@@ -1092,6 +1306,7 @@ function cancelOneReq(rid){
 }
 function purgeOneReq(rid){cancelOneReq(rid);}
 function cancelPickedReqs(){
+  if(!apprCanAct()){toast(t('Bạn không có quyền xoá đơn'));return;}
   const ids=apprPicked();
   if(!ids.length){toast(t('Chưa chọn đơn nào'));return;}
   const list=ids.map(id=>S.requests[id]).filter(Boolean);
@@ -1104,7 +1319,14 @@ function purgePickedReqs(){cancelPickedReqs();}
 function printPickedReqs(){
   const ids=apprPicked();
   if(!ids.length){toast(t('Chưa chọn đơn nào'));return;}
-  printRequests(ids.map(id=>S.requests[id]).filter(Boolean),'a5');
+  const all=ids.map(id=>S.requests[id]).filter(Boolean);
+  /* Người không có quyền duyệt chỉ in được đơn của mình và của người cùng
+     nhóm — lọc ở đây thay vì chặn cả nút, để họ vẫn in được phần hợp lệ. */
+  const list=all.filter(r=>canPrintReq(r,meId()));
+  if(!list.length){toast(t('Bạn chỉ in được đơn của mình và của người cùng nhóm'));return;}
+  if(list.length<all.length)
+    toast(t('Đã bỏ qua')+' '+(all.length-list.length)+' '+t('đơn ngoài nhóm của bạn'));
+  printRequests(list,'a5');
 }
 function* dateRange(f,t){let d=new Date(f+'T00:00:00');const e=new Date(t+'T00:00:00');let g=0;while(d<=e&&g++<62){yield isoOf(d);d.setDate(d.getDate()+1);}}
 /* Ghi kết quả duyệt vào LỊCH THỰC TẾ (S.over). prov=true → ô lịch đánh dấu
@@ -1116,10 +1338,13 @@ function writeReqToSchedule(r,prov){
   if(r.type==='swap'){
     for(const d of reqDays(r)){
       const iso=d.iso;
-      const a=eff(r.empId,iso).code,b=eff(r.withId,iso).code;
-      S.over[r.empId]=S.over[r.empId]||{};S.over[r.withId]=S.over[r.withId]||{};
+      /* ★ v6.5 — mỗi ngày có thể đổi với MỘT người khác nhau */
+      const wid=reqDayWith(r,iso).id||r.withId||'';
+      if(!wid)continue;
+      const a=eff(r.empId,iso).code,b=eff(wid,iso).code;
+      S.over[r.empId]=S.over[r.empId]||{};S.over[wid]=S.over[wid]||{};
       S.over[r.empId][iso]=Object.assign({code:b||''},stamp());
-      S.over[r.withId][iso]=Object.assign({code:a||''},stamp());
+      S.over[wid][iso]=Object.assign({code:a||''},stamp());
     }
   }else if(r.type==='wt'||r.type==='late'||r.type==='multi'){
     // Đơn giấy tờ thuần — KHÔNG ghi đè lịch ca
@@ -1152,11 +1377,11 @@ function apprPartyIds(r){
   const s=new Set();
   if(r.empId)s.add(r.empId);
   if(r.byId)s.add(r.byId);
-  if(r.withId)s.add(r.withId);
+  reqWithIds(r).forEach(id=>s.add(id));
   /* Người được nhờ OT cover CŨNG là một bên liên quan: họ đã sắp xếp để ở lại
      gánh ca, nên đơn bị huỷ / từ chối / huỷ duyệt thì phải được báo. Trước đây
      họ bị bỏ sót, chỉ thấy lời nhờ biến mất mà không hiểu vì sao. */
-  if(r.coverId)s.add(r.coverId);
+  reqCoverIds(r).forEach(id=>s.add(id));
   return [...s];
 }
 /* ============================================================

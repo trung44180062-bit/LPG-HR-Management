@@ -316,8 +316,10 @@ function emitSchedChange(empId,iso,oldCode,newCode,stdCode,opts){
        notifId, người nhận chỉ thấy đúng một tin với mã mới nhất. */
     if(typeof zaloEnqueue==='function')zaloEnqueue(ex);
   }else{
+    /* std = ca CHUẨN của ô đó. Đã có sẵn tham số stdCode nhưng bản trước
+       không ghi xuống, nên tin Zalo không in được "ca chuẩn → ca mới". */
     newNotif({kind:'schedChange',to:empId,from:meId()||'manager',iso,
-              oldCode:oldCode||'',newCode:newCode,nz:opts.nz?1:0});
+              std:stdCode||'',oldCode:oldCode||'',newCode:newCode,nz:opts.nz?1:0});
   }
   return true;
 }
@@ -433,7 +435,10 @@ function schedHoldFlush(){
   const me=meId()||'manager';
   if(typeof newNotif==='function'&&empById(me)){
     newNotif({kind:'info',zk:'schedBulk',to:me,from:me,
-              hold:list.map(x=>({to:x.to,iso:x.iso,was:x.was,now:x.now})),
+              /* std = CA CHUẨN — bắt buộc, vì tin Zalo phải in "ca chuẩn → ca mới".
+                 Bản trước bỏ rơi trường này nên tin chỉ nói được "was → now",
+                 mà `was` có thể đã là một ca đã bị đổi trước đó. */
+              hold:list.map(x=>({to:x.to,iso:x.iso,was:x.was,now:x.now,std:x.std||''})),
               text:'📅 '+t('Đã cập nhật lịch thực tế của')+' '+people+' '+t('người')
                    +' ('+list.length+' '+t('thay đổi')+')'});
   }

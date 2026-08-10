@@ -135,9 +135,11 @@ Dùng ở hai chỗ:
    nội dung đã được gộp thành hai dòng cảnh báo trong tin `apprNeed`
    (`⚠️ ... has not accepted the OT cover yet.`). Một sự việc → **một tin**,
    mà nội dung lại đầy đủ hơn. Đúng ý ô K9.
-2. **Người duyệt thứ 2, 3…** trong `notifyApprovers` (`js/08-requests.js`) —
-   vì mọi tin hiện đổ vào **cùng một chat nhóm**, gửi 4 người là 4 tin y hệt.
-   Chỉ người đầu tiên trong danh sách được đẩy sang Zalo.
+2. ~~**Người duyệt thứ 2, 3…** trong `notifyApprovers`~~ — **đã gỡ 06/08/2026.**
+   Mẹo "chỉ người đầu tiên được đẩy sang Zalo" mong manh: đúng thông báo dẫn
+   đầu ấy bị gỡ (đơn huỷ, đổi cấp duyệt) là cả nhóm mất tin. Nay hộp gửi ở
+   `js/21-notify.js` tự gộp mọi tin trùng nội dung thành một và liệt kê đủ
+   người nhận — xem mục 3.0.
 
 > Đường A4 (quản trị **đổi** người cover sang người khác) **không** gắn `nz` —
 > người cover mới vẫn nhận tin Zalo riêng, vì lúc đó không có tin nào khác gộp
@@ -215,7 +217,56 @@ nhận tin `apprNeed`.
 
 ## 3. Việc còn phải giải
 
-### 3.1 Lãng phí do fan-out — ✅ ĐÃ SỬA 05/08/2026
+### 3.0 Hộp gửi ở trình duyệt — ★ v6.3, 06/08/2026
+
+Bản 05/08 đặt việc gộp ở Apps Script (mục 3.1 ngay dưới). Thực tế vẫn spam:
+tạo một sự kiện là cả tổ nhận một loạt tin y hệt nhau, và đổi lịch nhiều người
+rồi bấm gửi một lần cũng không gộp. Mổ ra thấy ba chuyện:
+
+1. **Lý lẽ "23 trình duyệt không thống nhất được với nhau" sai ở chỗ quan
+   trọng nhất.** Fan-out không do 23 máy sinh ra — MỘT người bấm "Tạo sự
+   kiện" trên MỘT máy, máy đó chạy một vòng lặp đẻ ra 23 thông báo. Nó biết
+   thừa 23 tin ấy giống hệt nhau. Đẩy việc gộp sang máy chủ nghĩa là đặt cược
+   vào chuyện bản Apps Script đang triển khai có phải bản mới không, và 23
+   gói có cùng đến lượt trong một lượt quét không. Sai một trong hai là ăn đủ
+   23 tin.
+2. **Đổi lịch nhiều người chỉ gộp khi nhớ bấm 🔕 Giữ.** Quên bấm thì mỗi ô là
+   một tin 🔴 riêng, mà chúng khác nội dung nên không vân tay nào gộp được.
+3. **Thu hồi chưa từng chạy một lần nào.** `zaloWithdraw` đọc
+   `zaloQueue/<id>` trước khi xoá, nhưng luật Firebase đặt `.read: false` cho
+   nhánh đó (cố ý, để nhân viên không đọc được tin của người khác). Lời hứa
+   đọc luôn bị từ chối quyền, lỗi rơi vào `.catch(console.warn)`, nhánh xoá
+   nằm sau nên không bao giờ tới lượt. Mọi tin đã vào hàng đợi đều bắn đi
+   bằng hết, kể cả tin của việc vừa bị xoá.
+
+**Cách làm mới** — `zaloEnqueue` không ghi thẳng Firebase nữa mà bỏ vào một
+hộp gửi, đệm **4 giây** (ngừng thao tác) hoặc tối đa **20 giây**, rồi gộp và
+ghi. Đệm không làm tin tới chậm: trigger Apps Script vốn quét mỗi phút.
+
+| Phép gộp | Làm gì | Kết quả |
+|---|---|---|
+| 1 — cuộn lịch | ≥2 `schedChange` → một tin `📅 WORK SCHEDULE UPDATED — N PEOPLE`, đúng khuôn tin của nút 🔔 | 5 người = 1 tin, **không cần bấm 🔕** |
+| 2 — vân tay | cùng `fp` → giữ một gói, nhập người nhận, thêm dòng `For: …` | sự kiện 23 người = 1 tin; 4 người duyệt = 1 tin |
+| 3 — cùng người + cùng nhóm | nối thân tin | nhiều việc = 1 tin nhiều mục |
+
+Trong app KHÔNG mất gì: mỗi người vẫn nhận đúng một việc-chờ-xác-nhận riêng.
+Một tin gộp trong app một mình một ô lịch vẫn để tin cá nhân (rõ hơn tin gộp).
+
+**Thu hồi sau khi gộp.** Một hàng đợi nay đại diện cho nhiều thông báo, liệt
+kê ở `notifIds`; mỗi thông báo mang ngược lại `n.zq = <khoá hàng>` (nằm trong
+`S.notifs` nên đồng bộ sang máy khác). `zaloWithdraw` xoá thẳng, không đọc, và
+**chỉ xoá khi thông báo cuối cùng trong nhóm biến mất** — nếu không, một người
+duyệt xong là làm mất tin của 22 người còn lại. `notifDrop` xoá tuần tự nên
+tới lượt cuối đếm ra 0. Tin còn nằm trong hộp gửi thì nhấc thẳng ra, không tốn
+gì cả.
+
+Không phải deploy lại Apps Script: trình duyệt ghi ít hàng hơn, cấu trúc hàng
+giữ nguyên (thêm vài trường `notifIds`/`tos`/`n` mà máy chủ bỏ qua).
+`ONE_CHAT_DEDUPE` để nguyên làm lưới an toàn lớp hai.
+
+Harness: `_test/zalo-merge-harness.js` — 38 phép thử.
+
+### 3.1 Lãng phí do fan-out — ✅ ĐÃ SỬA 05/08/2026 (lớp máy chủ, nay là lưới an toàn)
 
 > **Đã cài xong.** Trình duyệt ghi vân tay `fp` = băm FNV-1a của
 > `group + title + lines + action` lên mỗi hàng đợi (`zaloFp()` ở
@@ -379,8 +430,10 @@ Mục 3, 4, 7, 8 không cần liên kết từng người — chúng vốn hợp
 | R1 — bỏ tin trung gian | ✅ đã cài | `fe`, `provapproved` = `null`; `apprNeed` nói thay |
 | R2 — cửa sổ gộp | ✅ đã cài | gộp theo người nhận + khoá nhóm, `BATCH_WAIT_MIN = 8` phút |
 | R3 — huỷ tin nếu đã đọc trong app | ❌ chưa | app phải lưu mốc `lastSeen` từng người |
-| R7 — gộp tin trùng nội dung | ✅ đã cài 05/08/2026 | vân tay `fp` + `ONE_CHAT_DEDUPE` trong `doTick_` |
+| R7 — gộp tin trùng nội dung | ✅ **chuyển về trình duyệt 06/08/2026** | hộp gửi `zaloOut*` ở `js/21-notify.js`; `ONE_CHAT_DEDUPE` giữ làm lưới an toàn |
 | R8 — một sự việc một tin | ✅ đã cài 05/08/2026 | cờ `nz` gộp lời mời cover/đổi ca vào tin `apprNeed` |
+| R9 — cuộn thay đổi lịch rời rạc | ✅ đã cài 06/08/2026 | ≥2 `schedChange` trong một cửa sổ → 1 tin gộp, không cần bấm 🔕 |
+| R10 — thu hồi thật sự chạy | ✅ sửa 06/08/2026 | `zaloWithdraw` bỏ bước đọc hàng đợi (luật cấm đọc) |
 | R4 — giờ im lặng | ⚠️ nửa vời | 21:30–06:30 chặn tin 🟡; **ca đêm N (20:00–08:00) chưa được miễn trừ** — câu Q1 chưa ai trả lời |
 | R5 — không gửi bản tin rỗng | — | chưa có bản tin nào |
 | R6 — chống trùng | ✅ đã cài | khoá hàng đợi chính là `notifId` |
@@ -396,9 +449,13 @@ Mục 3, 4, 7, 8 không cần liên kết từng người — chúng vốn hợp
    sửa ô lịch **thực tế** của nhân viên khác sang mã khác mã chuẩn. Không phải dòng
    của mình, không sửa về mã chuẩn, không sửa thành cùng mã, không xoá ô — cả bốn
    đều bị bỏ qua trong im lặng theo thiết kế (`js/06-calendar.js:257–272`).
-4. Apps Script → `B4_XEM_HANG_DOI` để xem hàng đợi.
-5. `B5_GUI_NGAY` gửi ngay, bỏ qua cửa sổ gộp và giờ im lặng.
-6. Apps Script → Executions để xem lỗi người đưa thư.
+4. **Đợi 4 giây** rồi mới soi hàng đợi — tin nằm trong hộp gửi chờ gộp (mục
+   3.0). Muốn ép đi ngay: gõ `zaloFlush()` trong console, hoặc `zaloOutPending()`
+   để xem còn bao nhiêu gói đang chờ gộp.
+5. Apps Script → `B4_XEM_HANG_DOI` để xem hàng đợi.
+6. `B5_GUI_NGAY` gửi ngay, bỏ qua cửa sổ gộp và giờ im lặng.
+7. Apps Script → Executions để xem lỗi người đưa thư.
+8. Trước khi đẩy lên: `node _test/zalo-merge-harness.js` phải xanh cả 38 phép.
 
 Trigger chạy mỗi phút, nên tin 🔴 tới trong vòng 60 giây mà không cần thao tác gì.
 Tin 🟡 chờ `BATCH_WAIT_MIN` (hiện 8 phút) — Zalo im ắng ngay sau khi tạo sự kiện là
@@ -410,7 +467,8 @@ Tin 🟡 chờ `BATCH_WAIT_MIN` (hiện 8 phút) — Zalo im ắng ngay sau khi 
 
 | Đường dẫn | Vai trò |
 |---|---|
-| `js/21-notify.js` | ma trận kênh, dựng nội dung tin, ghi hàng đợi |
+| `js/21-notify.js` | ma trận kênh, dựng nội dung tin, **hộp gửi gộp tin**, ghi & thu hồi hàng đợi |
+| `_test/zalo-merge-harness.js` | 38 phép thử lớp gộp — `node _test/zalo-merge-harness.js` |
 | `js/13-portal.js:100` | `newNotif()` — điểm móc duy nhất |
 | `js/06-calendar.js:257` | sửa lịch thực tế; chú ý bốn điều kiện bỏ qua ở 257–272 |
 | `js/08-requests.js:867` | `notifyReqParties()` — kết quả duyệt đơn |

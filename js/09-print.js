@@ -370,6 +370,11 @@ function wrapPrintPages(formPages,layout){
 function printOne(reqId){
   if(isMobile()){toast(t('Điện thoại không in được — dùng máy tính để in đơn'));return;}
   const r=S.requests[reqId];if(!r){toast(t('Không tìm thấy đơn'));return;}
+  /* ★ v6.5 — màn Duyệt nay mở cho mọi người, nên chốt quyền in ở ĐÂY:
+     không có quyền duyệt thì chỉ in đơn của mình / của người cùng nhóm. */
+  if(typeof canPrintReq==='function'&&!canPrintReq(r,typeof meId==='function'?meId():'')){
+    toast(t('Bạn chỉ in được đơn của mình và của người cùng nhóm'));return;
+  }
   const key=reqFormType(r);
   const def=FORM_DEFS[key];if(!def){toast('Loại đơn không hỗ trợ in');return;}
   const rows=def.build([r]);

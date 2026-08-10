@@ -24,6 +24,13 @@ let dsOwnerId='';            // người đứng đơn (đổi ca cho phép khai
 let dsWithId='';             // người đổi ca cùng
 let dsGuarId='';             // người bảo lãnh (đơn bổ sung công)
 let dsCoverId='';            // người ở lại tăng ca gánh ca thay (đơn nghỉ phép)
+/* ★ v6.5 — NGƯỜI THEO TỪNG NGÀY.
+   dsCoverId / dsWithId là người MẶC ĐỊNH cho mọi ngày (đúng thói quen cũ).
+   Hai bản đồ dưới chỉ chứa NGÀY NÀO ĐƯỢC ĐẶT RIÊNG — nghỉ 3 ngày mà hôm
+   thứ Ba anh B rảnh thì đặt riêng đúng hôm đó, hai hôm kia vẫn là người
+   mặc định. Rỗng = mọi ngày dùng người mặc định. */
+let dsCoverBy={};            // {iso: mã NV} — người OT cover riêng từng ngày
+let dsWithBy={};             // {iso: mã NV} — người đổi ca riêng từng ngày
 let dsNoteVal='';            // ghi chú (giữ trong state để không mất khi vẽ lại)
 let dsReasonCode='forgot_card', dsReasonOther='';   // đơn bổ sung công
 let dsLateType='come_late';                         // đơn đi trễ / về sớm
@@ -181,8 +188,19 @@ function notifStaleReason(n){
   const r=n.reqId?((S.requests||{})[n.reqId]):null;
   if(!r)return 'đơn đã bị xoá';
   if(r.status==='rejected')return 'đơn đã bị từ chối';
-  if(n.kind==='coverConfirm'&&(r.coverId||'')!==n.to)return 'đã đổi người OT cover';
-  if(n.kind==='swapConfirm' &&(r.withId||'')!==n.to)return 'đã đổi người đổi ca';
+  /* ★ v6.5 — một đơn có thể có NHIỀU người cover / nhiều người đổi ca.
+     Chỉ coi là hết hiệu lực khi người này không còn phụ trách ngày NÀO.
+     Bọc typeof: hàm nằm ở js/08-requests.js, file đó lỗi hoặc chưa nạp thì
+     lùi về so trường tóm tắt cũ chứ KHÔNG được ném lỗi — cả bảng thông báo
+     phụ thuộc vào hàm này. */
+  const has=(kind,id)=>{
+    const f=(kind==='cover')?(typeof reqCoverIds==='function'&&reqCoverIds)
+                            :(typeof reqWithIds==='function'&&reqWithIds);
+    if(f)return f(r).indexOf(id)>=0;
+    return ((kind==='cover'?r.coverId:r.withId)||'')===id;
+  };
+  if(n.kind==='coverConfirm'&&!has('cover',n.to))return 'đã đổi người OT cover';
+  if(n.kind==='swapConfirm' &&!has('with', n.to))return 'đã đổi người đổi ca';
   return '';
 }
 function notifIsStale(n){return !!notifStaleReason(n);}
@@ -390,7 +408,7 @@ function confirmSwap(nid){
   const n=notifTake(nid);if(!n)return;
   const r=S.requests[n.reqId];
   n.status='confirmed';n.decidedAt=Date.now();
-  if(r){r.confirmW='confirmed';
+  if(r){reqPartySetSt(r,'with',meId(),'confirmed');
     newNotif({kind:'info',to:r.byId||r.empId,from:meId(),zk:'swapOk',
       text:t2('đã XÁC NHẬN đổi ca với bạn')+': '+fmtVN(r.from)});}
   save();renderMyPanel();renderMe(true);
@@ -402,7 +420,7 @@ function declineSwap(nid){
   if(!confirm(t('Từ chối đổi ca này? Đơn vẫn còn nhưng quản trị sẽ thấy bạn đã từ chối.')))return;
   const r=S.requests[n.reqId];
   n.status='cancelled';n.decidedAt=Date.now();
-  if(r){r.confirmW='declined';
+  if(r){reqPartySetSt(r,'with',meId(),'declined');
     newNotif({kind:'info',to:r.byId||r.empId,from:meId(),zk:'swapNo',
       text:t2('đã TỪ CHỐI đổi ca với bạn')+': '+fmtVN(r.from)});}
   save();renderMyPanel();renderMe(true);
@@ -417,7 +435,7 @@ function confirmCover(nid){
   const r=S.requests[n.reqId];
   n.status='confirmed';n.decidedAt=Date.now();
   if(r){
-    r.coverSt='confirmed';
+    reqPartySetSt(r,'cover',meId(),'confirmed');
     newNotif({kind:'info',to:r.byId||r.empId,from:meId(),reqId:r.id,zk:'coverOk',
       text:t2('đã NHẬN OT cover cho bạn')+': '+fmtVN(r.from)});
   }
@@ -431,7 +449,7 @@ function declineCover(nid){
   const r=S.requests[n.reqId];
   n.status='cancelled';n.decidedAt=Date.now();
   if(r){
-    r.coverSt='declined';
+    reqPartySetSt(r,'cover',meId(),'declined');
     newNotif({kind:'info',to:r.byId||r.empId,from:meId(),reqId:r.id,zk:'coverNo',
       text:t2('đã TỪ CHỐI OT cover')+': '+fmtVN(r.from)+' — '+t2('hãy chọn người khác')});
   }
@@ -453,12 +471,29 @@ function openCoverPicker(rid){
   renderCoverPicker();
   setTimeout(()=>{const q=$('cvQ');if(q)q.focus();},60);
 }
-function closeCoverPicker(){const m=$('coverMask');if(m)m.classList.remove('on');_cvRid='';}
+function closeCoverPicker(){const m=$('coverMask');if(m)m.classList.remove('on');_cvRid='';_cvIso='';}
+
+/* ★ v6.5 — NGÀY ĐANG CHỌN trong hộp cover.
+   ''  = áp cho MỌI ngày của đơn (giữ đúng thói quen cũ, nghỉ 1 ngày thì
+         không ai phải bấm thêm gì)
+   iso = chỉ đổi đúng ngày đó, những ngày khác giữ nguyên người đang có.
+   Nghỉ 3 ngày mà hôm nào cũng bắt một người gánh là sai thực tế: ai rảnh
+   hôm nào nhận hôm đó. */
+let _cvIso='';
+function coverPickDay(iso){_cvIso=iso||'';renderCoverPicker();}
+
 function renderCoverPicker(){
   const box=$('coverBody'),r=S.requests[_cvRid];
   if(!box||!r)return;
-  const iso=(reqDays(r)[0]||{}).iso||r.from;
+  const days=reqDays(r).map(d=>d.iso);
+  const multi=days.length>1;
+  if(_cvIso&&days.indexOf(_cvIso)<0)_cvIso='';
+  /* Ngày dùng để soi "ai đang rảnh": ngày đang chọn, không thì ngày đầu đơn */
+  const iso=_cvIso||days[0]||r.from;
   const own=r.empId, myPool=poolOfId(own);
+  const cvMap=reqCoverMap(r);
+  const curId=_cvIso?((cvMap[_cvIso]||{}).id||''):'';
+
   const q=noAccent($('cvQ')?$('cvQ').value:'');
   let list=activeEmps().filter(e=>e.id!==own&&poolOf(e)===myPool);
   if(q)list=list.filter(e=>noAccent(e.name).includes(q)||noAccent(e.id).includes(q));
@@ -466,37 +501,63 @@ function renderCoverPicker(){
   list.sort((a,b)=>restRank(a)-restRank(b)||String(a.name||'').localeCompare(String(b.name||''),'vi'));
   const items=list.slice(0,60).map(e=>{
     const c=eff(e.id,iso).code, rest=codeInfo(c||'').cat==='rest';
-    return `<button type="button" class="pk-item${rest?' free':''}${e.id===r.coverId?' on':''}" onclick="coverPickSet('${e.id}')">
+    const on=_cvIso?(e.id===curId):(reqCoverIds(r).indexOf(e.id)>=0);
+    return `<button type="button" class="pk-item${rest?' free':''}${on?' on':''}" onclick="coverPickSet('${e.id}')">
       <span class="n">${rest?'🟢 ':''}${esc(e.name||e.id)}</span>
       <span class="m">${e.team?t('Nhóm')+' '+esc(e.team)+' · ':''}${esc(e.id)}</span>
       ${c?`<span class="cc" style="background:${codeInfo(c).col}">${esc(c)}</span>`:'<span class="cc" style="background:#94A3B8">—</span>'}
     </button>`;}).join('');
+
+  /* Dải ngày: mỗi ngày một nút, ghi sẵn ai đang nhận ngày đó */
+  const dayBar=multi?`
+    <div class="cv-days">
+      <button type="button" class="cv-day${_cvIso?'':' on'}" onclick="coverPickDay('')">${t('Mọi ngày')}</button>
+      ${days.map(d=>{
+        const who=(cvMap[d]||{}).id||'';
+        const nm=who?shortName((empById(who)||{}).name||who):t('chưa có');
+        return `<button type="button" class="cv-day${_cvIso===d?' on':''}${who?' has':''}" onclick="coverPickDay('${d}')">
+          <b>${esc(fmtVN(d))}</b><i>${esc(nm)}</i></button>`;}).join('')}
+    </div>`:'';
+
+  const gs=reqCoverGroups(r);
   box.innerHTML=`
     <h3>🤝 ${t('Người OT cover')}</h3>
     <p class="muted sm2">${esc((empById(own)||{}).name||own)} · ${esc(REQ_LABEL[r.type]||r.type)} · ${fmtVN(r.from)}${
       r.to&&r.to!==r.from?' → '+fmtVN(r.to):''}</p>
-    ${r.coverId?`<div class="pv-alert info sm">${t('Hiện tại')}: <b>${esc(reqCoverName(r))}</b> · ${
-      t((COVER_ST[r.coverSt||'pending']||COVER_ST.pending).lb)}</div>`:''}
+    ${dayBar}
+    ${gs.length?`<div class="pv-alert info sm">${t('Hiện tại')}: ${gs.map(g=>{
+      const e=empById(g.id);
+      return `<b>${esc(shortName((e&&e.name)||g.id))}</b>${multi?' <i>'+esc(reqGroupDays(g))+'</i>':''} · ${
+        t((COVER_ST[g.st||'pending']||COVER_ST.pending).lb)}`;}).join('<br>')}</div>`:''}
+    ${multi?`<p class="muted sm2" style="margin:2px 0 6px">${_cvIso
+        ? t('Đang đặt cho riêng ngày')+' <b>'+fmtVN(_cvIso)+'</b>'
+        : t('Đang đặt cho TẤT CẢ các ngày — bấm một ngày ở trên để đặt riêng ngày đó')}</p>`:''}
     <input class="inp" id="cvQ" placeholder="${t('Gõ tên hoặc mã NV… (không cần dấu)')}" autocomplete="off"
            value="${esc($('cvQ')?$('cvQ').value:'')}" oninput="renderCoverPicker()">
     <p class="muted sm2" style="margin:6px 0 2px">${t('Chỉ hiện người CÙNG KHỐI; 🟢 là người đang nghỉ ca R ngày')} ${fmtVN(iso)}.</p>
-    <div class="pick-list" style="max-height:46vh">${items||`<p class="muted" style="padding:8px 4px">${t('Không tìm thấy ai khớp.')}</p>`}</div>
+    <div class="pick-list" style="max-height:40vh">${items||`<p class="muted" style="padding:8px 4px">${t('Không tìm thấy ai khớp.')}</p>`}</div>
     <div class="row" style="gap:8px;margin-top:10px">
-      ${r.coverId?`<button class="btn warn" style="flex:1" onclick="coverPickSet('')">✕ ${t('Bỏ người cover')}</button>`:''}
+      ${(_cvIso?curId:gs.length)?`<button class="btn warn" style="flex:1" onclick="coverPickSet('')">✕ ${
+        _cvIso?t('Bỏ cover ngày này'):t('Bỏ người cover')}</button>`:''}
       <button class="btn sec" style="flex:1" onclick="closeCoverPicker()">${t('Đóng')}</button>
     </div>`;
 }
 function coverPickSet(id){
   const rid=_cvRid,r=S.requests[rid];if(!r)return;
   if(!canSetCover(r,meId())){toast(t('Bạn không đổi được người OT cover của đơn này'));return;}
-  if(!reqSetCover(rid,id,meId())){closeCoverPicker();return;}
-  save();closeCoverPicker();
+  const iso=_cvIso;
+  if(!reqSetCover(rid,id,meId(),iso)){ if(!iso)closeCoverPicker(); return; }
+  save();
+  /* Đặt riêng từng ngày thì GIỮ hộp mở để đặt tiếp ngày kế — đóng ngay
+     là bắt người dùng mở lại 3 lần cho 3 ngày. */
+  if(iso){renderCoverPicker();}else{closeCoverPicker();}
   if(typeof renderApprList==='function'&&(mgr||myFE))renderApprList();
   if(typeof renderMyPanel==='function')renderMyPanel();
   if(typeof renderMe==='function')renderMe(true);
   if(typeof refreshBadge==='function')refreshBadge();
-  toast(id?t('Đã gửi yêu cầu OT cover tới')+' '+shortName((empById(id)||{}).name||id)
-          :t('Đã bỏ người OT cover'));
+  const day=iso?(' · '+fmtVN(iso)):'';
+  toast(id?t('Đã gửi yêu cầu OT cover tới')+' '+shortName((empById(id)||{}).name||id)+day
+          :t('Đã bỏ người OT cover')+day);
 }
 function markNotifSeen(id){
   Object.values(S.notifs||{}).forEach(n=>{if(n.to===id&&SEEN_KINDS.includes(n.kind)&&!n.seen)n.seen=Date.now();});
@@ -894,6 +955,7 @@ function dsForm(t){
   pvSheetForm=t;
   const me=meId();
   dsOwnerId=me;dsWithId='';dsGuarId='';dsCoverId='';dsNoteVal='';
+  dsCoverBy={};dsWithBy={};
   /* Chế độ in mặc định theo loại đơn (xem REQ_MUST_PRINT ở js/08-requests.js):
      bổ sung công + đổi ca vào hàng chờ in, các loại còn lại không cần in. */
   dsNoPrint=defaultNoPrint(t);
@@ -1012,6 +1074,49 @@ function dsRowCurHtml(t,row){
 }
 
 /* ---- Chọn người: ô tìm theo tên (bỏ dấu vẫn khớp) ---- */
+/* Người phụ trách một NGÀY trong form: đặt riêng thì lấy riêng, không thì mặc định */
+function dsDayPerson(kind,iso){
+  const m=(kind==='cover')?dsCoverBy:dsWithBy;
+  if(Object.prototype.hasOwnProperty.call(m,iso))return m[iso]||'';
+  return (kind==='cover')?dsCoverId:dsWithId;
+}
+function dsSetDayPerson(kind,iso,id){
+  const m=(kind==='cover')?dsCoverBy:dsWithBy;
+  const def=(kind==='cover')?dsCoverId:dsWithId;
+  if(id===def)delete m[iso]; else m[iso]=id;
+  renderDaySheet();
+}
+/* Bảng chọn người RIÊNG TỪNG NGÀY — chỉ hiện khi đơn có từ 2 ngày trở lên.
+   Dùng <select> thay hộp chọn riêng: ít mã, chạy tốt trên điện thoại, và
+   danh sách người cùng khối vốn không dài. */
+function dsPerDayHtml(kind){
+  if(!dsRows||dsRows.length<2)return '';
+  const own=dsOwnerId||meId();
+  const pool=(typeof poolOfId==='function')?poolOfId(own):'';
+  let cands=activeEmps().filter(e=>e.id!==own&&(typeof poolOf!=='function'||poolOf(e)===pool));
+  cands.sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'vi'));
+  const lb=kind==='cover'?t('Người OT cover từng ngày'):t('Người đổi ca từng ngày');
+  const rows=dsRows.map(r0=>{
+    const iso=r0.iso;if(!iso)return '';
+    const cur=dsDayPerson(kind,iso);
+    /* 🟢 = người đang nghỉ ca R hôm đó, tức là người rảnh nhất để nhờ */
+    const opts=cands.map(e=>{
+      const c=(typeof eff==='function')?(eff(e.id,iso).code||''):'';
+      const free=(typeof codeInfo==='function')&&codeInfo(c).cat==='rest';
+      return `<option value="${esc(e.id)}"${e.id===cur?' selected':''}>${
+        free?'🟢 ':''}${esc(shortName(e.name)||e.id)}${c?' · '+esc(c):''}</option>`;
+    }).join('');
+    return `<div class="pd-row">
+      <span class="pd-d">${esc(fmtVN(iso))}<i>${esc(dowOf(iso))}</i></span>
+      <select class="inp pd-s" onchange="dsSetDayPerson('${kind}','${iso}',this.value)">
+        <option value=""${cur?'':' selected'}>— ${t('chưa chọn')} —</option>${opts}
+      </select></div>`;}).join('');
+  return `<div class="fg pd-wrap">
+    <label class="fl">${lb}</label>
+    <p class="muted sm2" style="margin:0 0 5px">${
+      t('Mỗi ngày có thể là một người khác nhau — ai rảnh hôm nào nhận hôm đó.')}</p>
+    ${rows}</div>`;
+}
 function dsPersonPicker(key,label,curId,hint){
   const e=curId?empById(curId):null;
   return `<div class="fg pick">
@@ -1278,6 +1383,7 @@ function dsFormHtml(t){
     <p class="muted" style="margin-top:4px">Nghỉ nhiều ngày rời rạc thì bấm <b>Thêm ngày</b> cho từng ngày. Tối đa ${DS_MAX_ROWS} dòng / đơn.</p>
   </div>`;
 
+  if(t==='swap') h+=dsPerDayHtml('with');
   if(t==='leave')h+=dsCoverHtml();
   if(t==='wt'){
     h+=`<div class="fg"><label class="fl">Lý do</label>
@@ -1324,7 +1430,8 @@ function dsCoverHtml(){
          onclick="dsPickSet('cover','${e.id}')">${esc(shortName(e.name)||e.id)}${
          e.team?`<em>${esc(teamShort(e.team))}</em>`:''}</button>`).join('')}
       ${dsCoverId?`<button type="button" class="cv-s clr" onclick="dsPickSet('cover','')">✕ ${t('Bỏ chọn')}</button>`:''}
-     </div>`:'');
+     </div>`:'')
+   + dsPerDayHtml('cover');
 }
 function dsNoteHtml(){
   return `<div class="fg"><label class="fl">Lý do / ghi chú</label>
@@ -1451,16 +1558,29 @@ function dsSubmit(t){
     });
     if(!days.length){toast('Thêm ít nhất 1 ngày cho đơn');return;}
     if(t==='swap'){
-      if(!dsWithId||dsWithId===empId){toast(t2('Chọn người đổi ca hợp lệ'));return;}
+      /* ★ v6.5 — mỗi ngày có thể đổi với MỘT người khác nhau */
+      const byDay={};
+      for(const d of days){
+        const w=dsDayPerson('with',d.iso);
+        if(!w||w===empId){toast(t2('Chọn người đổi ca hợp lệ cho ngày')+' '+fmtVN(d.iso));return;}
+        byDay[d.iso]=w;
+      }
       // Chỉ đổi ca giữa hai người đang có ca thật (O/D/N/R).
       // Nghỉ phép rồi thì không còn ca nào để đổi; tăng ca cũng không phải ca chính.
-      const bad=swapBlockList(empId,dsWithId,days.map(d=>d.iso));
+      // Kiểm theo TỪNG người vì mỗi ngày có thể là người khác.
+      const byWho={};
+      Object.keys(byDay).forEach(iso=>{(byWho[byDay[iso]]=byWho[byDay[iso]]||[]).push(iso);});
+      const bad=[];
+      Object.keys(byWho).forEach(w=>{
+        (swapBlockList(empId,w,byWho[w])||[]).forEach(x=>bad.push(x));
+      });
       if(bad.length){
         alert(t2('Không đổi ca được:')+'\n• '+bad.join('\n• ')+'\n\n'
              +t2('Chỉ đổi ca giữa hai người đang có ca O / D / N / R.'));
         return;
       }
-      r.withId=dsWithId;
+      const wm={};Object.keys(byDay).forEach(iso=>{wm[iso]={id:byDay[iso],st:'pending'};});
+      reqPartyWrite(r,'with',wm);          // ghi r.withs + tóm tắt r.withId/confirmW
     }else r.withId='';
     r.days=days;
     r.from=days[0].iso;r.to=days[days.length-1].iso;
@@ -1481,7 +1601,7 @@ function dsSubmit(t){
   r.before={};if(t==='swap')r.beforeW={};
   reqDays(r).forEach(d=>{
     r.before[d.iso]=eff(empId,d.iso).code||'';
-    if(t==='swap')r.beforeW[d.iso]=eff(r.withId,d.iso).code||'';
+    if(t==='swap')r.beforeW[d.iso]=eff(reqDayWith(r,d.iso).id||r.withId,d.iso).code||'';
   });
 
   // Đơn đổi ca: gửi thông báo cho người B để xác nhận. Chưa xác nhận thì đơn
@@ -1490,17 +1610,30 @@ function dsSubmit(t){
      này được gộp thẳng vào tin "có đơn cần duyệt" gửi ngay bên dưới, nên
      một sự việc chỉ tốn đúng MỘT tin Zalo mà nội dung lại đầy đủ hơn
      (yêu cầu trong ZALO-PHUONG-AN.xlsx ô K9). */
-  if(t==='swap'&&r.withId&&r.withId!==me){
-    r.confirmW='pending';
-    newNotif({kind:'swapConfirm',to:r.withId,from:me,reqId:r.id,iso:r.from,nz:1});
+  if(t==='swap'){
+    reqWithGroups(r).forEach(g=>{
+      if(!g.id||g.id===me)return;
+      newNotif({kind:'swapConfirm',to:g.id,from:me,reqId:r.id,iso:g.isos[0]||r.from,nz:1});
+    });
   }
 
   /* Đơn nghỉ phép có chỉ định người OT cover: ghi vào đơn để người duyệt thấy
      và gửi thông báo cho người đó bấm Đồng ý / Từ chối. Từ chối không chặn
      duyệt — người làm đơn hoặc người duyệt đổi sang người khác được. */
-  if(t==='leave'&&dsCoverId&&dsCoverId!==empId){
-    r.coverId=dsCoverId;r.coverSt='pending';
-    newNotif({kind:'coverConfirm',to:r.coverId,from:me,reqId:r.id,iso:r.from,nz:1});
+  if(t==='leave'){
+    const cm={};
+    reqDays(r).forEach(d=>{
+      const c=dsDayPerson('cover',d.iso);
+      if(c&&c!==empId)cm[d.iso]={id:c,st:'pending'};
+    });
+    if(Object.keys(cm).length){
+      reqPartyWrite(r,'cover',cm);        // ghi r.covers + tóm tắt r.coverId/coverSt
+      /* MỖI NGƯỜI một việc-chờ-xác-nhận (không phải mỗi ngày) — nút Đồng ý
+         của họ áp cho mọi ngày họ nhận. nz:1 nên không tốn tin Zalo riêng. */
+      reqCoverGroups(r).forEach(g=>{
+        newNotif({kind:'coverConfirm',to:g.id,from:me,reqId:r.id,iso:g.isos[0]||r.from,nz:1});
+      });
+    }
   }
 
   S.requests[r.id]=r;

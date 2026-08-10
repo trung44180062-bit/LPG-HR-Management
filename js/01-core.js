@@ -435,7 +435,11 @@ const LVL_ORD={fe:1,trung:2,kmgr:3};
 const LVL_FINAL='kmgr', LVL_PROV='trung';
 function lvlLabel(k){
   if(k==='fe')return 'Field Engineer';
-  if(k==='trung'){const e=empById(ROOT_ADMIN);return (e&&e.name)||'Quản trị';}
+  /* Chức danh cấp 'trung' = Section Chief (Hoàng Trung). Trước đây chỉ hiện
+     mỗi tên người nên không ai biết đó là chức gì; tin Zalo cũng đã đổi
+     'Site Manager' → 'Section Chief' cho khớp (js/21-notify.js zLevel). */
+  if(k==='trung'){const e=empById(ROOT_ADMIN);const n=(e&&e.name)||'';
+                  return n?('Section Chief ('+n+')'):'Section Chief';}
   if(k==='kmgr'){const n=krMgrName();return n?('Quản lý người Hàn ('+n+')'):'Quản lý người Hàn';}
   return k;
 }

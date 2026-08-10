@@ -381,6 +381,33 @@ i.d-ok{background:#0E9F6E}
 /* Người không đổi ca được trong ngày đó (nghỉ phép / tăng ca): xám và bấm không được */
 .pk-item.off{background:#F8FAFC;cursor:not-allowed;opacity:.62}
 .pk-item.off:hover{background:#F8FAFC;border-color:transparent}
+
+/* ---- Chọn người RIÊNG TỪNG NGÀY ngay trong form gửi đơn (v6.5) ----
+   Nghỉ / đổi ca nhiều ngày: mỗi ngày một dòng ngày + ô chọn người. */
+.pd-wrap{margin-top:2px}
+.pd-row{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.pd-d{flex:none;min-width:74px;font-size:11.5px;font-weight:800;color:#0F172A;
+  display:flex;flex-direction:column;line-height:1.2}
+.pd-d i{font-style:normal;font-size:10px;font-weight:700;color:#94A3B8}
+.pd-s{flex:1;min-width:0;padding:6px 8px;font-size:12.5px}
+
+/* ---- Dải NGÀY trong hộp chọn người OT cover (v6.5) ----
+   Đơn nghỉ nhiều ngày: mỗi ngày một nút, ghi sẵn ai đang nhận ngày đó, bấm
+   vào là chỉ đặt riêng cho ngày ấy. Cuộn ngang để không vỡ trên điện thoại. */
+.cv-days{display:flex;gap:6px;overflow-x:auto;padding:2px 0 6px;-webkit-overflow-scrolling:touch}
+.cv-day{
+  flex:none;display:flex;flex-direction:column;align-items:center;gap:1px;
+  background:#fff;border:1px solid #E3EAF1;border-radius:9px;
+  padding:5px 9px;cursor:pointer;min-width:66px;line-height:1.25
+}
+.cv-day b{font-size:11.5px;font-weight:800;color:#0F172A}
+.cv-day i{font-style:normal;font-size:10px;font-weight:700;color:#94A3B8;
+  max-width:88px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cv-day.has{background:#F6FBF8;border-color:#CDE7D8}
+.cv-day.has i{color:#3E7C5B}
+.cv-day:hover{border-color:#CFE2F0;background:#F1F7FC}
+.cv-day.on{background:#1F3864;border-color:#1F3864}
+.cv-day.on b,.cv-day.on i{color:#fff}
 .pk-item.off .n{font-weight:600;text-decoration:line-through;text-decoration-color:#CBD5E1}
 .pk-item.off .m{color:#B45309;font-weight:800}
 .pk-sep{margin:8px 0 4px;padding-top:7px;border-top:1px dashed #E3EAF1;

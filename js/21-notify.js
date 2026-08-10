@@ -112,38 +112,112 @@ const ZALO_GROUP_KEY = {
    đó là dữ liệu, không phải câu chữ.
    ============================================================ */
 
+/* ============================================================
+   KHUÔN 3 DÒNG  ★ v6.4
+   ------------------------------------------------------------
+       [1]  <emoji> TIÊU ĐỀ 2–3 CHỮ
+       [2]  <ngày>  <tên>  <ca chuẩn> → <ca mới>      ← gói trong MỘT dòng
+       [3]  <ai làm> — <việc phải làm>
+
+   Bản trước mỗi tin 10–16 dòng vì bê nguyên khối chi tiết đơn (Employee /
+   Type / Total / Submitted at…) vào Zalo. Người đọc trên điện thoại chỉ
+   cần biết: AI, NGÀY NÀO, TỪ CA GÌ SANG CA GÌ, và phải làm gì. Chi tiết
+   còn lại đã nằm sẵn trong app.
+
+   HAI LUẬT CỨNG:
+     · CHỈ in mã ca D / N / O / R. KHÔNG in khung giờ — TRỪ tăng ca, vì giờ
+       OT là con số tính lương.
+     · KHÔNG BAO GIỜ in mã nội bộ SD / SN / SO / O+N / D+N / OTD / OTN…
+       Hệ thống HR không có những ký hiệu đó; người đối chiếu bảng công sẽ
+       không tìm thấy. Xem zShift() ngay dưới.
+   ============================================================ */
+
 /* Tiêu đề tin — dòng đầu phải là kết luận, liếc 1 giây là hiểu. */
 const ZALO_TITLE = {
   apprNeed    : '📥 APPROVAL REQUIRED',
-  schedBulk   : '📅 WORK SCHEDULE UPDATED',
-  schedChange : '📅 YOUR WORK SCHEDULE HAS CHANGED',
-  swapConfirm : '🔄 SHIFT SWAP REQUESTED WITH YOU',
-  coverConfirm: '🙋 YOU ARE ASKED TO COVER OVERTIME',
+  schedBulk   : '📅 SCHEDULE UPDATED',
+  schedChange : '📅 SHIFT CHANGED',
+  swapConfirm : '🔄 SWAP REQUEST',
+  coverConfirm: '🙋 OT COVER REQUEST',
   event       : '📢 ANNOUNCEMENT',
-  approved    : '✅ REQUEST APPROVED',
-  rejected    : '❌ REQUEST REJECTED',
+  approved    : '✅ APPROVED',
+  rejected    : '❌ REJECTED',
   revoked     : '↩️ APPROVAL WITHDRAWN',
   cancelled   : '🗑️ REQUEST CANCELLED',
-  schedRevoke : '↩️ SCHEDULE CHANGE WITHDRAWN',
-  schedDecline: '⚠️ EMPLOYEE DECLINED YOUR SCHEDULE CHANGE',
-  swapNo      : '❌ SHIFT SWAP DECLINED',
+  schedRevoke : '↩️ CHANGE WITHDRAWN',
+  schedDecline: '⚠️ CHANGE DECLINED',
+  swapNo      : '❌ SWAP DECLINED',
   coverNo     : '❌ OT COVER DECLINED',
-  coverRemoved: 'ℹ️ YOU HAVE BEEN REMOVED FROM OT COVER'
+  coverRemoved: 'ℹ️ OT COVER REMOVED'
 };
 
-/* Việc người nhận phải làm — dòng cuối, luôn phải có. */
+/* Việc người nhận phải làm — dòng cuối. Ngắn: người ta biết "app" là gì. */
 const ZALO_ACTION = {
-  apprNeed    : 'Open the app › Approvals to approve or reject.',
-  schedBulk   : 'Everyone listed above: open the app to confirm or decline your own change.',
-  schedChange : 'Open the app to confirm or decline this change.',
-  swapConfirm : 'Open the app to accept or decline.',
-  coverConfirm: 'Open the app to accept or decline the OT cover.',
-  rejected    : 'Check the reason in the app and submit a new request if needed.',
-  revoked     : 'Check your working schedule in the app.',
-  schedRevoke : 'If you already submitted a request based on this change, cancel it in the app.',
-  swapNo      : 'Open the app and choose another colleague.',
-  coverNo     : 'Open the app and choose another person to cover.'
+  apprNeed    : 'Approve in app',
+  schedBulk   : 'Confirm in app',
+  schedChange : 'Confirm in app',
+  swapConfirm : 'Accept / decline in app',
+  coverConfirm: 'Accept / decline in app',
+  rejected    : 'Submit a new request if needed',
+  swapNo      : 'Choose another colleague',
+  coverNo     : 'Assign another colleague'
 };
+
+/* ============================================================
+   MÃ CA → CHỮ IN RA ZALO
+   ------------------------------------------------------------
+   Bảng cứng, KHÔNG lấy nhãn tiếng Việt của app. SD/SN/SO là mã nội bộ
+   ("đổi sang ca D/N/O") — quy thẳng về ca đích. Ô trống in "—", KHÔNG in
+   "OFF" vì OFF là một mã CÓ THẬT (nghỉ bù bản cũ).
+   ============================================================ */
+const Z_SHIFT = {
+  O:'O', D:'D', N:'N', R:'R',
+  SD:'D', SN:'N', SO:'O',                       /* ← mã nội bộ, quy về ca đích */
+  AL8:'AL (full day)', AL4:'AL (half day)',
+  NP:'Unpaid', COM:'Comp off', OFF:'Day off',
+  WED:'Marriage', FUN:'Bereavement', MAT:'Maternity', ALP:'AL extra',
+  OTD:'OT 08:00–20:00', OTN:'OT 20:00–08:00', OTL:'OT 12:00–13:00',
+  OT2:'OT 18:00–20:00', OT3:'OT 17:00–20:00'
+};
+function zShift(code){
+  if(!code)return '—';
+  /* Ca kép: nửa trái ca chuẩn, nửa phải tăng ca — in tách, không in "O+N" */
+  const cb=(typeof comboOf==='function')?comboOf(code):null;
+  if(cb)return zShift(cb.work)+' + '+zShift(cb.ot);
+  return Z_SHIFT[code]||code;
+}
+/* Ca CHUẨN của một người trong một ngày — lấy thẳng từ lịch chuẩn S.base,
+   không lấy eff() vì eff trả về ca THỰC TẾ (có thể đã bị đổi rồi). */
+function zStd(empId,iso){
+  return ((S.base&&S.base[empId])||{})[iso]||'';
+}
+/* ------------------------------------------------------------
+   DÒNG SỐ 2 — "ca chuẩn → ca mới", gói trong một dòng.
+     std===cur          →  "D → N"
+     std!==cur          →  "D → O (was N)"      (sửa chồng lên thay đổi cũ)
+     now trùng std      →  "back to D"          (thu hồi / về ca chuẩn)
+     không có ca mới    →  "stays D"            (huỷ đơn, đối phương từ chối)
+   ------------------------------------------------------------ */
+function zMove(std,cur,now){
+  const S1=zShift(std), C1=zShift(cur), N1=zShift(now);
+  if(!now||now===cur)            return 'stays '+(C1!=='—'?C1:S1);
+  if(std&&now===std)             return 'back to '+S1;
+  if(std&&cur&&cur!==std)        return S1+' → '+N1+'  (was '+C1+')';
+  return (S1!=='—'?S1:C1)+' → '+N1;
+}
+/* Một dòng đầy đủ: "Wed 19/08  Tran Van A  D → N" */
+function zLine(iso,empId,std,cur,now){
+  return zDate(iso)+'  '+zName(empId)+'  '+zMove(std,cur,now);
+}
+/* Phần tăng ca của một dòng đơn OT — giờ THẬT người ta khai, kèm số giờ.
+   d = một phần tử của reqDays(). */
+function zOt(d){
+  const h=(typeof reqDayHours==='function')?reqDayHours(d):(d.hours||0);
+  const from=d.timeIn||'', to=d.timeOut||'';
+  const t=(from||to)?('OT '+from+'–'+to):zShift(d.code||'OTD');
+  return t+((d.isoEnd&&d.isoEnd!==d.iso)?' (+1d)':'')
+          +(h?(' ('+(Math.round(h*10)/10)+'h)'):'');
+}
 
 /* ---- Từ vựng tiếng Anh dùng để dựng thân tin ---- */
 const Z_TYPE = {
@@ -160,14 +234,18 @@ function zName(id){
   const e=(typeof empById==='function')?empById(id):null;
   return (e&&e.name)?e.name:(id||'');
 }
-/* "Wed 19/08/2026" — luôn tiếng Anh, không phụ thuộc LANG của người đang mở app */
+/* "Wed 19/08" — luôn tiếng Anh, không phụ thuộc LANG của người đang mở app.
+   ★ v6.4: BỎ NĂM khi ngày nằm trong năm hiện tại. Tin nào cũng nói về việc
+   sắp tới vài ngày; in "/2026" ở mọi dòng chỉ tốn 5 ký tự mà không thêm
+   thông tin. Ngày sang năm khác thì vẫn in năm để không gây hiểu nhầm. */
 function zDate(iso){
   if(!iso)return '';
   const p=String(iso).split('-');
   if(p.length!==3)return String(iso);
   let dw='';
   try{dw=Z_DOW[new Date(iso+'T00:00:00').getDay()]+' ';}catch(e){}
-  return dw+p[2]+'/'+p[1]+'/'+p[0];
+  const yr=(p[0]===String(new Date().getFullYear()))?'':('/'+p[0]);
+  return dw+p[2]+'/'+p[1]+yr;
 }
 function zDateTime(ts){
   if(!ts)return '';
@@ -181,7 +259,7 @@ function zLevel(k){
   if(k==='fe')return 'Field Engineer';
   if(k==='trung'){
     const n=(typeof ROOT_ADMIN!=='undefined')?zName(ROOT_ADMIN):'';
-    return n?('Site Manager ('+n+')'):'Site Manager';
+    return n?('Section Chief ('+n+')'):'Section Chief';
   }
   if(k==='kmgr'){
     const d=(typeof kmgrDelegate==='function')?kmgrDelegate():null;
@@ -194,77 +272,81 @@ function zLevel(k){
 /* Tên cấp KHÔNG kèm tên người — dùng ở dòng "Already approved by" vì ngay
    sau đó đã có tên người duyệt thật rồi, kèm nữa thành lặp. */
 function zLevelPlain(k){
-  return {fe:'Field Engineer',trung:'Site Manager',kmgr:'Korean Manager'}[k]||k||'';
+  return {fe:'Field Engineer',trung:'Section Chief',kmgr:'Korean Manager'}[k]||k||'';
 }
-/* ---- Chi tiết một đơn, dạng nhiều dòng, tiếng Anh ----
-   Dùng chung cho tin "cần duyệt", "đã duyệt", "bị từ chối"… nên người đọc
-   không phải mở app mới biết đơn nói gì (yêu cầu ZALO-PHUONG-AN ô K14). */
-function zReqLines(r){
-  const L=[];
+/* ============================================================
+   MỘT ĐƠN = MỘT DÒNG   ★ v6.4
+   ------------------------------------------------------------
+   Trả về MẢNG, thường đúng 1 phần tử:
+     nghỉ phép   Wed 19/08  Tran Van A  D → AL (full day)
+     đổi ca      Wed 19/08  Tran Van A  D ⇄ N  Le Thi C
+     tăng ca     Wed 19/08  Tran Van A  O → O + OT 17:00–21:00 (4h)
+     bổ sung giờ Wed 19/08  Tran Van A  D  07:30–20:30
+   Nhiều ngày thì mỗi ngày một dòng, trần 4 dòng rồi "+N more".
+   Ghi chú / lý do đi thành dòng riêng vì đó là thứ người đọc cần nhất.
+
+   Bản cũ đẩy ra 10–14 dòng (Employee / Type / Total / Submitted at…). Bỏ
+   hết: tên đã có trong dòng dữ liệu, loại đơn đã có trong tiêu đề, giờ gửi
+   đơn không ai dùng để ra quyết định, và app có đủ.
+   ============================================================ */
+function zReqLines(r,opt){
+  const L=[]; opt=opt||{};
   if(!r)return L;
   const e=(typeof empById==='function')?empById(r.empId):null;
   const days=(typeof reqDays==='function')?reqDays(r):[];
+  const who=zName(r.empId)+(opt.full?(' ('+(r.empId||'')+((e&&e.team)?'·'+e.team:'')+')'):'');
 
-  L.push('Employee: '+zName(r.empId)+' ('+(r.empId||'')+')'
-        +((e&&e.team)?' · Team '+e.team:''));
-  L.push('Type: '+(Z_TYPE[r.type]||r.type||''));
-
-  /* Ngày & nội dung từng dòng — tối đa 5 dòng rồi gộp cho tin khỏi dài */
   if(r.type==='multi'){
-    L.push('Period: '+zDate(r.from)+' → '+zDate(r.to)
-          +((r.timeIn||r.timeOut)?'  ('+(r.timeIn||'')+'–'+(r.timeOut||'')+')':''));
+    L.push(zDate(r.from)+' → '+zDate(r.to)+'  '+who
+          +((r.timeIn||r.timeOut)?('  '+(r.timeIn||'')+'–'+(r.timeOut||'')):''));
   }else{
-    const MAXD=5;
+    const MAXD=4;
     days.slice(0,MAXD).forEach(d=>{
-      const before=(r.before&&r.before[d.iso]!==undefined)?r.before[d.iso]
-                  :((typeof eff==='function')?(eff(r.empId,d.iso).code||''):'');
+      const std=zStd(r.empId,d.iso);
+      const cur=(r.before&&r.before[d.iso]!==undefined)?r.before[d.iso]
+               :((typeof eff==='function')?(eff(r.empId,d.iso).code||''):'');
       if(r.type==='swap'){
         const bw=(r.beforeW&&r.beforeW[d.iso]!==undefined)?r.beforeW[d.iso]
                 :((typeof eff==='function')?(eff(r.withId,d.iso).code||''):'');
-        L.push('• '+zDate(d.iso)+' :  '+(before||'OFF')+' ⇄ '+(bw||'OFF')
-              +'  ('+zName(r.withId)+')');
+        L.push(zDate(d.iso)+'  '+who+'  '+zShift(cur||std)+' ⇄ '+zShift(bw)+'  '+zName(r.withId));
       }else if(r.type==='ot'){
-        const h=(typeof reqDayHours==='function')?reqDayHours(d):(d.hours||0);
-        L.push('• '+zDate(d.iso)+' :  '+(d.code||'OT')+'  '+(d.timeIn||'')+'–'+(d.timeOut||'')
-              +((d.isoEnd&&d.isoEnd!==d.iso)?' (+1d)':'')
-              +(h?'  = '+(Math.round(h*10)/10)+'h':''));
+        /* Tăng ca KHÔNG mất ca chuẩn → "O → O + OT …". Ca chuẩn là nghỉ
+           (R / trống) thì chỉ có phần OT, không bịa ra ca. */
+        const keep=zShift(cur||std);
+        const work=(keep==='—'||keep==='R')?'':(keep+' + ');
+        L.push(zDate(d.iso)+'  '+who+'  '+keep+' → '+work+zOt(d));
       }else if(r.type==='wt'||r.type==='late'){
-        L.push('• '+zDate(d.iso)+' :  '+(d.timeIn||'')+'–'+(d.timeOut||''));
+        L.push(zDate(d.iso)+'  '+who+'  '+zShift(cur||std)+'  '+(d.timeIn||'')+'–'+(d.timeOut||''));
       }else{
-        L.push('• '+zDate(d.iso)+' :  '+(before||'OFF')+' → '+(d.code||'OFF'));
+        L.push(zDate(d.iso)+'  '+who+'  '+zMove(std,cur,d.code));
       }
     });
-    if(days.length>MAXD)L.push('• … and '+(days.length-MAXD)+' more day(s)');
+    if(days.length>MAXD)L.push('+'+(days.length-MAXD)+' more day(s) — see app');
   }
 
-  /* Con số quyết định */
-  if(r.type==='ot'&&typeof reqHours==='function'){
-    const h=reqHours(r);
-    if(h)L.push('Total overtime: '+(Math.round(h*10)/10)+' h');
+  /* Chỉ giữ những gì thay đổi quyết định duyệt.
+     ★ v6.5 — một đơn có thể có NHIỀU người cover, mỗi người vài ngày.
+     Một người thì in gọn "Cover: A ⏳"; nhiều người thì kèm ngày của từng
+     người, vì người duyệt cần biết ngày nào còn hổng. */
+  const ICO={pending:'⏳',accepted:'✅',confirmed:'✅',declined:'❌'};
+  const gsC=(typeof reqCoverGroups==='function')?reqCoverGroups(r):[];
+  if(gsC.length){
+    const one=gsC.length===1;
+    L.push('Cover: '+gsC.map(g=>zName(g.id)+' '+(ICO[g.st||'pending']||'⏳')
+          +(one?'':' ('+g.isos.map(i=>String(i).slice(8)+'/'+String(i).slice(5,7)).join(',')+')')
+          ).join(' · '));
+  }else if(r.coverId){
+    L.push('Cover: '+zName(r.coverId)+' '+(ICO[r.coverSt||'pending']||'⏳'));
   }
-  if(r.type==='leave'){
-    const n=(typeof reqLeaveDays==='function')?reqLeaveDays(r):days.length;
-    if(n)L.push('Total leave: '+(Math.round(n*10)/10)+' day(s)');
-  }
-
-  /* Người liên quan */
-  if(r.withId)L.push('Swap with: '+zName(r.withId)
-    +(r.confirmW?' — '+(Z_CONFIRM_ST[r.confirmW]||r.confirmW):''));
-  if(r.coverId)L.push('OT cover: '+zName(r.coverId)
-    +' — '+(Z_COVER_ST[r.coverSt||'pending']||r.coverSt));
-  if(r.guarantorId)L.push('Guarantor: '+zName(r.guarantorId));
-
-  /* Lý do / ghi chú */
+  const gsW=(typeof reqWithGroups==='function')?reqWithGroups(r):[];
+  const pend=gsW.filter(g=>g.st&&g.st!=='confirmed');
+  if(pend.length)
+    L.push('Swap partner: '+pend.map(g=>zName(g.id)+' '+(g.st==='declined'?'❌':'⏳')).join(' · '));
   if(r.type==='wt'&&typeof wtReasonLabel==='function'){
-    const wl=wtReasonLabel(r);
-    if(wl)L.push('Reason: '+wl);
+    const wl=wtReasonLabel(r);if(wl)L.push('Reason: '+wl);
   }
   if(r.note)L.push('Note: "'+r.note+'"');
-  if(r.reason)L.push('Rejection reason: '+r.reason);
-
-  /* Nguồn gốc */
-  const by=(r.byId&&r.byId!==r.empId)?(' by '+zName(r.byId)):'';
-  L.push('Submitted'+by+' at '+zDateTime(r.createdAt));
+  if(r.reason)L.push('Reason: '+r.reason);
   return L;
 }
 /* Các cấp đã duyệt xong — để tin "cần duyệt" nói rõ đơn đang ở đâu */
@@ -278,6 +360,16 @@ function zChainLines(r){
   if(done.length)L.push('Already approved by: '+done.join('  ›  '));
   return L;
 }
+/* Bản một dòng của chuỗi cấp đã duyệt: "passed FE › SM".
+   Dùng trong tin "chờ duyệt" để người duyệt biết đơn đã qua tay ai mà không
+   tốn cả một dòng dài. Trả '' nếu chưa cấp nào duyệt. */
+function zChainShort(r){
+  if(!r||typeof reqChain!=='function')return '';
+  const ap=r.appr||{};
+  const SHORT={fe:'FE',trung:'SC',kmgr:'KM'};
+  const done=reqChain(r).filter(k=>ap[k]&&!ap[k].reject).map(k=>SHORT[k]||k);
+  return done.length?('passed '+done.join(' › ')):'';
+}
 
 /* ---- Thân tin "sửa lịch nhiều người", nhóm theo NGƯỜI ----
    Mỗi người một dòng gồm mọi ngày của họ, để ai cũng dò được tên mình mà
@@ -285,26 +377,38 @@ function zChainLines(r){
      · schedBulk — quản lý chủ động bấm 🔕 giữ rồi 🔔 gửi (06-calendar.js)
      · gộp tự động — quản lý quên bấm giữ, hộp gửi tự cuộn các thay đổi rời
        rạc trong cùng một khoảng thời gian lại (zaloOutMergeSched bên dưới)
-   rows = [{to,iso,was,now}] */
+   rows = [{to,iso,std,was,now}]
+
+   ★ v6.4 — MỖI THAY ĐỔI MỘT DÒNG, thẳng cột:
+       19/08  Tran Van A  D → N
+       20/08  Tran Van A  R → D
+       19/08  Le Thi C    N → R
+   Bản cũ nhồi mọi ngày của một người vào một dòng dài, đọc trên điện thoại
+   phải cuộn ngang. Bỏ dòng đếm và dòng "Changed by" riêng — cả hai dồn lên
+   tiêu đề và dòng cuối. Trần hạ 25 → 15 người cho tin khỏi quá dài. */
 function zHoldLines(rows, fromId){
   const L=[];
-  rows=rows||[];
+  rows=(rows||[]).slice();
   if(!rows.length)return L;
-  const byPerson={};
-  rows.forEach(x=>{ (byPerson[x.to]=byPerson[x.to]||[]).push(x); });
-  const ids=Object.keys(byPerson)
-    .sort((a,b)=>String(zName(a)).localeCompare(String(zName(b)),'vi'));
-  L.push(ids.length+' employee(s) · '+rows.length+' change(s)');
-  if(fromId)L.push('Changed by: '+zName(fromId));
-  L.push('');
-  const MAXP=25;                          // trần người, phòng tin dài quá
-  ids.slice(0,MAXP).forEach(id=>{
-    const days=byPerson[id]
-      .sort((a,b)=>String(a.iso).localeCompare(String(b.iso)))
-      .map(x=>zDate(x.iso).replace(/\/\d{4}$/,'')+' '+(x.was||'OFF')+'→'+(x.now||'OFF'));
-    L.push('• '+zName(id)+' :  '+days.join('  ·  '));
+  rows.sort((a,b)=>{
+    const c=String(zName(a.to)).localeCompare(String(zName(b.to)),'vi');
+    return c||String(a.iso).localeCompare(String(b.iso));
   });
-  if(ids.length>MAXP)L.push('• … and '+(ids.length-MAXP)+' more employee(s) — see the app');
+  const MAXL=15;
+  const use=rows.slice(0,MAXL);
+  /* Đệm tên cho cùng bề rộng → cột mã ca thẳng hàng, dò tên mình nhanh hơn.
+     Zalo dùng phông tỉ lệ nên không thẳng tuyệt đối, nhưng vẫn đỡ rối. */
+  const W=Math.min(16,use.reduce((m,x)=>Math.max(m,zName(x.to).length),0));
+  const pad=s=>s.length>=W?s:(s+' '.repeat(W-s.length));
+  let last='';
+  use.forEach(x=>{
+    /* Tên lặp lại thì để trống — cùng người, nhiều ngày, khỏi đọc lại */
+    const nm=zName(x.to), show=(nm===last)?' '.repeat(W):pad(nm);
+    last=nm;
+    L.push(zDate(x.iso).replace(/^\w+ /,'')
+          +'  '+show+'  '+zMove(x.std,x.was,x.now));
+  });
+  if(rows.length>MAXL)L.push('+'+(rows.length-MAXL)+' more — see app');
   return L;
 }
 /* Số người trong một bó dòng sửa lịch — dùng để đặt tiêu đề */
@@ -316,16 +420,18 @@ function zHoldPeople(rows){
    chờ cấp nào để người đọc biết ngay có phải việc của mình không. */
 function zaloTitle(n, zk){
   if(zk==='apprNeed'){
-    const lvl=n.lvl||'';
-    if(lvl==='kmgr')return '📥 FINAL APPROVAL REQUIRED';
-    if(lvl==='fe')  return '📥 APPROVAL REQUIRED — FIELD ENGINEER';
-    return '📥 APPROVAL REQUIRED';
+    /* Cấp đang chờ nằm ngay tiêu đề để người đọc biết CÓ PHẢI VIỆC CỦA MÌNH
+       không, mà không tốn thêm một dòng "Waiting for:" trong thân tin. */
+    const L={fe:'Field Engineer',trung:'Section Chief',kmgr:'Final'}[n.lvl||''];
+    return '📥 APPROVAL REQUIRED' + (L?(' — '+L):'');
   }
   if(zk==='schedBulk'){
-    /* Số người ngay trên tiêu đề — người ta nhìn preview thông báo là biết
-       ngay đây là đợt sửa lịch lớn hay chỉ vài ô lẻ. */
-    const p=new Set(((n&&n.hold)||[]).map(x=>x.to)).size;
-    return '📅 WORK SCHEDULE UPDATED' + (p?(' — ' + p + ' PEOPLE'):'');
+    /* Số người + số ô ngay trên tiêu đề — nhìn preview là biết đợt sửa lịch
+       lớn hay chỉ vài ô lẻ, khỏi phải mở tin. */
+    const rows=(n&&n.hold)||[];
+    const p=new Set(rows.map(x=>x.to)).size;
+    return '📅 SCHEDULE UPDATED'
+         + (p?(' — '+p+' people / '+rows.length+' changes'):'');
   }
   return ZALO_TITLE[zk] || '🔔 NOTIFICATION';
 }
@@ -333,6 +439,26 @@ function zaloTitle(n, zk){
    dòng "👤 <tên người nhận>" ở đầu tin, vì ghi tên một người là gây hiểu nhầm. */
 function zaloIsBroadcast(n, zk){
   return (zk==='event' || zk==='schedBulk') ? 1 : 0;
+}
+/* NHÃN NGƯỜI NHẬN — tin gửi CHUNG ghi nhãn NHÓM, tin cá nhân ghi tên cá nhân.
+   ------------------------------------------------------------
+   Tin sự kiện / sửa lịch hàng loạt đẻ ra MỘT thông báo cho MỖI người trong
+   một vòng lặp; nếu lấy `toName` = tên người ĐẦU TIÊN của vòng lặp thì nhật ký
+   và mọi chỗ hiển thị đều gán nhầm cả tổ cho đúng một cái tên (VD "Phan Quỳnh
+   Vân" cho tin gửi everyone). Ở đây quy về nhãn nhóm:
+     · event 'all'     → All staff
+     · event 'teams'   → Team A · Team B  (nhãn do js/20-events.js dựng, n.aud)
+     · event 'working' → On-duty staff …
+     · schedBulk       → N employees
+   Còn tin liên quan CÁ NHÂN (duyệt đơn, đổi ca, cover, đổi lịch một người…)
+   giữ nguyên tên cá nhân. */
+function zaloAudienceName(n, zk, emp){
+  if(zk==='event')     return (n && n.aud) || 'All staff';
+  if(zk==='schedBulk'){
+    const p=new Set(((n&&n.hold)||[]).map(x=>x.to)).size;
+    return p>1 ? (p+' employees') : (emp ? (emp.name||n.to) : n.to);
+  }
+  return emp ? (emp.name||n.to) : n.to;
 }
 /* Băm 32-bit (FNV-1a) của tiêu đề + thân tin + nhóm. Không phải mật mã —
    chỉ để so "hai tin này có y hệt nhau không". */
@@ -427,9 +553,11 @@ function zaloOutMergeSched(list){
   const np=zHoldPeople(host.rows);
   host.bcast=np>1?1:0;                         // tin chung thì đừng ghi tên một người
   host.action=np>1?ZALO_ACTION.schedBulk:ZALO_ACTION.schedChange;
-  host.title=np>1?('📅 WORK SCHEDULE UPDATED — '+np+' PEOPLE')
+  host.title=np>1?('📅 SCHEDULE UPDATED — '+np+' people / '+host.rows.length+' changes')
                  :ZALO_TITLE.schedChange;
   host.lines=zHoldLines(host.rows,host.fromId||from);
+  const by=host.fromId||from;
+  if(by)host.lines=host.lines.concat('By '+zName(by));
   host.notifIds=(host.notifIds||[host.notifId]).concat(scs.map(x=>x.notifId))
                  .filter((v,i,a)=>a.indexOf(v)===i);
   host.tos=(host.tos||[host.to]).concat(rows.map(r=>r.to))
@@ -567,7 +695,7 @@ function zaloEnqueue(n){
 
     const item = {
       to      : n.to,
-      toName  : emp.name || n.to,
+      toName  : zaloAudienceName(n, zk, emp),
       title   : zaloTitle(n, zk),
       lines   : lines,
       action  : ZALO_ACTION[zk] || '',
@@ -581,7 +709,7 @@ function zaloEnqueue(n){
       fromId  : n.from || '',
       /* một dòng sửa lịch, để phép gộp 1 cuộn nhiều người vào một tin */
       sc      : (zk==='schedChange')
-                ? {to:n.to, iso:n.iso||'', was:n.oldCode||'', now:n.newCode||''}
+                ? {to:n.to, iso:n.iso||'', std:n.std||'', was:n.oldCode||'', now:n.newCode||''}
                 : null,
       /* tin gộp của nút 🔔 mang sẵn cả bó dòng */
       rows    : (zk==='schedBulk') ? ((n.hold||[]).slice()) : null
@@ -676,69 +804,54 @@ function zaloLines(n, zk){
   const req = (n && n.reqId && S.requests) ? S.requests[n.reqId] : null;
 
   switch(zk){
-    /* ---- Nhóm E: có đơn đang chờ duyệt (tin giá trị nhất) ---- */
+    /* ---- Nhóm E: có đơn đang chờ duyệt (tin giá trị nhất) ----
+       Một khối = một đơn. Cấp đang chờ đã nằm trên tiêu đề (zaloTitle) nên
+       ở đây không lặp lại. Chuỗi cấp đã duyệt rút thành "passed FE › SM". */
     case 'apprNeed': {
       if(!req) break;
-      L.push('Waiting for: ' + zLevel(n.lvl || (typeof reqNextLevel==='function'?reqNextLevel(req):'')));
-      L.push('');
-      zReqLines(req).forEach(x=>L.push(x));
-      const ch = zChainLines(req);
-      if(ch.length){ L.push(''); ch.forEach(x=>L.push(x)); }
-      /* Lời mời xác nhận của người đổi ca / người OT cover được GỘP vào đây
-         thay vì bắn thành tin riêng — xem js/13-portal.js (cờ nz:1). */
-      if(req.withId && req.confirmW==='pending')
-        L.push('⚠️ ' + zName(req.withId) + ' has not confirmed the swap yet.');
-      if(req.coverId && (req.coverSt||'pending')==='pending')
-        L.push('⚠️ ' + zName(req.coverId) + ' has not accepted the OT cover yet.');
+      zReqLines(req,{full:1}).forEach(x=>L.push(x));
+      const ch=zChainShort(req);
+      if(ch)L.push(ch);
       break;
     }
 
     /* ---- Nhóm F: sửa lịch hàng loạt, gộp thành MỘT tin ----
-       Nhóm theo NGƯỜI: mỗi người một dòng gồm mọi ngày của họ, để ai cũng
-       dò được tên mình mà không phải đọc hết. Dữ liệu nằm ở n.hold (mảng
-       {to,iso,was,now}) do schedHoldFlush() ở js/06-calendar.js dựng. */
+       Mỗi thay đổi một dòng thẳng cột. Dữ liệu ở n.hold (mảng
+       {to,iso,std,was,now}) do schedHoldFlush() ở js/06-calendar.js dựng. */
     case 'schedBulk':
       zHoldLines((n && n.hold) || [], n && n.from).forEach(x=>L.push(x));
+      if(n && n.from) L.push('By ' + zName(n.from));
       break;
 
     /* ---- Nhóm A: cần người nhận bấm xác nhận ---- */
     case 'schedChange':
-      L.push('• ' + zDate(n.iso) + ' :  ' + (n.oldCode||'OFF') + '  →  ' + (n.newCode||'OFF'));
-      if(n.from) L.push('Changed by: ' + zName(n.from));
+      L.push(zLine(n.iso, n.to, n.std, n.oldCode, n.newCode));
+      if(n.from) L.push('By ' + zName(n.from));
       break;
 
     case 'swapConfirm':
-      L.push('Requested by: ' + zName(n.from));
-      if(n.iso) L.push('Date: ' + zDate(n.iso));
-      if(req){ L.push(''); zReqLines(req).forEach(x=>L.push(x)); }
-      break;
-
     case 'coverConfirm':
-      L.push('Requested by: ' + zName(n.from));
-      if(n.iso) L.push('Date: ' + zDate(n.iso));
-      if(req){ L.push(''); zReqLines(req).forEach(x=>L.push(x)); }
+      if(req) zReqLines(req).forEach(x=>L.push(x));
+      else if(n.iso) L.push(zDate(n.iso)+'  '+zName(n.to));
+      L.push('Requested by ' + zName(n.from));
       break;
 
     case 'event':
+      /* Dòng đầu = NHÓM người nhận + ngày, để đọc preview là biết ngay tin
+         này gửi cho ai và cho hôm nào. */
+      L.push(((n.aud)?('👥 '+n.aud):'')+(n.iso?('  '+zDate(n.iso)):''));
       if(n.text) L.push(n.text);
-      if(n.iso)  L.push('Date: ' + zDate(n.iso));
       break;
 
-    /* ---- Nhóm B: kết quả duyệt đơn — kèm nguyên chi tiết đơn ---- */
+    /* ---- Nhóm B: kết quả duyệt đơn ---- */
     case 'approved': case 'rejected': case 'revoked': case 'cancelled': {
       if(req){
-        const lastBy = (zk==='approved' && req.decidedBy) ? req.decidedBy : (n.from||'');
-        if(zk==='approved')      L.push('Final approval by: ' + zLevel('kmgr') + (lastBy?' — '+zName(lastBy):''));
-        else if(zk==='rejected') L.push('Rejected by: ' + zName(lastBy));
-        else if(zk==='revoked')  L.push('Withdrawn by: ' + zName(lastBy));
-        else                     L.push('Cancelled by: ' + zName(lastBy));
-        L.push('');
+        const lastBy=(zk==='approved'&&req.decidedBy)?req.decidedBy:(n.from||'');
         zReqLines(req).forEach(x=>L.push(x));
-        if(zk==='approved'){
-          const ch=zChainLines(req);
-          if(ch.length){ L.push(''); ch.forEach(x=>L.push(x)); }
-          L.push('The actual working schedule has been updated.');
-        }
+        if(zk==='approved')      L.push('Final: '+(lastBy?zName(lastBy):zLevelPlain('kmgr'))+' — schedule updated');
+        else if(zk==='rejected') L.push('Rejected by '+zName(lastBy));
+        else if(zk==='revoked')  L.push('Withdrawn by '+zName(lastBy)+' — back to standard');
+        else                     L.push('Cancelled by '+zName(lastBy));
       }else if(n.text){
         /* Đơn đã bị xoá khỏi S.requests (huỷ / dọn kỳ cũ) — vẫn phải gửi được */
         L.push(String(n.text).replace(/^[^\p{L}\p{N}]+/u,'').trim());
@@ -747,26 +860,49 @@ function zaloLines(n, zk){
     }
 
     /* ---- Nhóm C: phản hồi hai chiều giữa nhân viên ---- */
-    case 'swapNo':       L.push(zName(n.from) + ' declined your shift swap request.');
-                         if(req){L.push('');zReqLines(req).forEach(x=>L.push(x));} break;
-    case 'coverNo':      L.push(zName(n.from) + ' declined your OT cover request.');
-                         if(req){L.push('');zReqLines(req).forEach(x=>L.push(x));} break;
-    case 'coverRemoved': L.push('You are no longer assigned as OT cover'
-                                + (n.iso?(' for '+zDate(n.iso)):'') + '.'); break;
-    case 'schedDecline': L.push(zName(n.from) + ' declined the schedule change you created'
-                                + (n.iso?(' for '+zDate(n.iso)):'') + '.'); break;
-    case 'schedRevoke':  L.push('The schedule change'
-                                + (n.iso?(' for '+zDate(n.iso)):'')
-                                + ' has been withdrawn'
-                                + (n.from?(' by '+zName(n.from)):'') + '.');
-                         if(n.oldCode||n.newCode)
-                           L.push('Your shift stays: ' + (n.oldCode||'OFF')); break;
+    case 'swapNo':
+      L.push((n.iso?zDate(n.iso)+'  ':'')+zName(n.from)+' said no'
+            +(n.oldCode?(' — you stay '+zShift(n.oldCode)):''));
+      break;
+    case 'coverNo':
+      L.push((n.iso?zDate(n.iso)+'  ':'')+zName(n.from)+' said no — OT still uncovered');
+      break;
+    case 'coverRemoved':
+      L.push((n.iso?zDate(n.iso)+'  ':'')+'You are off OT cover'
+            +(n.iso?(' — your shift '+zShift(zStd(n.to,n.iso))):''));
+      break;
+    case 'schedDecline':
+      L.push(zLine(n.iso, n.from, n.std, n.oldCode, n.newCode)+'  declined');
+      L.push('Back to standard — reassign someone');
+      break;
+    case 'schedRevoke':
+      L.push((n.iso?zDate(n.iso)+'  ':'')+zName(n.to)+'  '
+            +'back to '+zShift(n.std||n.oldCode));
+      if(n.from) L.push('By ' + zName(n.from));
+      break;
 
     default:
       /* Loại tin chưa có bản tiếng Anh riêng — dùng lại câu app đã dựng,
          bỏ emoji đầu dòng vì tiêu đề đã nói rồi. Không nuốt tin. */
       if(n.text) L.push(String(n.text).replace(/^[^\p{L}\p{N}]+/u,'').trim());
   }
+
+  /* ------------------------------------------------------------
+     LƯỚI AN TOÀN — KHÔNG BAO GIỜ NUỐT TIN   ★ v6.4
+     zaloEnqueue bỏ qua gói có lines rỗng. Khuôn ngắn dựng thân tin CHỈ từ
+     dữ liệu (ngày, ca, tên) nên đơn hỏng — mất mảng days, đơn cũ thiếu
+     trường, hoặc reqDays chưa nạp — sẽ ra mảng rỗng và tin biến mất trong
+     im lặng. Bản dài trước đây vô tình không dính vì luôn in "Employee:".
+     Ở đây bắt lại: rỗng thì lấy câu app đã dựng, cùng lắm là một dòng tối
+     thiểu. Thà tin xấu còn hơn không có tin.
+     ------------------------------------------------------------ */
+  if(!L.filter(x=>x&&String(x).trim()).length){
+    if(n && n.text) L.push(String(n.text).replace(/^[^\p{L}\p{N}]+/u,'').trim());
+    else if(n && n.iso) L.push(zDate(n.iso)+'  '+zName(n.to));
+    else if(n && n.to)  L.push(zName(n.to));
+    if(!L.length)L.push('See the app for details.');
+  }
+
   /* Giữ lại dòng trống ở GIỮA (để chia đoạn), chỉ cắt ở hai đầu */
   while(L.length && !L[0])        L.shift();
   while(L.length && !L[L.length-1]) L.pop();

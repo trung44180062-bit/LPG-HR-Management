@@ -127,10 +127,11 @@ for(let i=1;i<=5;i++){
 ctx.zaloFlush();
 ok('đổi lịch: 5 người → ĐÚNG 1 hàng đợi',nRows()===1,'ra '+nRows()+' hàng');
 ok('đổi lịch: tiêu đề nói rõ số người',
-   /5 PEOPLE/.test(rows()[0].title||''),rows()[0].title);
+   /5 people/.test(rows()[0].title||''),rows()[0].title);
 ok('đổi lịch: là tin chung, không ghi tên một người',rows()[0].bcast===1);
 ok('đổi lịch: thân tin liệt kê đủ 5 người',
-   (rows()[0].lines||[]).filter(l=>/^• /.test(l)).length===5);
+   (rows()[0].lines||[]).filter(l=>/→/.test(l)).length===5,
+   JSON.stringify(rows()[0].lines));
 ok('đổi lịch: vẫn là tin 🔴 bắn ngay',rows()[0].pri==='now');
 ok('đổi lịch: trong app vẫn là 5 việc chờ xác nhận riêng',
    Object.values(S.notifs).filter(n=>n.kind==='schedChange').length===5);
@@ -142,7 +143,7 @@ ctx.newNotif({kind:'schedChange',to:'e1',from:'mgr',iso:'2026-08-10',
               oldCode:'D',newCode:'N'});
 ctx.zaloFlush();
 ok('đổi lịch: một mình một ngày thì giữ tin cá nhân',
-   nRows()===1&&rows()[0].bcast===0&&/YOUR WORK SCHEDULE/.test(rows()[0].title),
+   nRows()===1&&rows()[0].bcast===0&&/SHIFT CHANGED/.test(rows()[0].title),
    rows()[0].title);
 
 /* 2b2. Một người NHIỀU ngày → gộp, nhưng vẫn là tin riêng của người đó */
@@ -178,7 +179,8 @@ ctx.newNotif({kind:'info',zk:'schedBulk',to:'mgr',from:'mgr',
 ctx.zaloFlush();
 ok('giữ-rồi-gửi: vẫn đúng 1 tin Zalo',nRows()===1,'ra '+nRows()+' hàng');
 ok('giữ-rồi-gửi: liệt kê đủ 4 người',
-   (rows()[0].lines||[]).filter(l=>/^• /.test(l)).length===4);
+   (rows()[0].lines||[]).filter(l=>/→/.test(l)).length===4,
+   JSON.stringify(rows()[0].lines));
 
 /* ============================================================
    3. NHIỀU NGƯỜI DUYỆT CÙNG MỘT ĐƠN — một tin, liệt kê đủ tên

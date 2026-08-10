@@ -78,6 +78,19 @@ function evIsWorkingCode(c){
   const k=codeInfo(c).cat;
   return k==='work'||k==='swap'||k==='ot'||k==='combo';
 }
+/* NHÃN NHÓM NGƯỜI NHẬN cho tin Zalo — tin sự kiện là tin gửi CHUNG nên phải
+   ghi nhãn nhóm, không phải tên một cá nhân. Chữ tiếng Anh vì tin Zalo tiếng
+   Anh (xem ZALO-BOT.md 2b.1). js/21-notify.js đọc nhãn này qua n.aud. */
+function evAudienceLabel(ev){
+  if(!ev) return 'All staff';
+  if(ev.scope==='teams'){
+    const tms=(ev.teams||[]).map(x=>String(x).trim()).filter(Boolean);
+    if(!tms.length) return 'Selected teams';
+    return tms.map(t=>'Team '+t).join(' · ');
+  }
+  if(ev.scope==='working') return 'On-duty staff (event days)';
+  return 'All staff';
+}
 function evRecipients(ev){
   const days=evDays(ev);
   if(ev.scope==='teams'){
@@ -133,10 +146,14 @@ function evSendNotifs(ev){
   const by=meId()||'admin';
   const ids=evRecipients(ev);
   const txt=(ev.title||t2('Sự kiện'))+' — '+evDateLabel(ev)+(ev.note?' · '+ev.note:'');
+  /* Nhãn nhóm người nhận — giống nhau cho mọi người nên các tin gộp vân tay
+     thành ĐÚNG 1 tin, và tin đó ghi "👥 All staff / Team A · B" thay vì tên
+     một cá nhân. */
+  const aud=evAudienceLabel(ev);
   /* status 'sent' (không phải 'pending') để pruneOldNotifs() dọn được sau ~2 kỳ —
      sự kiện là tin một chiều, không có gì chờ nhân viên bấm xác nhận. */
   ids.forEach(id=>{
-    newNotif({kind:'event',to:id,from:by,evId:ev.id,iso:evDays(ev)[0]||'',
+    newNotif({kind:'event',to:id,from:by,evId:ev.id,iso:evDays(ev)[0]||'',aud:aud,
       status:'sent',text:t2('Sự kiện trên lịch')+': '+txt});
   });
   return ids.length;
