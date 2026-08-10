@@ -327,8 +327,15 @@ async function doLogin(){
   const raw=$('loginId').value.trim(),pw=$('loginPw').value;
   if(!raw||!pw){gateMsg(t('Nhập cả mã nhân viên và mật khẩu.'));return;}
 
+  /* ★ v6.6 — app không còn cache: chưa tải xong Firebase thì chưa có danh
+     sách nhân sự để đối chiếu. Báo đúng nguyên nhân thay vì để người dùng
+     tưởng mình gõ sai mật khẩu. */
+  if(typeof fbReady==='function'&&!fbReady()){
+    gateMsg(t('Đang tải dữ liệu từ máy chủ — chờ vài giây rồi đăng nhập lại.'));
+    return;
+  }
   if(!S.employees||!S.employees.length){
-    gateMsg(t('Chưa tải được danh sách nhân sự. Kiểm tra kết nối mạng rồi thử lại — hoặc nhờ quản lý mở app một lần trên máy này để đồng bộ.'));
+    gateMsg(t('Chưa tải được danh sách nhân sự. Kiểm tra kết nối mạng rồi thử lại.'));
     return;
   }
   const found=findEmpLoose(raw);

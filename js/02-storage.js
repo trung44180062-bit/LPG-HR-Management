@@ -1,8 +1,36 @@
 /* ============================================================
-   STORAGE + FIREBASE — localStorage, dong bo Realtime DB
-   LPGT Cavern — Quan ly Cong Ca v4
+   FIREBASE LÀ NGUỒN DỮ LIỆU DUY NHẤT  ★ v6.6 — BỎ HẲN CACHE
+   LPGT Cavern — Quan ly Cong Ca
    ------------------------------------------------------------
-   ĐỒNG BỘ THEO DELTA (từ bản v4.7)
+   VÌ SAO BỎ CACHE
+
+   Trước đây toàn bộ đối tượng S được lưu vào localStorage, và mỗi máy khi
+   mở lên phải ĐỐI CHIẾU bản sao cũ của mình với máy chủ. Chính việc đối
+   chiếu đó đẻ ra cả một họ lỗi khó truy:
+     · đơn đã xoá trên điện thoại bị máy khác đẩy ngược lên (hồi sinh)
+     · phải dựng sổ bia mộ, sổ đã-đồng-bộ, so `rev`… mỗi lớp lại thêm một
+       đường biên có thể sai
+     · người dùng xoá đi xoá lại nhiều lần mà mở máy khác vẫn thấy
+
+   Dữ liệu của tổ rất nhỏ (≈23 người, vài trăm đơn một kỳ). Tải trọn gói
+   một lần lúc mở app rẻ hơn nhiều so với giá phải trả cho việc hợp nhất
+   hai nguồn. Nên nay:
+
+       Firebase = SỰ THẬT DUY NHẤT.  Máy không giữ bản sao dữ liệu nào.
+
+     · Mở app  → đọc MỘT phát toàn bộ (once) → có dữ liệu mới cho dùng
+     · Đang mở → nghe realtime ở mức con, chỉ phần thay đổi bay về
+     · Thao tác→ ghi thẳng lên Firebase (vẫn theo delta cho nhẹ băng thông)
+     · Đóng tab → không còn gì trên máy. Mở lại là lấy bản mới nhất.
+
+   Hệ quả phải chấp nhận: KHÔNG có mạng thì app không mở được. Đổi lại,
+   không bao giờ còn cảnh hai máy hiểu khác nhau về cùng một dữ liệu.
+
+   Những thứ VẪN lưu trên máy (không phải dữ liệu nghiệp vụ, không đồng bộ):
+   phiên đăng nhập, ngôn ngữ, mốc đã-đọc-thông-báo, cấu hình Firebase riêng,
+   lựa chọn sắp xếp cột. Xoá cache trình duyệt chỉ mất mấy thứ đó.
+   ------------------------------------------------------------
+   ĐỒNG BỘ THEO DELTA (giữ từ bản v4.7)
 
    Bản cũ nghe `on('value')` ngay gốc và ghi bằng `set(S)`: mỗi lần BẤT KỲ
    ai đổi một ô lịch là MỌI máy tải lại TOÀN BỘ dữ liệu (nhân sự + lịch
@@ -33,82 +61,61 @@ const FB_VAL_BRANCHES=['employees','settings','meta','del'];
 let _fbLast=null;        // ảnh chụp JSON của lần đồng bộ gần nhất (để tính delta)
 let _fbSeen=null;        // id nào đã thấy từ máy chủ, dùng để dọn rác cục bộ
 let _fbRemoteRev=0;      // rev phía máy chủ
-let _fbSettleT=null;     // hẹn giờ "đã tải xong đợt đầu"
 let _fbRenderT=null;     // gộp nhiều sự kiện con thành một lần vẽ lại
 let _fbBooted=false;     // đã xử lý xong đợt đồng bộ đầu tiên chưa
 
 /* ============================================================
-   ★ v6.4 — HAI LỖ HỔNG LÀM "XOÁ RỒI VẪN HIỆN"
+   ★ v6.4 — HAI LỖ HỔNG CŨ (giữ ghi chép để không đi lại vết xe đổ)
 
-   LỖ 1 — GHI TRƯỢT MÀ APP TƯỞNG ĐÃ GHI
-   Bản cũ đặt `_fbLast=cur` NGAY TRƯỚC `fbRef.update()`, lỗi chỉ rơi vào
-   console.warn. Firebase update() là NGUYÊN KHỐI: rớt mạng, sai luật, hết
-   quota → CẢ GÓI trượt. Nhưng mốc đã dời, nên lần ghi sau tính delta so với
-   một hiện trạng KHÔNG CÓ THẬT trên máy chủ → thay đổi đó biến mất vĩnh
-   viễn. Xoá đơn trên điện thoại rồi tắt máy đúng lúc mạng chập là mất luôn
-   lệnh xoá; PC mở lên vẫn thấy đơn.
-   → Nay: giữ mốc cũ, chỉ dời SAU KHI máy chủ xác nhận; ghi trượt thì bật cờ
-     bẩn, báo lên thanh trạng thái và tự thử lại (fbRetry).
+   LỖ 1 — GHI TRƯỢT MÀ APP TƯỞNG ĐÃ GHI.  fbPush đặt `_fbLast=cur` NGAY
+   TRƯỚC `fbRef.update()`, lỗi chỉ rơi vào console.warn. Firebase update()
+   là NGUYÊN KHỐI: rớt mạng / sai luật / hết quota là CẢ GÓI trượt, nhưng
+   mốc đã dời nên lần ghi sau tính delta so với một hiện trạng KHÔNG CÓ
+   THẬT → thay đổi biến mất vĩnh viễn.
+   → Vẫn đang sửa theo cách: chỉ dời mốc SAU KHI máy chủ xác nhận; trượt
+     thì hoàn tác mốc, bật cờ bẩn, tự thử lại (fbRetry). Cách này còn
+     nguyên giá trị ở v6.6.
 
-   LỖ 2 — ĐẨY NGƯỢC BẢN GHI ĐÃ XOÁ (HỒI SINH)
-   fbBootSync cũ quyết định bằng cách so `rev`: máy chủ mới hơn thì dọn theo
-   máy chủ, ngược lại thì `fbPush()` đẩy phần "máy chủ thiếu" lên. Mà `rev`
-   là Date.now() của máy — lệch giờ, hoặc máy này vừa thao tác gì đó, là rơi
-   vào nhánh đẩy lên, và bản ghi máy khác vừa xoá bị đẩy sống lại.
-   Bia mộ chỉ đỡ được khi bia mộ TỚI ĐƯỢC máy này — mà bia mộ cũng có thể
-   trượt vì LỖ 1, hoặc bị dọn sau 180 ngày, hoặc dữ liệu bị xoá tay trên
-   Firebase Console.
-   → Nay bỏ hẳn việc so đồng hồ. Máy giữ một SỔ ĐÃ ĐỒNG BỘ (_fbSynced):
-     id nào máy này BIẾT CHẮC máy chủ đã từng có. Lúc mở app:
-       · máy chủ không có + CÓ trong sổ  → máy khác đã xoá → xoá theo
-       · máy chủ không có + KHÔNG trong sổ → mình tạo lúc mất mạng → đẩy lên
-     Không phụ thuộc đồng hồ, không phụ thuộc bia mộ tới kịp hay không.
+   LỖ 2 — ĐẨY NGƯỢC BẢN GHI ĐÃ XOÁ (hồi sinh). Gốc rễ là app giữ MỘT BẢN
+   SAO trong localStorage rồi phải đoán xem bản sao đó hay máy chủ mới
+   đúng. Mọi cách đoán (so `rev`, sổ bia mộ, sổ đã-đồng-bộ) đều chỉ là
+   giảm xác suất sai chứ không triệt được.
+   → v6.6 GIẢI QUYẾT TẬN GỐC bằng cách BỎ HẲN BẢN SAO. Không có bản sao
+     thì không có gì để đẩy ngược, và không còn câu hỏi "bên nào đúng".
+     Sổ bia mộ (S.del) vẫn giữ, nhưng nay chỉ còn là lớp đỡ cho những máy
+     chưa kịp cập nhật lên bản mới.
    ============================================================ */
-let _fbSynced=null;      // {nhánh: {id:1}} — id máy này biết máy chủ đã từng có
 let _fbDirty=false;      // còn thay đổi chưa ghi được lên máy chủ
 let _fbRetryT=null;      // hẹn giờ thử ghi lại
 let _fbRetryMs=2000;     // giãn dần 2s → 4s → … tối đa 30s
 
-function syncedKey(){return LS+'_synced';}
-function syncedLoad(){
-  try{_fbSynced=JSON.parse(localStorage.getItem(syncedKey())||'null');}catch(e){_fbSynced=null;}
-  const fresh=!_fbSynced;
-  if(!_fbSynced)_fbSynced={};
-  FB_MAP_BRANCHES.forEach(k=>{_fbSynced[k]=_fbSynced[k]||{};});
-  return fresh;            // true = lần đầu chạy bản mới, chưa có sổ
-}
-function syncedSave(){
-  try{localStorage.setItem(syncedKey(),JSON.stringify(_fbSynced));}catch(e){}
-}
-function syncedMark(branch,id,on){
-  if(!_fbSynced)syncedLoad();
-  _fbSynced[branch]=_fbSynced[branch]||{};
-  if(on)_fbSynced[branch][id]=1; else delete _fbSynced[branch][id];
-}
-/* Ghi nhận cả một gói vừa được máy chủ XÁC NHẬN — khoá null là đã xoá */
-function syncedApplyPatch(patch){
-  Object.keys(patch||{}).forEach(k=>{
-    const p=k.split('/');
-    if(p.length!==2)return;
-    if(FB_MAP_BRANCHES.indexOf(p[0])<0)return;
-    syncedMark(p[0],p[1],patch[k]!==null&&patch[k]!==undefined);
-  });
-  syncedSave();
-}
+/* ★ v6.6 — CHỐT AN TOÀN QUAN TRỌNG NHẤT CỦA CHẾ ĐỘ KHÔNG CACHE.
+   Lúc mới mở, S còn RỖNG. Nếu một lệnh ghi nào đó chạy trước khi dữ liệu
+   từ Firebase về, delta sẽ là "máy chủ có, máy này không" → app sẽ XOÁ
+   SẠCH cơ sở dữ liệu. Mọi đường ghi đều phải đi qua cờ này. */
+let _fbReady=false;
+function fbReady(){return _fbReady;}
 
 /* =================== STORAGE =================== */
+/* Lưu = ĐẨY THẲNG LÊN FIREBASE. Không còn bản sao nào trên máy. */
 function save(){
   /* Nhân viên vừa thêm mới chưa có accessor tên → gắn trước khi lưu */
   if(typeof decorateEmpNames==='function')decorateEmpNames(S.employees);
+  if(!_fbReady){
+    /* Chưa tải xong mà đã có lệnh ghi → CHẶN. Ghi lúc này là đẩy một bộ
+       dữ liệu rỗng đè lên máy chủ. Trước v6.6 chuyện này vô hại vì máy còn
+       cache; nay thì không. */
+    console.warn('[sync] bỏ qua lệnh ghi khi chưa tải xong dữ liệu');
+    if(typeof toast==='function')toast(t('Đang tải dữ liệu — thử lại sau vài giây'));
+    return;
+  }
   S.rev=Date.now();
-  localStorage.setItem(LS,JSON.stringify(S));
   fbPush();
   refreshBadge();
 }
+/* Mở app: KHÔNG đọc gì từ máy nữa, chỉ dựng khung rỗng rồi chờ Firebase.
+   Giữ tên hàm để js/12-main.js và các chỗ khác không phải sửa. */
 function load(){
-  try{const raw=localStorage.getItem(LS);if(raw){const d=JSON.parse(raw);S=Object.assign(S,d);
-    S.settings=Object.assign({minD:3,minN:3,deptDefault:DEPT_DEFAULT_FALLBACK,approver1:APPROVER1_FALLBACK,approver2:APPROVER2_FALLBACK},d.settings||{});
-    S.meta=Object.assign({schedFrom:'',schedTo:''},d.meta||{});}}catch(e){}
   normalizeState();
 }
 /* Điền các mặc định còn thiếu — gọi sau khi nạp từ localStorage và sau mỗi
@@ -219,6 +226,7 @@ function fbDiff(prev,cur){
 }
 function fbPush(){
   if(!fbRef||applyingRemote)return;
+  if(!_fbReady)return;                 // ★ chưa có dữ liệu thì tuyệt đối không ghi
   applyTombstones();                   // gỡ mọi id đã có bia mộ TRƯỚC khi so → không đẩy lại
   const cur=fbSnapshot();
   const d=fbDiff(_fbLast,cur);
@@ -243,7 +251,6 @@ function fbPush(){
   fbRef.update(patch).then(()=>{
     _fbDirty=false;_fbRetryMs=2000;
     clearTimeout(_fbRetryT);_fbRetryT=null;
-    syncedApplyPatch(patch);           // máy chủ đã xác nhận → cập nhật sổ đã-đồng-bộ
     setSync(true,'Đã đồng bộ');
   }).catch(e=>{
     console.warn('FB write',e);
@@ -280,7 +287,6 @@ function fbTouch(){
   if(typeof mealResetCache==='function')mealResetCache();
   if(typeof evResetCache==='function')evResetCache();
   _fbRenderT=setTimeout(()=>{
-    localStorage.setItem(LS,JSON.stringify(S));
     if(typeof renderAll==='function')renderAll();
   },120);
 }
@@ -303,47 +309,102 @@ function initFb(){
 }
 function fbErr(err){setSync(false,'Lỗi quyền');console.warn(err);}
 
+/* ============================================================
+   MỞ APP — TẢI TRỌN GÓI MỘT PHÁT, RỒI MỚI NGHE REALTIME  ★ v6.6
+   ------------------------------------------------------------
+   Thứ tự BẮT BUỘC, đảo là hỏng:
+     1. once('value') — đọc nguyên trạng máy chủ. Đây là toàn bộ dữ liệu
+        app cần; tổ ~23 người nên một lượt tải là vài chục KB.
+     2. Áp vào S, đặt mốc _fbLast = đúng ảnh máy chủ, bật cờ _fbReady.
+     3. Từ giờ mới gắn listener con để nhận thay đổi realtime, và mới cho
+        phép ghi.
+   Bản cũ gắn listener trước rồi đoán "im lặng 900ms là xong" — vừa mong
+   manh, vừa để hở khoảng thời gian mà S còn rỗng nhưng lệnh ghi đã chạy
+   được. Nay không còn khoảng hở đó.
+
+   Tải trượt (mất mạng, sai luật) → KHÔNG bật _fbReady, app đứng ở màn
+   đăng nhập với thông báo rõ ràng và tự thử lại. Thà không mở được còn
+   hơn mở ra với dữ liệu rỗng rồi ghi đè lên máy chủ.
+   ============================================================ */
+let _fbBootT=null, _fbBootMs=3000;
+
 function fbAttach(){
   fbRef=firebase.database().ref(APP_CFG.dbPath);
-  _fbLast=null;                 // chưa biết máy chủ có gì → đợi đợt đầu về
-  _fbSeen={};_fbBooted=false;_fbRemoteRev=0;
+  _fbLast=null;
+  _fbSeen={};_fbBooted=false;_fbRemoteRev=0;_fbReady=false;
   FB_MAP_BRANCHES.forEach(k=>{_fbSeen[k]={};});
-  syncedLoad();
 
-  /* ------------------------------------------------------------
-     ĐỐI CHIẾU LẠI KHI CÓ MẠNG TRỞ LẠI  ★ v6.4
-     Máy để mở cả ngày (PC trong phòng điều độ) không chạy lại fbAttach nên
-     fbBootSync chỉ chạy đúng một lần lúc sáng. Rớt mạng vài phút rồi nối
-     lại, Firebase KHÔNG bắn lại child_added cho những con không đổi, nên
-     bản ghi bị xoá trong lúc rớt có thể nằm lại trên màn hình tới hết ca.
-     Ở đây bắt '.info/connected': hễ nối lại thì đọc một phát hiện trạng và
-     đối chiếu. Tốn một lượt tải nhưng chỉ khi vừa mất mạng xong.
-     ------------------------------------------------------------ */
+  /* Nối lại mạng: đọc lại một phát cho chắc (Firebase không bắn lại
+     child_added cho những con không đổi trong lúc rớt). */
   try{
     firebase.database().ref('.info/connected').on('value',s=>{
       const on=!!(s&&s.val());
       if(!on){setSync(false,'Mất kết nối');return;}
-      if(_fbBooted)fbReconcile();
-      if(_fbDirty)fbPush();          // gửi nốt phần còn nợ
+      if(!_fbReady){fbBootLoad();return;}
+      fbReconcile();
+      if(_fbDirty)fbPush();
     });
   }catch(e){}
 
-  /* rev — chỉ để biết dữ liệu bên nào mới hơn, tốn vài byte */
-  fbRef.child('rev').on('value',s=>{_fbRemoteRev=+s.val()||0;fbSettle();},fbErr);
+  fbBootLoad();
+}
+
+/* Bước 1–2: tải trọn gói rồi bật cờ sẵn sàng */
+function fbBootLoad(){
+  if(!fbRef||_fbReady)return;
+  setSync(true,'Đang tải dữ liệu…');
+  fbRef.once('value').then(snap=>{
+    const srv=snap.val()||{};
+    applyingRemote=true;
+    FB_VAL_BRANCHES.forEach(k=>{ if(srv[k]!==undefined&&srv[k]!==null)S[k]=srv[k]; });
+    FB_MAP_BRANCHES.forEach(k=>{
+      S[k]=srv[k]||{};
+      _fbSeen[k]={};Object.keys(S[k]).forEach(id=>{_fbSeen[k][id]=1;});
+    });
+    S.rev=+srv.rev||0;
+    _fbRemoteRev=S.rev;
+    normalizeState();
+    applyTombstones();          // id đã có bia mộ thì không hiện, dù máy chủ còn
+    applyingRemote=false;
+
+    _fbLast=fbSnapshot();       // mốc = đúng hiện trạng máy chủ
+    _fbReady=true;              // ★ từ đây mới được ghi
+    _fbBooted=true;
+    _fbBootMs=3000;
+    clearTimeout(_fbBootT);_fbBootT=null;
+
+    fbListen();                 // bước 3
+    if(typeof renderAll==='function')renderAll();
+    setSync(true,'Đã đồng bộ');
+
+    /* Máy chủ trắng tinh (dự án mới) → không có gì để làm; người dùng sẽ
+       nhập nhân sự rồi save() đẩy lên. KHÔNG tự đẩy dữ liệu rỗng. */
+  }).catch(e=>{
+    console.warn('FB tải dữ liệu',e);
+    setSync(false,'Không tải được dữ liệu — đang thử lại');
+    clearTimeout(_fbBootT);
+    _fbBootT=setTimeout(()=>{_fbBootMs=Math.min(_fbBootMs*2,30000);fbBootLoad();},_fbBootMs);
+  });
+}
+
+/* Bước 3: nghe thay đổi realtime ở mức con */
+function fbListen(){
+  /* rev — chỉ để biết máy chủ vừa đổi, tốn vài byte */
+  fbRef.child('rev').on('value',s=>{_fbRemoteRev=+s.val()||0;},fbErr);
 
   /* Nhánh nhỏ: nghe trọn gói */
   FB_VAL_BRANCHES.forEach(k=>{
     fbRef.child(k).on('value',snap=>{
       const val=snap.val();
-      if(val===null){fbSettle();setSync(true,'Đã đồng bộ');return;}
+      if(val===null){setSync(true,'Đã đồng bộ');return;}
       const js=JSON.stringify(val);
-      if(_fbLast&&_fbLast.v[k]===js){setSync(true,'Đã đồng bộ');fbSettle();return;}  // tiếng vọng của chính mình
+      if(_fbLast&&_fbLast.v[k]===js){setSync(true,'Đã đồng bộ');return;}  // tiếng vọng của chính mình
       applyingRemote=true;
       S[k]=val;
       normalizeState();
       applyingRemote=false;
       fbMark(k,null,JSON.stringify(S[k]));
-      fbTouch();fbSettle();
+      fbTouch();
       setSync(true,'Đã đồng bộ');
     },fbErr);
   });
@@ -354,36 +415,30 @@ function fbAttach(){
     const put=snap=>{
       const id=snap.key, val=snap.val(), js=JSON.stringify(val);
       _fbSeen[k][id]=1;
-      /* Id đã có bia mộ mà vẫn thấy trên máy chủ = tin lạc từ một máy chưa kịp
-         nhận bia mộ → gỡ khỏi máy chủ lần nữa và KHÔNG nhận về. Nhờ vậy dù
-         một máy lỡ đẩy lại, các máy khác sẽ dọn sạch, hội tụ về đã-xoá. */
+      /* Id đã có bia mộ mà vẫn thấy trên máy chủ = tin lạc từ một máy CHƯA
+         cập nhật bản mới (còn cache cũ) → gỡ khỏi máy chủ lần nữa và không
+         nhận về. Giữ lớp này trong thời gian còn máy chạy bản cũ. */
       if(S.del&&S.del[k+'/'+id]!==undefined){
-        if(!applyingRemote){fbRef.child(k).child(id).remove().catch(()=>{});}
+        if(!applyingRemote)fbRef.child(k).child(id).remove().catch(()=>{});
         if(S[k]&&S[k][id]!==undefined){applyingRemote=true;delete S[k][id];applyingRemote=false;fbTouch();}
-        syncedMark(k,id,0);syncedSave();
-        fbSettle();return;
+        return;
       }
-      /* Máy chủ ĐANG CÓ id này → ghi vào sổ đã-đồng-bộ. Nhờ vậy lần mở app
-         sau, nếu máy chủ không còn id đó nữa thì máy này biết chắc là ĐÃ BỊ
-         XOÁ (chứ không phải bản ghi mình tạo lúc mất mạng) và xoá theo. */
-      syncedMark(k,id,1);syncedSave();
-      if(_fbLast&&_fbLast.m[k]&&_fbLast.m[k][id]===js){fbSettle();return;}
+      if(_fbLast&&_fbLast.m[k]&&_fbLast.m[k][id]===js)return;
       applyingRemote=true;
       S[k]=S[k]||{};S[k][id]=val;
       applyingRemote=false;
       fbMark(k,id,js);
-      fbTouch();fbSettle();
+      fbTouch();
     };
     const del=snap=>{
       const id=snap.key;
       delete _fbSeen[k][id];
-      syncedMark(k,id,0);syncedSave();
-      if(!S[k]||S[k][id]===undefined){fbSettle();return;}
+      if(!S[k]||S[k][id]===undefined)return;
       applyingRemote=true;
       delete S[k][id];
       applyingRemote=false;
       fbMark(k,id,undefined);
-      fbTouch();fbSettle();
+      fbTouch();
     };
     ref.on('child_added',put,fbErr);
     ref.on('child_changed',put,fbErr);
@@ -400,106 +455,36 @@ function fbMark(branch,id,js){
 }
 
 /* ------------------------------------------------------------
-   XONG ĐỢT ĐẦU
-   Firebase bắn hàng loạt sự kiện khi vừa gắn listener; đợi im lặng
-   ~900ms là coi như đã tải xong ảnh hiện trạng của máy chủ. Lúc đó mới
-   quyết định: máy chủ trống thì đẩy dữ liệu máy này lên (khởi tạo lần
-   đầu); ngược lại thì dọn những bản ghi máy này còn giữ mà máy chủ đã xoá.
-   ------------------------------------------------------------ */
-function fbSettle(){
-  clearTimeout(_fbSettleT);
-  _fbSettleT=setTimeout(fbBootSync,900);
-}
-function fbBootSync(){
-  if(_fbBooted||!fbRef)return;
-  _fbBooted=true;
-  setSync(true,'Đã đồng bộ');
-
-  /* Bia mộ đã về từ máy chủ → dọn sạch id đã xoá còn sót trong bộ nhớ máy này
-     TRƯỚC khi quyết định đẩy hay dọn, để không bao giờ đẩy lại đơn đã xoá. */
-  const tombed=applyTombstones();
-
-  const serverEmpty=!_fbRemoteRev&&!(_fbLast&&_fbLast.v.employees);
-  if(serverEmpty){
-    // Cơ sở dữ liệu còn trắng → đẩy toàn bộ dữ liệu máy này lên làm bản gốc
-    if((S.employees||[]).length){_fbLast=null;fbPush();}
-    if(tombed)fbTouch();
-    return;
-  }
-
-  /* ============================================================
-     ĐỐI CHIẾU LÚC MỞ APP  ★ v6.4 — KHÔNG CÒN SO ĐỒNG HỒ
-     Với mỗi id máy này còn giữ mà máy chủ KHÔNG có:
-       · có trong sổ đã-đồng-bộ  → máy khác đã xoá  → XOÁ THEO
-       · không có trong sổ       → mình tạo lúc mất mạng → ĐỂ fbPush đẩy lên
-     Lần đầu chạy bản mới chưa có sổ (freshBook): MÁY CHỦ LÀ ĐÚNG — dọn hết
-     phần lệch, vì đó chính là đống rác tồn từ các lần hồi sinh trước.
-     ============================================================ */
-  const freshBook=syncedLoad();
-  let n=0;
-  applyingRemote=true;
-  FB_MAP_BRANCHES.forEach(k=>{
-    Object.keys(S[k]||{}).forEach(id=>{
-      if(_fbSeen[k][id])return;                       // máy chủ đang có → giữ
-      const known=freshBook || (_fbSynced[k]&&_fbSynced[k][id]);
-      if(known){delete S[k][id];syncedMark(k,id,0);n++;}
-    });
-  });
-  applyingRemote=false;
-  syncedSave();
-  if(n||tombed)fbTouch();                             // ★ có gỡ thì PHẢI vẽ lại
-  if(n)console.info('[sync] gỡ '+n+' bản ghi máy chủ đã xoá');
-
-  fbPush();   // đẩy phần máy chủ thật sự chưa có (bản ghi tạo lúc mất mạng)
-
-  /* Dọn bia mộ quá hạn — mỗi lần mở app. Máy nào dọn thì đẩy sổ del đã gọn
-     lên (kèm rev mới), các máy khác nhận về theo → sổ không phình năm tháng. */
-  const pruned=pruneTombstones();
-  if(pruned&&fbRef){
-    S.rev=Date.now();
-    fbRef.update({del:S.del,rev:S.rev}).catch(e=>console.warn('FB prune bia mộ',e));
-    _fbLast=fbSnapshot();     // đồng bộ mốc để chặn tiếng vọng của chính mình
-    fbTouch();
-  }
-}
-
-/* ------------------------------------------------------------
-   ĐỐI CHIẾU TOÀN PHẦN — đọc một phát hiện trạng máy chủ rồi khớp lại.
+   ĐỐI CHIẾU TOÀN PHẦN — đọc lại hiện trạng máy chủ và LẤY NGUYÊN.
    Dùng khi: vừa nối lại mạng, hoặc người dùng bấm "Đồng bộ lại".
-   Đây là lưới an toàn cuối: kể cả bia mộ mất, sổ sai, listener hụt sự kiện,
-   một lần chạy hàm này là mọi máy về đúng bằng máy chủ.
+
+   ★ v6.6 — không còn "đối chiếu" gì nữa, vì máy không giữ bản sao: máy chủ
+   nói sao thì đúng vậy. Cái gì máy chủ không có thì máy này cũng không
+   được có. Trước đây phải tra sổ đã-đồng-bộ để đoán "bản ghi này bị xoá
+   hay là mình vừa tạo lúc offline" — nay không có offline nên không có
+   câu hỏi đó.
    ------------------------------------------------------------ */
 function fbReconcile(cb){
   if(!fbRef){cb&&cb(0);return;}
   fbRef.once('value').then(snap=>{
     const srv=snap.val()||{};
-    let n=0;
+    const before=JSON.stringify(fbSnapshot());
     applyingRemote=true;
+    FB_VAL_BRANCHES.forEach(k=>{ if(srv[k]!==undefined&&srv[k]!==null)S[k]=srv[k]; });
     FB_MAP_BRANCHES.forEach(k=>{
-      const s=srv[k]||{};
-      _fbSeen[k]={};Object.keys(s).forEach(id=>{_fbSeen[k][id]=1;});
-      /* máy chủ có mà mình thiếu / khác → lấy về */
-      Object.keys(s).forEach(id=>{
-        if(S.del&&S.del[k+'/'+id]!==undefined)return;      // đã có bia mộ thì bỏ
-        const js=JSON.stringify(s[id]);
-        if(JSON.stringify((S[k]||{})[id])!==js){S[k]=S[k]||{};S[k][id]=s[id];n++;}
-        syncedMark(k,id,1);
-      });
-      /* mình có mà máy chủ không → xoá nếu từng đồng bộ (tức là đã bị xoá) */
-      Object.keys(S[k]||{}).forEach(id=>{
-        if(s[id]!==undefined)return;
-        if(_fbSynced[k]&&_fbSynced[k][id]){delete S[k][id];syncedMark(k,id,0);n++;}
-      });
+      S[k]=srv[k]||{};
+      _fbSeen[k]={};Object.keys(S[k]).forEach(id=>{_fbSeen[k][id]=1;});
     });
-    FB_VAL_BRANCHES.forEach(k=>{if(srv[k]!==undefined&&srv[k]!==null)S[k]=srv[k];});
+    S.rev=+srv.rev||0;_fbRemoteRev=S.rev;
     normalizeState();
+    applyTombstones();
     applyingRemote=false;
-    n+=applyTombstones();
-    syncedSave();
     _fbLast=fbSnapshot();
-    if(n)fbTouch();
+    _fbReady=true;
+    const changed=(before!==JSON.stringify(_fbLast));
+    if(changed)fbTouch();
     setSync(true,'Đã đồng bộ');
-    cb&&cb(n);
+    cb&&cb(changed?1:0);
   }).catch(e=>{console.warn('FB reconcile',e);cb&&cb(-1);});
 }
 /* Nút "Đồng bộ lại" cho màn Dữ liệu — người dùng nghi ngờ lệch thì bấm. */
@@ -508,7 +493,7 @@ function fbResync(){
   setSync(true,'Đang đối chiếu…');
   fbReconcile(n=>{
     if(n<0){toast(t('Đối chiếu thất bại'));return;}
-    toast(n?(t('Đã khớp lại')+' '+n+' '+t('bản ghi')):t('Dữ liệu đã khớp'));
+    toast(n?t('Đã tải lại dữ liệu mới nhất từ Firebase'):t('Dữ liệu đã khớp'));
   });
 }
 
@@ -529,4 +514,10 @@ function saveFbCfg(){
   localStorage.setItem(LS+'_fb',v);toast('Đã lưu — đang kết nối');initFb();
 }
 function clearFbCfg(){localStorage.removeItem(LS+'_fb');if(fbRef){fbRef.off();fbRef=null;}$('fbCfg').value='';toast('Về config mặc định — đang kết nối');initFb();}
-function wipeAll(){if(!confirm(t('Xoá toàn bộ dữ liệu trên máy này?')))return;localStorage.removeItem(LS);location.reload();}
+/* Máy không còn giữ dữ liệu nghiệp vụ nào, nên nút này chỉ còn ý nghĩa
+   "tải lại từ đầu từ Firebase". Giữ tên hàm cho chỗ gọi khỏi phải sửa. */
+function wipeAll(){
+  if(!confirm(t('Tải lại toàn bộ dữ liệu từ Firebase?')))return;
+  try{localStorage.removeItem(LS);localStorage.removeItem(LS+'_synced');}catch(e){}
+  location.reload();
+}

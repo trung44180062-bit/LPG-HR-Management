@@ -1,15 +1,12 @@
 /* ============================================================
-   HARNESS ĐỒNG BỘ FIREBASE — hai máy, một máy chủ giả
+   HARNESS ĐỒNG BỘ v6.6 — FIREBASE LÀ NGUỒN DUY NHẤT, KHÔNG CACHE
    Chạy:  node _test/fbsync-harness.js   (từ thư mục LPGT-CongCa-Web)
    ------------------------------------------------------------
-   Mô phỏng ĐÚNG những gì Realtime Database làm:
-     · update(patch) với khoá nhiều mức "a/b" và giá trị null = xoá
-     · listener child_added / child_changed / child_removed cho nhánh bảng
-     · listener value cho nhánh nhỏ
-     · máy offline không nhận sự kiện, online lại thì nhận NGUYÊN HIỆN TRẠNG
-       (Firebase không phát lại lịch sử — đây chính là chỗ sinh lỗi hồi sinh)
-   Mỗi "máy" chạy js/02-storage.js trong một vm context riêng, có
-   localStorage riêng — giống hai trình duyệt thật.
+   Máy không giữ bản sao dữ liệu nào. Điều phải chứng minh:
+     · mở app = tải trọn gói từ máy chủ, không đọc gì từ localStorage
+     · xoá ở máy này thì máy kia mất theo, và mở lại KHÔNG hiện lại
+     · chưa tải xong thì TUYỆT ĐỐI không được ghi (chống xoá sạch máy chủ)
+     · ghi trượt thì giữ lại và thử lại, không mất thầm lặng
    ============================================================ */
 const fs=require('fs'), vm=require('vm'), path=require('path');
 const ROOT=path.resolve(__dirname,'..');
@@ -17,85 +14,65 @@ const STORAGE=fs.readFileSync(path.join(ROOT,'js/02-storage.js'),'utf8');
 
 /* ---------------- MÁY CHỦ GIẢ ---------------- */
 function makeServer(){
-  const data={};                 // cây dữ liệu
-  const subs=[];                 // {branch, type, fn, dev}
-  const clone=v=>v===undefined||v===null?v:JSON.parse(JSON.stringify(v));
-
-  function emit(branch,type,key,val,exceptDev){
+  const data={}; const subs=[];
+  const clone=v=>(v===undefined||v===null)?v:JSON.parse(JSON.stringify(v));
+  let reject=null;
+  function emit(branch,type,key,val){
     subs.filter(s=>s.branch===branch&&s.type===type)
         .forEach(s=>{ if(s.dev&&s.dev.offline)return; s.fn(key,clone(val)); });
   }
   return {
-    data,
-    sub(branch,type,fn,dev){subs.push({branch,type,fn,dev});},
+    data, setReject(f){reject=f;},
+    sub(b,t,fn,dev){subs.push({branch:b,type:t,fn,dev});},
     unsubAll(dev){for(let i=subs.length-1;i>=0;i--)if(subs[i].dev===dev)subs.splice(i,1);},
-    /* Trả về hiện trạng — dùng khi một máy vừa gắn listener (Firebase bắn
-       child_added cho MỌI con đang có, và value cho nhánh nhỏ) */
     snapshot(){return clone(data);},
     update(patch){
+      if(reject&&reject(patch))return {ok:false};
       Object.keys(patch).forEach(k=>{
-        const v=patch[k];
-        const p=k.split('/');
+        const v=patch[k], p=k.split('/');
         if(p.length===1){
           if(v===null||v===undefined)delete data[k]; else data[k]=clone(v);
           emit(k,'value',k,data[k]);
         }else{
-          const [br,id]=p;
-          data[br]=data[br]||{};
+          const [br,id]=p; data[br]=data[br]||{};
           const had=data[br][id]!==undefined;
-          if(v===null||v===undefined){
-            delete data[br][id];
-            if(had)emit(br,'child_removed',id,null);
-          }else{
-            data[br][id]=clone(v);
-            emit(br,had?'child_changed':'child_added',id,data[br][id]);
-          }
+          if(v===null||v===undefined){delete data[br][id]; if(had)emit(br,'child_removed',id,null);}
+          else{data[br][id]=clone(v); emit(br,had?'child_changed':'child_added',id,data[br][id]);}
         }
       });
+      return {ok:true};
     },
-    removeChild(br,id){
-      if(data[br]&&data[br][id]!==undefined){delete data[br][id];emit(br,'child_removed',id,null);}
-    }
+    removeChild(br,id){if(data[br]&&data[br][id]!==undefined){delete data[br][id];emit(br,'child_removed',id,null);}},
+    seed(o){Object.keys(o).forEach(k=>{data[k]=clone(o[k]);});}
   };
 }
 
-/* ---------------- MỘT MÁY ---------------- */
-function makeDevice(name, server, seed){
-  const dev={name, offline:false, renders:0};
-  const store={};
+/* ---------------- MỘT MÁY (một trình duyệt) ---------------- */
+function makeDevice(name, server){
+  const dev={name, offline:false, renders:0, writeFails:0};
+  const store={};                    // localStorage riêng của máy này
   const ctx={
-    console:{warn(){},log(){},info(){},error(){}} , setTimeout, clearTimeout, Date, Math, JSON,
-    Object, Array, String, Number, Boolean, Set,
-    localStorage:{
-      getItem:k=>store[k]===undefined?null:store[k],
-      setItem:(k,v)=>{store[k]=String(v);},
-      removeItem:k=>{delete store[k];}
-    },
-    APP_CFG:{dbPath:'t', firebase:{}},
-    LS:'lpgt_test',
+    console:{warn(){},log(){},info(){},error(){}}, setTimeout, clearTimeout,
+    Date, Math, JSON, Object, Array, String, Number, Boolean, Set,
+    localStorage:{getItem:k=>store[k]===undefined?null:store[k],
+                  setItem:(k,v)=>{store[k]=String(v);}, removeItem:k=>{delete store[k];}},
+    APP_CFG:{dbPath:'t',firebase:{}}, LS:'lpgt_test',
     DEPT_DEFAULT_FALLBACK:'BP', APPROVER1_FALLBACK:'', APPROVER2_FALLBACK:'',
-    S:JSON.parse(JSON.stringify(seed)),
-    fb:null, fbRef:null, applyingRemote:false,
-    decorateEmpNames(){}, refreshBadge(){},
-    mealResetCache(){}, evResetCache(){},
-    renderAll(){dev.renders++;},
-    setSync(){}, $:()=>null, toast(){}, t:s=>s, confirm:()=>true,
-    location:{reload(){}}
+    S:{}, fb:null, fbRef:null, applyingRemote:false,
+    decorateEmpNames(){}, refreshBadge(){}, mealResetCache(){}, evResetCache(){},
+    renderAll(){dev.renders++;}, setSync(){}, $:()=>null, toast(){}, t:s=>s,
+    confirm:()=>true, location:{reload(){}}
   };
-  ctx.window=ctx; ctx.globalThis=ctx;
-  vm.createContext(ctx);
-
-  /* setSync trong 02-storage.js đụng DOM → ghi đè sau khi nạp */
+  ctx.window=ctx; ctx.globalThis=ctx; vm.createContext(ctx);
   vm.runInContext(STORAGE,ctx,{filename:'02-storage.js'});
   ctx.setSync=function(){};
 
-  /* --- fbRef giả, khớp API mà 02-storage.js dùng --- */
   function childRef(branch){
     return {
-      on(type,fn,err){
+      on(type,fn){
         if(type==='value'){
           server.sub(branch,'value',(k,v)=>fn({val:()=>v,key:k}),dev);
-          if(!dev.offline)fn({val:()=>server.snapshot()[branch]===undefined?null:server.snapshot()[branch],key:branch});
+          if(!dev.offline){const v=server.snapshot()[branch];fn({val:()=>v===undefined?null:v,key:branch});}
         }else{
           server.sub(branch,type,(k,v)=>fn({key:k,val:()=>v}),dev);
           if(type==='child_added'&&!dev.offline){
@@ -107,179 +84,192 @@ function makeDevice(name, server, seed){
       child(id){return {remove(){server.removeChild(branch,id);return Promise.resolve();}};}
     };
   }
-  const FAKE_REF={
-    child:branch=>childRef(branch),
+  const REF={
+    child:b=>childRef(b),
+    once(){
+      if(dev.offline)return Promise.reject(new Error('offline'));
+      return Promise.resolve({val:()=>server.snapshot()});
+    },
     update(patch){
-      if(dev.offline)return Promise.resolve();
-      server.update(JSON.parse(JSON.stringify(patch)));
+      if(dev.offline){dev.writeFails++;return Promise.reject(new Error('offline'));}
+      const r=server.update(JSON.parse(JSON.stringify(patch)));
+      if(!r.ok){dev.writeFails++;return Promise.reject(new Error('PERMISSION_DENIED'));}
       return Promise.resolve();
     },
     off(){server.unsubAll(dev);}
   };
-  ctx.fbRef=FAKE_REF;
-  ctx.firebase={database:()=>({ref:()=>FAKE_REF}), apps:[{}], auth:null};
+  ctx.fbRef=REF;
+  ctx.firebase={database:()=>({ref:p=>p==='.info/connected'?{on(){}}:REF}),apps:[{}],auth:null};
 
   dev.ctx=ctx;
   dev.S=()=>ctx.S;
-  dev.save=()=>{ctx.S.rev=Date.now();store['lpgt_test']=JSON.stringify(ctx.S);ctx.fbPush();};
-  dev.attach=()=>ctx.fbAttach();
-  /* Mở lại app: đọc localStorage, gắn lại listener như lần đầu */
-  dev.reopen=()=>{
-    server.unsubAll(dev);
-    const raw=store['lpgt_test'];
-    ctx.S=raw?JSON.parse(raw):ctx.S;
-    ctx.normalizeState();
-    ctx.fbAttach();
-  };
-  dev.persist=()=>{store['lpgt_test']=JSON.stringify(ctx.S);};
+  dev.ready=()=>ctx.fbReady();
+  dev.store=store;
+  /* Mở app: y hệt js/12-main.js — load() dựng khung rỗng rồi initFb tải về */
+  dev.open=()=>{server.unsubAll(dev);ctx.S={};ctx.load();ctx.fbAttach();};
+  dev.save=()=>ctx.save();
   return dev;
 }
 
-/* ---------------- KHUNG KIỂM THỬ ---------------- */
-const R=[];
-const ok=(name,cond,extra)=>R.push([!!cond,name,extra||'']);
+const R=[]; const ok=(n,c,e)=>R.push([!!c,n,e||'']);
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
-const SETTLE=1200;      // fbSettle chờ 900ms
+const BOOT=200;      // once() là promise → một nhịp là xong
 
-const SEED={
-  rev:1, employees:[{id:'e1',name:'A',team:'A',active:true}],
-  base:{}, over:{}, requests:{}, accounts:{}, printLog:{}, notifs:{}, events:{},
-  del:{}, settings:{minD:3,minN:3}, meta:{}
-};
+const SEED={rev:1, employees:[{id:'e1',name:'A',team:'A',active:true}],
+  settings:{minD:3,minN:3}, meta:{}};
 
 async function main(){
 
 /* ============================================================
-   KB1 — HAI MÁY CÙNG MỞ: xoá trên máy A, máy B phải mất theo
+   KB1 — MỞ APP = TẢI TỪ MÁY CHỦ, KHÔNG ĐỌC CACHE
    ============================================================ */
 {
-  const sv=makeServer();
-  const A=makeDevice('phone',sv,SEED), B=makeDevice('pc',sv,SEED);
-  A.S().requests.r1={id:'r1',empId:'e1',type:'ot',status:'pending'};
-  A.attach(); B.attach(); await wait(SETTLE);
-  A.save(); await wait(50);
-  ok('KB1 tạo đơn → máy B nhận được', !!B.S().requests.r1);
-
-  delete A.S().requests.r1; A.save(); await wait(50);
-  ok('KB1 xoá đơn → máy B mất theo (real-time)', !B.S().requests.r1,
-     'B.requests='+JSON.stringify(Object.keys(B.S().requests)));
-  ok('KB1 máy chủ sạch', !(sv.data.requests&&sv.data.requests.r1));
-  ok('KB1 có bia mộ trên máy chủ', !!(sv.data.del&&sv.data.del['requests/r1']));
-}
-
-/* ============================================================
-   KB2 — MÁY B ĐANG TẮT lúc xoá, mở lên sau  ← chính là lỗi báo cáo
-   ============================================================ */
-{
-  const sv=makeServer();
-  const A=makeDevice('phone',sv,SEED), B=makeDevice('pc',sv,SEED);
-  A.S().requests.r1={id:'r1',empId:'e1',type:'ot',status:'pending'};
-  A.attach(); B.attach(); await wait(SETTLE);
-  A.save(); await wait(50);
-  B.persist();                       // PC đã lưu đơn vào localStorage
-  ok('KB2 chuẩn bị: PC có đơn trong localStorage', !!B.S().requests.r1);
-
-  B.offline=true;                    // TẮT PC
-  delete A.S().requests.r1; A.save(); await wait(50);
-
-  B.offline=false; B.reopen();       // MỞ PC LÊN
-  await wait(SETTLE+300);
-  ok('KB2 ★ PC mở lên KHÔNG còn thấy đơn đã xoá', !B.S().requests.r1,
-     'B.requests='+JSON.stringify(Object.keys(B.S().requests))
-     +' del='+JSON.stringify(Object.keys(B.S().del||{})));
-  ok('KB2 PC không đẩy đơn ngược lên máy chủ',
-     !(sv.data.requests&&sv.data.requests.r1),
-     'server.requests='+JSON.stringify(Object.keys(sv.data.requests||{})));
-  ok('KB2 PC có vẽ lại màn hình sau khi gỡ', B.renders>0, 'renders='+B.renders);
-}
-
-/* ============================================================
-   KB3 — PC có rev MỚI HƠN máy chủ (sửa gì đó lúc offline)
-          → nhánh else fbPush() của fbBootSync
-   ============================================================ */
-{
-  const sv=makeServer();
-  const A=makeDevice('phone',sv,SEED), B=makeDevice('pc',sv,SEED);
-  A.S().requests.r1={id:'r1',empId:'e1',type:'ot',status:'pending'};
-  A.attach(); B.attach(); await wait(SETTLE);
-  A.save(); await wait(50);
-  B.persist();
-  B.offline=true;
-  delete A.S().requests.r1; A.save(); await wait(50);
-
-  /* PC lúc offline tạo một đơn khác → rev của PC lớn hơn rev máy chủ */
-  B.S().requests.r9={id:'r9',empId:'e1',type:'ot',status:'pending'};
-  B.S().rev=Date.now()+60000;
-  B.persist();
-
-  B.offline=false; B.reopen();
-  await wait(SETTLE+300);
-  ok('KB3 ★ PC rev mới hơn: đơn đã xoá vẫn phải biến mất', !B.S().requests.r1,
-     'B.requests='+JSON.stringify(Object.keys(B.S().requests)));
-  ok('KB3 đơn PC tạo lúc offline được giữ và đẩy lên',
-     !!B.S().requests.r9 && !!(sv.data.requests&&sv.data.requests.r9));
-  ok('KB3 đơn đã xoá không sống lại trên máy chủ',
-     !(sv.data.requests&&sv.data.requests.r1),
-     'server='+JSON.stringify(Object.keys(sv.data.requests||{})));
-}
-
-/* ============================================================
-   KB4 — MÁY C CHƯA TỪNG BIẾT ĐƠN (localStorage rỗng) — không được hồi sinh
-   ============================================================ */
-{
-  const sv=makeServer();
-  const A=makeDevice('phone',sv,SEED);
-  A.S().requests.r1={id:'r1',empId:'e1',type:'ot',status:'pending'};
-  A.attach(); await wait(SETTLE); A.save(); await wait(50);
-  delete A.S().requests.r1; A.save(); await wait(50);
-
-  const C=makeDevice('may-moi',sv,SEED);
-  C.attach(); await wait(SETTLE+300);
-  ok('KB4 máy mới không thấy đơn đã xoá', !C.S().requests.r1);
-  ok('KB4 máy mới nhận được sổ bia mộ', !!(C.S().del&&C.S().del['requests/r1']));
-}
-
-/* ============================================================
-   KB5 — XOÁ Ô LỊCH (nhánh over) cũng phải đồng bộ như đơn
-   ============================================================ */
-{
-  const sv=makeServer();
-  const A=makeDevice('phone',sv,SEED), B=makeDevice('pc',sv,SEED);
-  A.S().over.e1={'2026-08-19':{code:'N'}};
-  A.attach(); B.attach(); await wait(SETTLE);
-  A.save(); await wait(50);
-  B.persist(); B.offline=true;
-  delete A.S().over.e1; A.save(); await wait(50);
-  B.offline=false; B.reopen(); await wait(SETTLE+300);
-  ok('KB5 ★ ô lịch đã xoá không sống lại trên PC', !B.S().over.e1,
-     'B.over='+JSON.stringify(Object.keys(B.S().over)));
-}
-
-/* ============================================================
-   KB6 — MÁY LẠC đẩy lại đơn đã xoá → các máy khác phải dọn
-   ============================================================ */
-{
-  const sv=makeServer();
-  const A=makeDevice('phone',sv,SEED), B=makeDevice('pc',sv,SEED);
-  A.S().requests.r1={id:'r1',empId:'e1',type:'ot',status:'pending'};
-  A.attach(); B.attach(); await wait(SETTLE);
-  A.save(); await wait(50);
-  delete A.S().requests.r1; A.save(); await wait(80);
-
-  /* một máy cũ (chưa có bia mộ) đẩy thẳng đơn lên */
+  const sv=makeServer(); sv.seed(SEED);
   sv.update({'requests/r1':{id:'r1',empId:'e1',type:'ot',status:'pending'}});
-  await wait(200);
-  ok('KB6 ★ đơn lạc bị gỡ khỏi máy chủ',
-     !(sv.data.requests&&sv.data.requests.r1),
-     'server='+JSON.stringify(Object.keys(sv.data.requests||{})));
-  ok('KB6 đơn lạc không hiện trên máy nào',
-     !A.S().requests.r1 && !B.S().requests.r1);
+  const A=makeDevice('pc',sv);
+  A.open(); await wait(BOOT);
+  ok('KB1 tải được dữ liệu từ máy chủ', !!A.S().requests.r1);
+  ok('KB1 tải xong mới bật cờ sẵn sàng', A.ready()===true);
+  ok('KB1 KHÔNG ghi dữ liệu xuống localStorage',
+     A.store['lpgt_test']===undefined, JSON.stringify(Object.keys(A.store)));
 }
 
-/* ---------------- KẾT QUẢ ---------------- */
+/* ============================================================
+   KB2 — XOÁ Ở MÁY NÀY, MÁY KIA MẤT THEO NGAY
+   ============================================================ */
+{
+  const sv=makeServer(); sv.seed(SEED);
+  const A=makeDevice('phone',sv), B=makeDevice('pc',sv);
+  A.open(); B.open(); await wait(BOOT);
+  A.S().requests={r1:{id:'r1',empId:'e1',type:'ot',status:'pending'}};
+  A.save(); await wait(60);
+  ok('KB2 tạo đơn → máy kia thấy', !!B.S().requests.r1);
+
+  delete A.S().requests.r1; A.save(); await wait(60);
+  ok('KB2 xoá → máy kia mất theo', !B.S().requests.r1,
+     JSON.stringify(Object.keys(B.S().requests)));
+  ok('KB2 máy chủ sạch', !(sv.data.requests&&sv.data.requests.r1));
+}
+
+/* ============================================================
+   KB3 ★ — MÁY TẮT LÚC XOÁ, MỞ LẠI KHÔNG ĐƯỢC HIỆN LẠI
+   (chính là lỗi người dùng gặp: xoá mãi vẫn hiện)
+   ============================================================ */
+{
+  const sv=makeServer(); sv.seed(SEED);
+  const A=makeDevice('phone',sv), B=makeDevice('pc',sv);
+  A.open(); B.open(); await wait(BOOT);
+  A.S().requests={r1:{id:'r1',empId:'e1',type:'ot',status:'pending'}};
+  A.save(); await wait(60);
+  ok('KB3 chuẩn bị: PC đang thấy đơn', !!B.S().requests.r1);
+
+  B.offline=true;                                   // tắt PC
+  delete A.S().requests.r1; A.save(); await wait(60);
+  B.offline=false; B.open(); await wait(BOOT);      // mở PC lên
+
+  ok('KB3 ★ PC mở lên KHÔNG còn đơn đã xoá', !B.S().requests.r1,
+     JSON.stringify(Object.keys(B.S().requests)));
+  ok('KB3 ★ PC không đẩy đơn ngược lên máy chủ',
+     !(sv.data.requests&&sv.data.requests.r1),
+     JSON.stringify(Object.keys(sv.data.requests||{})));
+}
+
+/* ============================================================
+   KB4 ★★ — CHƯA TẢI XONG THÌ KHÔNG ĐƯỢC GHI
+   Đây là rủi ro LỚN NHẤT của chế độ không cache: S còn rỗng mà ghi
+   là xoá sạch cơ sở dữ liệu.
+   ============================================================ */
+{
+  const sv=makeServer(); sv.seed(SEED);
+  sv.update({'requests/r1':{id:'r1',empId:'e1',type:'ot',status:'pending'},
+             'requests/r2':{id:'r2',empId:'e1',type:'leave',status:'pending'}});
+  const A=makeDevice('pc',sv);
+  A.offline=true; A.open(); await wait(BOOT);       // tải trượt
+  ok('KB4 tải trượt → chưa sẵn sàng', A.ready()===false);
+  ok('KB4 S còn rỗng', Object.keys(A.S().requests||{}).length===0);
+
+  A.save();                                          // lệnh ghi lúc này
+  await wait(60);
+  ok('KB4 ★★ máy chủ KHÔNG bị xoá sạch',
+     !!(sv.data.requests&&sv.data.requests.r1&&sv.data.requests.r2),
+     'server.requests='+JSON.stringify(Object.keys(sv.data.requests||{})));
+  ok('KB4 nhân sự trên máy chủ còn nguyên', !!sv.data.employees);
+}
+
+/* ============================================================
+   KB5 — TẢI TRƯỢT RỒI CÓ MẠNG LẠI → TỰ TẢI LẠI ĐƯỢC
+   ============================================================ */
+{
+  const sv=makeServer(); sv.seed(SEED);
+  sv.update({'requests/r1':{id:'r1',empId:'e1',type:'ot',status:'pending'}});
+  const A=makeDevice('pc',sv);
+  A.offline=true; A.open(); await wait(BOOT);
+  ok('KB5 lúc mất mạng: chưa sẵn sàng', A.ready()===false);
+  A.offline=false;
+  await wait(3500);                                  // hẹn giờ thử lại 3 giây
+  ok('KB5 có mạng lại → tự tải được', A.ready()===true&&!!A.S().requests.r1,
+     'ready='+A.ready());
+}
+
+/* ============================================================
+   KB6 — GHI TRƯỢT KHÔNG ĐƯỢC MẤT THẦM LẶNG
+   ============================================================ */
+{
+  const sv=makeServer(); sv.seed(SEED);
+  const A=makeDevice('phone',sv);
+  A.open(); await wait(BOOT);
+  A.S().requests={r1:{id:'r1',empId:'e1',type:'ot',status:'pending'}};
+  A.save(); await wait(60);
+  ok('KB6 chuẩn bị: máy chủ có đơn', !!(sv.data.requests&&sv.data.requests.r1));
+
+  sv.setReject(()=>true);
+  delete A.S().requests.r1; A.save(); await wait(60);
+  ok('KB6 ghi bị từ chối', A.writeFails>0);
+  ok('KB6 máy chủ vẫn còn đơn (đúng)', !!(sv.data.requests&&sv.data.requests.r1));
+
+  sv.setReject(null);
+  A.S().notifs={n1:{id:'n1'}}; A.save(); await wait(80);
+  ok('KB6 ★ ghi lại được thì lệnh XOÁ vẫn tới nơi',
+     !(sv.data.requests&&sv.data.requests.r1),
+     JSON.stringify(Object.keys(sv.data.requests||{})));
+}
+
+/* ============================================================
+   KB7 — ĐỒNG BỘ LẠI: máy chủ nói sao thì đúng vậy
+   ============================================================ */
+{
+  const sv=makeServer(); sv.seed(SEED);
+  const A=makeDevice('pc',sv);
+  A.open(); await wait(BOOT);
+  /* Giả lập máy này lỡ giữ một bản ghi mà máy chủ không có */
+  A.S().requests={ghost:{id:'ghost',empId:'e1',type:'ot'}};
+  let n=-9; A.ctx.fbReconcile(x=>{n=x;});
+  await wait(80);
+  ok('KB7 đối chiếu gỡ sạch bản ghi máy chủ không có',
+     !A.S().requests.ghost, JSON.stringify(Object.keys(A.S().requests)));
+  ok('KB7 và KHÔNG đẩy nó lên máy chủ',
+     !(sv.data.requests&&sv.data.requests.ghost));
+}
+
+/* ============================================================
+   KB8 — XOÁ Ô LỊCH (nhánh over) cũng phải dứt điểm
+   ============================================================ */
+{
+  const sv=makeServer(); sv.seed(SEED);
+  const A=makeDevice('phone',sv), B=makeDevice('pc',sv);
+  A.open(); B.open(); await wait(BOOT);
+  A.S().over={e1:{'2026-08-19':{code:'N'}}};
+  A.save(); await wait(60);
+  B.offline=true;
+  delete A.S().over.e1; A.save(); await wait(60);
+  B.offline=false; B.open(); await wait(BOOT);
+  ok('KB8 ô lịch đã xoá không sống lại', !B.S().over.e1,
+     JSON.stringify(Object.keys(B.S().over)));
+}
+
 let bad=0;
-R.forEach(([p,n,e])=>{if(!p)bad++;console.log((p?'  ok  ':'  FAIL')+'  '+n+(e&&!p?'\n         → '+e:''));});
-console.log('\n'+(R.length-bad)+'/'+R.length+' đạt'+(bad?('  ·  '+bad+' LỖI'):'  ·  tất cả đạt'));
+R.forEach(([p,n,e])=>{if(!p)bad++;console.log((p?'  ok  ':'  HỎNG')+'  '+n+(e&&!p?'\n         → '+e:''));});
+console.log('\n'+R.length+' phép thử · '+(R.length-bad)+' đạt · '+bad+' hỏng');
 process.exit(bad?1:0);
 }
 main();
