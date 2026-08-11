@@ -205,15 +205,48 @@ let S={
   meta:{schedFrom:'',schedTo:''},
   rev:0
 };
-/* mgr  = duyệt đơn & sửa lịch thực tế (appr / admin / kmgr)
-   adm  = quản trị toàn quyền (admin / kmgr)
+/* mgr  = DUYỆT ĐƠN & sửa lịch thực tế (appr / admin / kmgr)
+   adm  = quản trị toàn quyền, gồm cả MẬT KHẨU + PHÂN QUYỀN + Firebase
+          (admin / kmgr)
+   hrm  = QUẢN LÝ NHÂN LỰC & BẢNG CÔNG CA (admin / kmgr / sec)   ★ v7.7
    secr = được XEM số liệu cả tổ + in đơn (sec / appr / admin / kmgr)
    noSelf = KHÔNG thuộc đối tượng chấm công (thư ký / quản lý người Hàn /
             người đặt Kiểu ca = Không xếp lịch) → bỏ hẳn Trang chính cá nhân,
             đăng nhập vào là vào thẳng Lịch thực tế. Xem homeView(). */
-let mgr=false, adm=false, secr=false, noSelf=false, myFE=false, fb=null, fbRef=null, applyingRemote=false, curCell=null, curView='cal';
+let mgr=false, adm=false, hrm=false, secr=false, noSelf=false, myFE=false, fb=null, fbRef=null, applyingRemote=false, curCell=null, curView='cal';
 /* Được vào màn Duyệt: quản lý (mgr) hoặc Field Engineer duyệt cấp 1 của nhóm */
 function canAppr(){return mgr||myFE;}
+/* ============================================================
+   ★ v7.7 — THƯ KÝ LÀM ĐƯỢC VIỆC NHÂN SỰ
+   ------------------------------------------------------------
+   Trước đây mọi việc "hành chính nhân sự" đều bị chặn bằng cờ `adm`, nên
+   thư ký không tạo được lịch kỳ mới, không thêm/bớt người — dù đó đúng là
+   phần việc của họ. Nay tách làm hai chốt riêng:
+
+     adm  → CHỈ những gì thuộc bảo mật hệ thống: mật khẩu, phân quyền,
+            uỷ quyền duyệt cấp cuối, cấu hình Firebase, nạp lại toàn bộ dữ liệu.
+     hrm  → nhân lực & bảng công: thêm/sửa/xoá người và nhóm, kiểu ca,
+            điền lịch cả kỳ, sửa ô lịch thực tế, ghi nhận sự kiện.
+
+   Chia như vậy thì thư ký giống quản trị ở gần hết công việc thường ngày mà
+   vẫn KHÔNG chạm được vào mật khẩu hay quyền đăng nhập của ai.
+   Duyệt đơn vẫn là việc riêng của mgr — chuỗi duyệt nhiều cấp
+   (FE → Hoàng Trung → QL người Hàn) không đổi.
+   ============================================================ */
+/* Được sửa ô lịch thực tế: người duyệt đơn HOẶC người làm nhân sự */
+function canEditSched(){return mgr||hrm;}
+/* Chốt dùng chung cho các nút nhân sự — trả false kèm nhắc nếu không đủ quyền */
+function hrGuard(){
+  if(hrm)return true;
+  if(typeof toast==='function')toast(t('Cần quyền quản trị hoặc thư ký'));
+  return false;
+}
+/* Chốt cho việc thuộc bảo mật hệ thống (mật khẩu, phân quyền, Firebase) */
+function admGuard(){
+  if(adm)return true;
+  if(typeof toast==='function')toast(t('Cần quyền quản trị'));
+  return false;
+}
 /* Màn hình đầu tiên sau khi đăng nhập */
 /* ★ v7.4 — MỌI người đều có màn đầu tiên là Trang chính.
    Thư ký / QL người Hàn không có lịch cá nhân, nhưng vẫn cần một chỗ để

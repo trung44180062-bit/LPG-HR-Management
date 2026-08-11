@@ -194,6 +194,7 @@ function autoRangeFromAnchor(){
   return ym;
 }
 function fillSchedule(){
+  if(!hrGuard())return;
   if(!$('setFrom').value||!$('setTo').value){
     const ym=autoRangeFromAnchor();
     if(!ym){toast('Chọn Kỳ lịch hoặc điền Mốc 1 trước');return;}
@@ -245,6 +246,7 @@ function nextMonthSchedule(){
   fillSchedule();
 }
 function clearSchedRange(){
+  if(!hrGuard())return;
   const sd=schedDays();if(!sd){toast('Chọn khoảng ngày');return;}
   if(!confirm(t('Xóa lịch từ')+' '+fmtVNfull(sd.f)+' '+t('đến')+' '+fmtVNfull(sd.t)+'?'))return;
   for(const id in S.base)for(const iso in S.base[id])if(iso>=sd.f&&iso<=sd.t)delete S.base[id][iso];
@@ -252,6 +254,7 @@ function clearSchedRange(){
   save();renderSetup();renderBoth();toast('Đã xóa lịch trong khoảng');
 }
 function clearSchedAll(){
+  if(!hrGuard())return;
   if(!confirm(t('Xóa TOÀN BỘ lịch ca? (giữ danh sách nhân sự)')))return;
   S.base={};S.over={};save();renderSetup();renderBoth();toast('Đã xóa toàn bộ lịch');
 }
@@ -263,6 +266,7 @@ function clearSchedAll(){
    tới hết kỳ — không đụng tới lịch của những người khác.
    ============================================================ */
 function fillScheduleForOne(id,fromIso,toIso){
+  if(!hrGuard())return 0;
   const e=empById(id);
   if(!e){toast(t('Không tìm thấy nhân viên'));return 0;}
   if(e.shiftType==='none'){toast(t('Người này đặt "Không xếp lịch" — đổi Kiểu ca trước'));return 0;}
@@ -281,7 +285,7 @@ function fillScheduleForOne(id,fromIso,toIso){
 }
 /* Hộp thoại: chọn người + ngày bắt đầu rồi điền */
 function newHireSchedule(){
-  if(!adm){toast(t('Cần quyền quản trị'));return;}
+  if(!hrGuard())return;
   const list=schedEmps();
   if(!list.length){toast(t('Chưa có nhân sự'));return;}
   const names=list.map((e,i)=>`${i+1}. ${e.name||e.id}${e.joinAt?' (vào '+fmtVNfull(e.joinAt)+')':''}`).join('\n');

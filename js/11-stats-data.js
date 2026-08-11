@@ -79,13 +79,21 @@ function delCustomCode(c){
    Cột Quyền đã chuyển hẳn về đây (trước nằm lẫn trong tab Nhóm & Lịch),
    để chỗ tạo lịch chỉ lo việc xếp ca.
    Chỉ QUẢN TRỊ mới sửa được; quản trị gốc thì không ai hạ quyền được.
+
+   ★ v7.7 — THƯ KÝ XEM ĐƯỢC NHƯNG KHÔNG SỬA.
+   Thư ký nay làm gần hết việc nhân sự (thêm/bớt người, tạo lịch kỳ mới) nên
+   họ cần tra được ai đang có tài khoản, quyền gì, mật khẩu còn mặc định hay
+   chưa — nhưng ĐỔI QUYỀN và ĐẶT LẠI MẬT KHẨU vẫn là việc của quản trị. Vì thế
+   bảng này có hai bản: bản sửa được (adm) và bản CHỈ ĐỌC (hrm && !adm), không
+   ô nhập nào, không nút nào. Thêm/bớt người thì thư ký làm ở tab Nhóm & Lịch.
    ============================================================ */
 function renderAccTbl(){
   const tb=$('accTbl');if(!tb)return;
-  if(!adm){
+  if(!adm&&!hrm){
     tb.innerHTML='<tbody><tr><td class="muted" style="padding:12px">Cần quyền quản trị để xem và sửa tài khoản.</td></tr></tbody>';
     return;
   }
+  if(!adm){renderAccTblRO(tb);return;}
   const sel=(v,cur)=>v===cur?' selected':'';
   let h=`<thead><tr>
     <th>Mã NV</th><th>Họ tên</th><th>Nhóm</th><th>Vị trí</th>
@@ -121,9 +129,41 @@ function renderAccTbl(){
   });
   tb.innerHTML=h+'</tbody>';
 }
+/* Nhãn kiểu ca — dùng cho bảng tài khoản bản chỉ đọc */
+const SHIFT_TYPE_LABEL={
+  type1:'Ca 8 ngày (OODDNNRR)', type2:'Ca 6 ngày (DDNNRR)',
+  admin:'Hành chính T2–T6', office6:'Hành chính T2–T7 (học việc)',
+  none:'Không xếp lịch'
+};
+/* Bảng tài khoản CHỈ ĐỌC — cho thư ký (hrm nhưng không phải adm).
+   Cùng số cột với bản sửa được để hai người nhìn cùng một bảng, chỉ khác là
+   mọi ô là chữ thường và cột thao tác trống. */
+function renderAccTblRO(tb){
+  let h=`<thead><tr>
+    <th>Mã NV</th><th>Họ tên</th><th>Nhóm</th><th>Vị trí</th>
+    <th>Kiểu ca</th><th>Quyền</th><th>Mật khẩu</th><th></th></tr></thead><tbody>`;
+  activeEmps().forEach(e=>{
+    const acc=(S.accounts&&S.accounts[e.id])||{};
+    const root=isRootAdmin(e.id);
+    const dflt=usingDefaultPw(e.id);
+    h+=`<tr>
+      <td style="font-family:var(--mono)">${esc(e.id)}</td>
+      <td>${esc(rawName(e))}</td>
+      <td>${esc(e.team||'')}</td>
+      <td>${esc(posLabel(posCode(e)))}</td>
+      <td>${esc(t(SHIFT_TYPE_LABEL[e.shiftType]||e.shiftType||''))}</td>
+      <td>${root?`<span class="st approved">${t('Quản trị gốc')}</span>`
+                :esc(t(PERM_LABEL[permOf(e.id)]||''))}</td>
+      <td>${dflt?`<span class="st pending">${t('Mặc định')}</span>`
+                :`<span class="st approved" title="${esc(acc.at?fmtDateTime(acc.at):'')}">${t('Đã đặt riêng')}</span>`}</td>
+      <td></td></tr>`;
+  });
+  h+='</tbody>';
+  tb.innerHTML=h;
+}
 /* Đổi quyền — chỉ quản trị, không hạ được quản trị gốc */
 function updPerm(id,v){
-  if(!adm){toast(t('Cần quyền quản trị'));renderAccTbl();return;}
+  if(!admGuard()){renderAccTbl();return;}
   if(isRootAdmin(id)){renderAccTbl();return;}
   const e=empById(id);if(!e)return;
   e.perm=PERM_VALUES.includes(v)?v:'staff';
@@ -134,7 +174,7 @@ function updPerm(id,v){
 }
 /* Đặt mật khẩu mới cho một người (băm PBKDF2, không lưu chữ gốc) */
 async function setPass(id){
-  if(!adm){toast(t('Cần quyền quản trị'));return;}
+  if(!admGuard())return;
   const e=empById(id);
   const pw=prompt(t('Mật khẩu mới cho')+' '+(e&&e.name?e.name:id)+' '+t('(tối thiểu 6 ký tự):'));
   if(pw===null)return;
@@ -147,7 +187,7 @@ async function setPass(id){
 }
 /* Đưa về mật khẩu mặc định = mã số (dùng khi nhân viên quên mật khẩu) */
 function resetToDefaultPw(id){
-  if(!adm){toast(t('Cần quyền quản trị'));return;}
+  if(!admGuard())return;
   const e=empById(id);
   if(!confirm(t('Đưa mật khẩu của')+' '+(e&&e.name?e.name:id)+' '+t('về mặc định (= mã số)?')))return;
   S.accounts=S.accounts||{};
@@ -157,7 +197,7 @@ function resetToDefaultPw(id){
 }
 /* Thêm người mới ngay trong bảng tài khoản */
 function addAccountRow(){
-  if(!adm){toast(t('Cần quyền quản trị'));return;}
+  if(!admGuard())return;
   const id=prompt(t('Mã nhân viên mới (ví dụ vc44260099):'),newVc());
   if(!id)return;
   const nid=id.trim();

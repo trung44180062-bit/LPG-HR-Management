@@ -55,15 +55,20 @@ function togglePw(id,btn){
 /* Ẩn/hiện các nút theo quyền của người đang đăng nhập */
 function applyRoleUI(){
   applyPerm();
-  document.querySelectorAll('.mgr-only').forEach(el=>{el.style.display=(mgr||myFE)?'':'none';});
+  document.querySelectorAll('.mgr-only').forEach(el=>{el.style.display=(mgr||myFE||hrm)?'':'none';});
+  /* .admin-only = CHỈ bảo mật hệ thống: mật khẩu, phân quyền, uỷ quyền duyệt
+     cấp cuối, cấu hình Firebase, nạp lại toàn bộ dữ liệu. */
   document.querySelectorAll('.admin-only').forEach(el=>{el.style.display=adm?'':'none';});
+  /* ★ v7.7 — .hr-only = việc nhân lực & bảng công ca: quản trị / QL người Hàn
+     / THƯ KÝ. Đây là lớp mở tab Nhóm & Lịch và tab Dữ liệu cho thư ký. */
+  document.querySelectorAll('.hr-only').forEach(el=>{el.style.display=hrm?'':'none';});
   /* .secr-only = quản trị / QL người Hàn / SC (duyệt đơn) / thư ký.
      Đúng nhóm được xếp lịch đào tạo cho người khác — xem trCanManage()
      ở js/22-training.js. */
   document.querySelectorAll('.secr-only').forEach(el=>{el.style.display=secr?'':'none';});
   /* Tab Báo cáo giờ chỉ dành cho nhân viên (số liệu/biểu đồ CỦA MÌNH);
      quản lý xem Nhân lực ở tab Lịch, Bảng công tổng hợp + Biểu đồ ở tab Duyệt */
-  document.querySelectorAll('.rep-tab').forEach(el=>{el.style.display=mgr?'none':'';});
+  document.querySelectorAll('.rep-tab').forEach(el=>{el.style.display=(mgr||noSelf)?'none':'';});
   /* .self-only = mục chỉ có nghĩa với người đang được chấm công
      (Trang chính, Gửi đơn, Tăng ca của tôi, Đơn của tôi) */
   document.querySelectorAll('.self-only').forEach(el=>{el.style.display=noSelf?'none':'';});
@@ -535,7 +540,7 @@ function confirmSwap(nid){
     newNotif({kind:'info',to:r.byId||r.empId,from:meId(),zk:'swapOk',
       text:t2('đã XÁC NHẬN đổi ca với bạn')+': '+fmtVN(r.from)});}
   save();renderMyPanel();renderMe(true);
-  if(typeof renderApprList==='function'&&mgr)renderApprList();
+  if(typeof renderApprList==='function'&&(canAppr()||secr))renderApprList();
   toast(t('Đã xác nhận đổi ca'));
 }
 function declineSwap(nid){
@@ -547,7 +552,7 @@ function declineSwap(nid){
     newNotif({kind:'info',to:r.byId||r.empId,from:meId(),zk:'swapNo',
       text:t2('đã TỪ CHỐI đổi ca với bạn')+': '+fmtVN(r.from)});}
   save();renderMyPanel();renderMe(true);
-  if(typeof renderApprList==='function'&&mgr)renderApprList();
+  if(typeof renderApprList==='function'&&(canAppr()||secr))renderApprList();
   toast(t('Đã từ chối đổi ca'));
 }
 /* ---- Người được nhờ OT COVER: đồng ý / từ chối ----
@@ -563,7 +568,7 @@ function confirmCover(nid){
       text:t2('đã NHẬN OT cover cho bạn')+': '+fmtVN(r.from)});
   }
   save();renderMyPanel();renderMe(true);
-  if(typeof renderApprList==='function'&&(mgr||myFE))renderApprList();
+  if(typeof renderApprList==='function'&&(canAppr()||secr))renderApprList();
   toast(t('Đã nhận OT cover — nhớ gửi đơn tăng ca để được tính giờ'));
 }
 function declineCover(nid){
@@ -577,7 +582,7 @@ function declineCover(nid){
       text:t2('đã TỪ CHỐI OT cover')+': '+fmtVN(r.from)+' — '+t2('hãy chọn người khác')});
   }
   save();renderMyPanel();renderMe(true);
-  if(typeof renderApprList==='function'&&(mgr||myFE))renderApprList();
+  if(typeof renderApprList==='function'&&(canAppr()||secr))renderApprList();
   toast(t('Đã từ chối OT cover'));
 }
 
@@ -674,7 +679,7 @@ function coverPickSet(id){
   /* Đặt riêng từng ngày thì GIỮ hộp mở để đặt tiếp ngày kế — đóng ngay
      là bắt người dùng mở lại 3 lần cho 3 ngày. */
   if(iso){renderCoverPicker();}else{closeCoverPicker();}
-  if(typeof renderApprList==='function'&&(mgr||myFE))renderApprList();
+  if(typeof renderApprList==='function'&&(canAppr()||secr))renderApprList();
   if(typeof renderMyPanel==='function')renderMyPanel();
   if(typeof renderMe==='function')renderMe(true);
   if(typeof refreshBadge==='function')refreshBadge();

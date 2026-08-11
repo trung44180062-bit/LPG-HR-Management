@@ -850,13 +850,47 @@ function digestDue(now){
   if(last===digestDayKey(d))return false;
   return true;
 }
-/* Sổ chờ còn mục nào ĐÁNG gửi không — bỏ mục đã lỗi thời (thông báo bị gỡ,
-   đơn bị xoá). Không lọc thì bản tin sáng sẽ nhắc những việc đã không còn. */
+/* ------------------------------------------------------------
+   MỤC NÀO TRONG SỔ CHỜ ĐÃ LỖI THỜI                 ★ v7.7
+   ------------------------------------------------------------
+   Sổ chờ chỉ nhận tin lúc `newNotif()` sinh ra nó, nên MỖI MỤC LÀ MỘT VIỆC
+   MỚI CHƯA GỬI LẦN NÀO — không có đường nào quét lại màn Phê duyệt. Nhưng từ
+   lúc vào sổ (VD 15h chiều) tới lúc bắn (08:00 sáng sau) có gần 17 tiếng, và
+   trong khoảng đó việc có thể đã hết giá trị:
+
+     · Đơn bị HUỶ / XOÁ. `cancelReq()` chỉ gọi `notifDropForReq()`, mà hàm đó
+       chỉ dọn các tin CHỜ XÁC NHẬN (swapConfirm / coverConfirm / schedChange)
+       — tin `apprNeed` / `approved` là loại `info`, CỐ Ý giữ lại làm lịch sử.
+       Giữ trong app thì đúng, nhưng để nó bắn Zalo sáng mai là báo một đơn
+       không còn tồn tại. `zaloWithdraw()` có nhánh gỡ sổ chờ, chỉ là đường
+       huỷ đơn không đi qua đó.
+     · Đơn ĐÃ CÓ QUYẾT ĐỊNH rồi. Nhắc "còn đơn chờ duyệt" trong khi người ta
+       đã duyệt từ tối hôm trước là nhắc việc đã xong. Kết quả duyệt vốn có
+       tin `approved` riêng nên không mất thông tin gì.
+
+   Lọc ở đây thay vì đi sửa `cancelReq` là cố ý: sổ chờ tự soi lại mình ngay
+   trước khi bắn thì đúng MỘT chỗ lo việc này, không phụ thuộc vào việc mọi
+   đường huỷ/duyệt/xoá trong app có nhớ gọi hàm dọn hay không.
+   ------------------------------------------------------------ */
+function digestStale(id,row){
+  const n=(S.notifs||{})[id];
+  if(!n)return 'notif';                            // thông báo đã bị gỡ
+  const rid=n.reqId;
+  if(!rid)return '';
+  const r=(S.requests||{})[rid];
+  if(!r)return 'req';                              // đơn đã bị huỷ / xoá hẳn
+  /* Nhắc "cần duyệt" chỉ còn nghĩa khi đơn vẫn đang chờ */
+  const zk=(row&&row.zk)||n.zk||'';
+  if(zk==='apprNeed'&&r.status!=='pending')return 'decided';
+  return '';
+}
+/* Sổ chờ còn mục nào ĐÁNG gửi không — bỏ mục đã lỗi thời. Không lọc thì bản
+   tin sáng sẽ nhắc những việc đã không còn. */
 function digestLive(){
   const out=[];
   const all=S.digest||{};
   Object.keys(all).forEach(id=>{
-    if(!S.notifs||!S.notifs[id])return;      // thông báo đã bị gỡ
+    if(digestStale(id,all[id]))return;
     out.push(Object.assign({notifId:id},all[id]));
   });
   return out.sort((a,b)=>(a.at||0)-(b.at||0));
@@ -983,7 +1017,8 @@ function digestSweep(sent){
   (sent||[]).forEach(r=>{keep[r.notifId]=1;});
   let touched=false;
   Object.keys(S.digest||{}).forEach(id=>{
-    if(keep[id]||!S.notifs||!S.notifs[id]){ delete S.digest[id]; touched=true; }
+    /* Xoá: đã gửi rồi (keep), hoặc đã lỗi thời (đơn bị huỷ / đã duyệt xong) */
+    if(keep[id]||digestStale(id,S.digest[id])){ delete S.digest[id]; touched=true; }
   });
   if(touched&&typeof save==='function')save();
 }

@@ -192,7 +192,7 @@ function renderMatrix(C){
         `<td class="c4">${esc(posLabel(posCode(e))||roleLbl)}</td>`;
       days.forEach(iso=>{
         const r=getCode(e.id,iso);
-        const editable=C.real&&mgr;
+        const editable=C.real&&canEditSched();
         const style=(diffOnly&&!r.ovr)?'':cellStyle(r.code);
         /* Ô có lịch đào tạo tô NỀN RIÊNG đè lên màu mã ca (js/22-training.js).
            Lớp .trday ghi đè bằng !important nên style inline của mã ca vẫn để
@@ -241,7 +241,8 @@ function fillGroupFilter(selId){
 }
 /* cell editing (manager) */
 function openCell(empId,iso){
-  if(!mgr)return;
+  /* ★ v7.7 — thư ký cũng sửa được ô lịch thực tế (canEditSched ở 01-core.js) */
+  if(!canEditSched())return;
   curCell={empId,iso};
   const e=empById(empId);
   $('cellTitle').innerHTML=`${esc(e.name||empId)} — ${fmtVNfull(iso)} (${dowOf(iso)})<br><span class="muted" style="font-weight:500">Ca chuẩn: ${S.base[empId]&&S.base[empId][iso]||'—'}</span>`;
@@ -390,7 +391,7 @@ function schedHoldStart(){
 }
 /* Nút 🔕/🔔 trên thanh Lịch: chưa giữ thì bật; đang giữ thì gửi đi. */
 function schedHoldToggle(){
-  if(!mgr){toast(t('Bạn không có quyền sửa lịch thực tế'));return;}
+  if(!canEditSched()){toast(t('Bạn không có quyền sửa lịch thực tế'));return;}
   if(schedHoldOn())schedHoldFlush();
   else schedHoldStart();
 }
@@ -398,7 +399,7 @@ function schedHoldToggle(){
 function refreshHoldBtn(){
   const b=$('holdBtn');if(!b)return;
   /* Chỉ có nghĩa ở chế độ xem Lịch THỰC TẾ — lịch chuẩn không sinh thông báo */
-  const show=mgr&&calTab==='sched'&&calMode==='real';
+  const show=canEditSched()&&calTab==='sched'&&calMode==='real';
   b.style.display=show?'':'none';
   if(!show)return;
   const n=schedHoldCount();
@@ -463,7 +464,7 @@ function schedHoldFlush(){
 /* Băng nhắc đỏ — hiện ở MỌI tab chừng nào còn giữ, để không ai quên. */
 function renderHoldBar(){
   const bar=$('holdBar');if(!bar)return;
-  if(!schedHoldOn()||!mgr){bar.style.display='none';bar.innerHTML='';document.body.classList.remove('hold-on');return;}
+  if(!schedHoldOn()||!canEditSched()){bar.style.display='none';bar.innerHTML='';document.body.classList.remove('hold-on');return;}
   const n=schedHoldCount(),p=schedHoldPeople();
   const who=empById(schedHold().by);
   bar.style.display='';
@@ -562,7 +563,7 @@ function renderCalWeekCards(){
         if(!mem.length)return;
       }
       if(!(key in calCollapsed)){
-        const defOpen=mgr?true:mem.some(e=>e.id===meIdCur);
+        const defOpen=(mgr||hrm)?true:mem.some(e=>e.id===meIdCur);
         calCollapsed[key]=!defOpen;
       }
       const collapsed=diffOnly?false:calCollapsed[key];   // đang lọc khác chuẩn thì mở hết cho thấy ngay
@@ -581,7 +582,7 @@ function renderCalWeekCards(){
           wk.forEach(w=>{
             if(!w.inRange){h+='<div class="cellc"></div>';return;}
             const r=getCode(e.id,w.iso);
-            const editable=real&&mgr;
+            const editable=real&&canEditSched();
             const cls=['cellc'];
             if(w.iso===tIso)cls.push('wk-cell-today');
             if(r.ovr)cls.push('wk-cell-diff wk-cell-ovr');
@@ -690,7 +691,7 @@ function renderCalWeekGrid(){
         <div class="nm" title="${esc(e.name||e.id)}">${esc(shortName(e.name)||e.id)}</div>`;
       days.forEach(iso=>{
         const r=getCode(e.id,iso);
-        const editable=real&&mgr;
+        const editable=real&&canEditSched();
         const act=editable?`onclick="openCell('${e.id}','${iso}')"`
                           :(noSelf?'':`onclick="openDaySheet('${iso}')"`);
         const trC=(typeof trCellCls==='function')?trCellCls(e.id,iso):'';
@@ -713,7 +714,7 @@ function renderCalWeekGrid(){
   h+=body?`<div class="cwg">${hdr}${body}</div>`
         :`<div class="card"><p class="muted">${t('Nhóm này chưa có ai trong lịch ca.')}</p></div>`;
   h+=`<p class="muted sm2" style="padding:6px 4px">${
-    (real&&mgr)?t('Chạm vào ô để sửa ca thực tế.')
+    (real&&canEditSched())?t('Chạm vào ô để sửa ca thực tế.')
                :(noSelf?'':t('Chạm vào ô để xem chi tiết ngày và gửi đơn.'))}</p>`;
   box.innerHTML=h;
 }
@@ -731,7 +732,7 @@ function renderCalDayView(){
   const tagFor=id=>{const r=reqToday.find(x=>x.empId===id||x.withId===id);return r?` <span class="grp-tag">${(r.type||'').toUpperCase()}</span>`:'';};
   const grpText=arr=>{
     const g={};arr.forEach(e=>{const t=e.team||'(chưa phân nhóm)';(g[t]=g[t]||[]).push(e);});
-    return Object.entries(g).map(([t,list])=>`<b>${esc(t)}</b>: `+list.map(e=>mgr
+    return Object.entries(g).map(([t,list])=>`<b>${esc(t)}</b>: `+list.map(e=>canEditSched()
       ?`<a href="javascript:void(0)" onclick="openCell('${e.id}','${iso}')" style="color:var(--brand);font-weight:700;text-decoration:underline">${esc(e.name||e.id)}</a>${tagFor(e.id)}`
       :esc(e.name||e.id)+tagFor(e.id)).join(', ')).join(' · ')||'—';
   };
@@ -755,6 +756,6 @@ function renderCalDayView(){
   h+=`<div class="dv-shift"><h4>${chip('R')} Nghỉ ca (${B.R.length}) <span class="muted" style="font-weight:500">— có thể huy động tăng ca</span></h4><div class="grpline">${grpText(B.R)}</div></div>`;
   if(B.leave.length)h+=`<div class="dv-shift"><h4>${chip('AL8')} Nghỉ phép (${B.leave.length})</h4><div class="grpline">${B.leave.map(x=>esc(x.e.name||x.e.id)+' ('+x.c+')').join(', ')}</div></div>`;
   if(B.ot.length)h+=`<div class="dv-shift"><h4>${chip('OTD')} Tăng ca (${B.ot.length})</h4><div class="grpline">${B.ot.map(x=>esc(x.e.name||x.e.id)+' ('+x.c+')').join(', ')}</div></div>`;
-  if(mgr)h+='<p class="muted">Chạm tên (gạch chân) để mở sheet chỉnh ca thực tế ngày này.</p>';
+  if(canEditSched())h+='<p class="muted">Chạm tên (gạch chân) để mở sheet chỉnh ca thực tế ngày này.</p>';
   box.innerHTML=h;
 }

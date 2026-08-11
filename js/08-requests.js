@@ -327,7 +327,10 @@ function canPurgeReqs(){
    hoặc của người cùng nhóm (tổ trưởng hay cầm tờ đơn đi nộp hộ cả nhóm). */
 function canPrintReq(r,who){
   if(!r)return false;
-  if(apprCanAct())return true;
+  /* ★ v7.7 — thư ký in được MỌI đơn: chính họ là người in tờ đơn đem nộp
+     nhân sự. Trước đây họ rơi vào nhánh "cùng nhóm" nên chỉ in được đơn của
+     nhóm Office — đúng cái nhóm ít đơn nhất. */
+  if(apprCanAct()||(typeof secr!=='undefined'&&secr))return true;
   who=who||(typeof meId==='function'?meId():'');
   if(!who)return false;
   if(r.empId===who||r.byId===who)return true;
@@ -1076,8 +1079,11 @@ function apprSetTab(v){
 function renderApprTabs(){
   const box=$('apprTabs');if(!box)return;
   /* Nhân viên thường & FE: chỉ có Danh sách đơn. Các sub-tab còn lại là
-     số liệu điều hành của quản lý. */
-  const feOnly=(myFE&&!mgr)||!apprCanAct();
+     số liệu điều hành của cả tổ.
+     ★ v7.7 — mốc phân chia đổi từ `mgr` sang `secr`: THƯ KÝ không duyệt đơn
+     nhưng vẫn phải xem được Tổng quan / Bảng công tổng hợp / Biểu đồ / Nhật ký
+     tăng ca, vì làm bảng công cả tổ là việc của họ. */
+  const feOnly=!secr;
   const nPend=feOnly
     ? Object.values(S.requests||{}).filter(reqNeedsMyAction).length
     : Object.values(S.requests||{}).filter(r=>r&&r.status==='pending').length;
@@ -1107,7 +1113,7 @@ function renderAppr(){
   body.style.display=ok?'':'none';
   if(!ok)return;
   // Field Engineer (không phải quản lý) và nhân viên thường: chỉ Danh sách đơn
-  if((myFE&&!mgr)||!apprCanAct())apprTab='list';
+  if(!secr)apprTab='list';
   if(!apprTabOn(apprTab))apprTab='list';        // sub-tab đã tắt (xem APPR_TABS_OFF)
   renderApprTabs();
   // Chỉ dựng đúng sub-tab đang mở — khỏi tính thừa

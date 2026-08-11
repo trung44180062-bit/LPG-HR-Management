@@ -173,7 +173,7 @@ function evPeriod(){return evYm||curSchedMonth();}
 function evShiftYm(d){evYm=schedYmShift(evPeriod(),d);renderEventMgr();}
 
 function openEventMgr(iso){
-  if(!adm){toast(t('Chỉ quản trị mới ghi nhận sự kiện'));return;}
+  if(!hrGuard())return;
   evEditId='';evSel={};evTitle='';evNote='';evScope='all';evTeams=[];evNotify=true;
   if(iso){evSel[iso]=true;evYm=schedMonthOf(iso);}
   else if(!evYm)evYm=curSchedMonth();
@@ -218,7 +218,7 @@ function evEdit(id){
 function evNewFrom(){evEditId='';evTitle='';evNote='';renderEventMgr();}
 
 function evSave(){
-  if(!adm){toast(t('Chỉ quản trị mới ghi nhận sự kiện'));return;}
+  if(!hrGuard())return;
   const days=Object.keys(evSel).sort();
   if(!days.length){toast(t('Chưa chọn ngày nào'));return;}
   const title=String(evTitle||'').trim();
@@ -249,7 +249,7 @@ function evSave(){
 }
 
 function evDelete(id){
-  if(!adm){toast(t('Chỉ quản trị mới ghi nhận sự kiện'));return;}
+  if(!hrGuard())return;
   const ev=(S.events||{})[id];if(!ev)return;
   if(!confirm(t('Xoá sự kiện')+' "'+(ev.title||'')+'"? '+t('Thông báo đã gửi cũng được thu hồi.')))return;
   const n=evRevokeNotifs(id);

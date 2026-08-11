@@ -60,15 +60,20 @@ function memberRow(e){
    <td><button class="btn warn sm" onclick="delEmp('${e.id}')">✕</button></td>
   </tr>`;
 }
+/* ★ v7.7 — mọi hàm SỬA nhân sự dưới đây đi qua hrGuard(): quản trị, quản lý
+   người Hàn và THƯ KÝ đều làm được. Mật khẩu / phân quyền vẫn chốt bằng adm
+   ở js/11-stats-data.js. */
 function updEmp(id,f,v,rerender){
+  if(!hrGuard())return;
   const e=empById(id);if(!e)return;
   e[f]=(f==='name'||f==='pos'||f==='team')?v.trim():v;
   save();
   if(rerender){renderSetup();renderBoth();}
   if(typeof renderAccTbl==='function')renderAccTbl();
 }
-function updType(id,v){const e=empById(id);if(!e)return;e.shiftType=v;e.empType=(v==='admin')?'admin':'shift';save();renderSetup();}
+function updType(id,v){if(!hrGuard())return;const e=empById(id);if(!e)return;e.shiftType=v;e.empType=(v==='admin')?'admin':'shift';save();renderSetup();}
 function changeId(oldId,val){
+  if(!hrGuard())return;
   const e=empById(oldId);if(!e)return;
   const nid=(val||'').trim();
   if(!nid){toast('Mã không được trống');renderSetup();return;}
@@ -90,10 +95,12 @@ function changeId(oldId,val){
   toast(isRealEmpId(nid)?('Đã đổi mã NV — đăng nhập '+loginKey(nid)+', mật khẩu = '+loginKey(nid)):'Đã đổi mã NV');
 }
 function addMember(team){
+  if(!hrGuard())return;
   S.employees.push({id:newVc(),name:'',pos:'',role:'oper',team:team||'',empType:'shift',shiftType:'type1',a1:'',a2:'',order:S.employees.length+1,active:true});
   save();renderSetup();
 }
 function addGroup(){
+  if(!hrGuard())return;
   const name=prompt(t('Tên nhóm (VD: A, B, C, D):'));if(!name)return;
   const tm=name.trim();
   const tpl=[['eng','Field Engineer'],['eng','DCS Boardman'],['oper','Operator'],['oper','Operator']];
@@ -103,17 +110,20 @@ function addGroup(){
   save();renderSetup();toast('Đã tạo nhóm '+tm);
 }
 function renameGroup(team){
+  if(!hrGuard())return;
   const nn=prompt(t('Đổi tên nhóm:'),team);if(nn===null)return;
   const nt=nn.trim();S.employees.forEach(e=>{if((e.team||'')===team)e.team=nt;});
   save();renderSetup();renderBoth();
 }
 function delGroup(team){
+  if(!hrGuard())return;
   if(!confirm(t('Xóa nhóm "')+team+t('" và toàn bộ người trong nhóm?')))return;
   S.employees.filter(e=>(e.team||'')===team).forEach(e=>{delete S.base[e.id];delete S.over[e.id];});
   S.employees=S.employees.filter(e=>(e.team||'')!==team);
   save();renderSetup();renderBoth();toast('Đã xóa nhóm');
 }
 function delEmp(id){
+  if(!hrGuard())return;
   const e=empById(id);if(!e)return;
   if(!confirm(t('Xóa "')+(e.name||id)+t('" khỏi danh sách?')))return;
   S.employees=S.employees.filter(x=>x.id!==id);delete S.base[id];delete S.over[id];

@@ -296,7 +296,8 @@ function asEmpTable(a){
 /* ---------- VẼ PANEL ---------- */
 function asRender(){
   const box=$('apprSum');if(!box)return;
-  if(!mgr){box.innerHTML='';return;}
+  /* ★ v7.7 — thư ký (secr) cũng xem được bảng Tổng quan duyệt đơn */
+  if(!secr){box.innerHTML='';return;}
   const cur=curSchedMonth(),ym=asPeriod();
   // Kỳ đang xem có thể do nút ◀ ▶ nhảy tới, chưa có dữ liệu nên không nằm
   // trong monthsAvailable() — vẫn phải có trong danh sách chọn.

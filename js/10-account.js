@@ -100,8 +100,10 @@ async function verifyPw(id,pw,acc){
 
 /* ===================== PHÂN QUYỀN =====================
      'staff' — nhân viên thường (mặc định): xem lịch của mình, gửi đơn
-     'sec'   — Thư ký: xem hết lịch & báo cáo, in đơn, khai hộ đơn.
-               KHÔNG duyệt đơn, KHÔNG sửa cấu hình.
+     'sec'   — Thư ký: LÀM NHÂN SỰ như quản trị — thêm/bớt/sửa người và nhóm,
+               tạo lịch cả kỳ, sửa lịch thực tế, ghi nhận sự kiện, xem hết
+               báo cáo, in đơn, khai hộ đơn.
+               KHÔNG duyệt đơn. KHÔNG chạm mật khẩu / phân quyền / Firebase.
      'appr'  — Duyệt đơn: thêm quyền duyệt/từ chối và sửa lịch thực tế
      'admin' — Quản trị: thêm Nhóm & Lịch, Dữ liệu, quản lý tài khoản
      'kmgr'  — Quản lý người Hàn: quyền y hệt 'admin', khác duy nhất là
@@ -113,8 +115,8 @@ const ROOT_ADMIN='vc44180062';
 const PERM_LABEL={staff:'Nhân viên',sec:'Thư ký',appr:'Duyệt đơn',admin:'Quản trị',kmgr:'Quản lý người Hàn (EN)'};
 const PERM_HINT ={
   staff:'Xem lịch của mình, gửi đơn',
-  sec:'Xem hết lịch & báo cáo, in đơn, khai hộ — không duyệt đơn',
-  appr:'Như Thư ký, thêm quyền duyệt đơn và sửa lịch thực tế',
+  sec:'Quản lý nhân lực & bảng công ca như Quản trị — không duyệt đơn, không sửa mật khẩu/phân quyền',
+  appr:'Duyệt đơn và sửa lịch thực tế',
   admin:'Toàn quyền: Nhóm & Lịch, Dữ liệu, quản lý tài khoản',
   kmgr:'Toàn quyền như Quản trị, giao diện mặc định tiếng Anh'
 };
@@ -137,6 +139,9 @@ function applyPerm(){
   const p=permOf(me);
   adm =(p==='admin'||p==='kmgr');
   mgr =(p==='admin'||p==='kmgr'||p==='appr');
+  /* ★ v7.7 — Thư ký làm nhân lực & bảng công ca y như quản trị. Xem
+     canEditSched()/hrGuard() ở js/01-core.js. KHÔNG kèm mật khẩu/phân quyền. */
+  hrm =adm||(p==='sec');
   secr=(p==='sec')||mgr;                        // được xem số liệu cả tổ
   /* Thư ký & quản lý người Hàn không nằm trong đối tượng chấm công → bỏ
      Trang chính cá nhân, vào thẳng Lịch thực tế. Ai đặt Kiểu ca = Không
@@ -394,7 +399,7 @@ function doLogout(){
       +t('Đăng xuất bây giờ thì chúng vẫn nằm đó chờ. Vẫn đăng xuất?')))return;
   }
   localStorage.removeItem(SESS);
-  mgr=false;adm=false;secr=false;noSelf=false;
+  mgr=false;adm=false;hrm=false;secr=false;noSelf=false;myFE=false;
   renderGate();applyRoleUI();renderMe();
   if(typeof renderHoldBar==='function')renderHoldBar();
   toast(t('Đã đăng xuất'));

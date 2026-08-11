@@ -107,7 +107,7 @@ và điền mã NV + họ tên, app tự tạo tài khoản. Không cần cấp 
 
 Xem chi tiết ở mục **Phân quyền & ngôn ngữ** phía dưới. Tóm tắt: quyền khai ở bảng
 *👤 Tài khoản đăng nhập và phân quyền* (tab ⚙️ Dữ liệu), lưu ở `e.perm` —
-`staff` · `sec` (Thư ký) · `appr` · `admin` · `kmgr`.
+`staff` · `sec` (Thư ký — từ v7.7 làm nhân lực & bảng công ca như Quản trị) · `appr` · `admin` · `kmgr`.
 
 ---
 
@@ -273,12 +273,17 @@ Quyền khai ở cột **Quyền** trong tab 🛠️ Nhóm & Lịch, lưu ở `e
 |---|---|---|
 | `staff` | Nhân viên | Xem lịch của mình, gửi đơn |
 | `appr` | Duyệt đơn | Thêm: duyệt/từ chối đơn, sửa lịch thực tế, in đơn |
-| `admin` | Quản trị | Thêm: Nhóm & Lịch, Dữ liệu, cấp/reset mật khẩu |
-| `sec` | **Thư ký** | Xem hết lịch & báo cáo, in đơn, khai hộ đơn — **không** duyệt, **không** sửa cấu hình |
+| `admin` | Quản trị | Thêm: Nhóm & Lịch, Dữ liệu, cấp/reset mật khẩu, phân quyền, Firebase |
+| `sec` | **Thư ký** | **Nhân lực & bảng công ca giống Quản trị** (thêm/bớt/sửa người và nhóm, tạo lịch cả kỳ, sửa lịch thực tế, sự kiện, mã ca, định mức, xuất Excel, in mọi đơn, xem hết báo cáo) — **không** duyệt đơn, **không** chạm mật khẩu / phân quyền / Firebase |
 | `kmgr` | **Quản lý người Hàn (EN)** | Quyền y hệt `admin`, khác duy nhất: **đăng nhập vào là giao diện tiếng Anh** |
 
-Cờ toàn cục: `adm` (admin/kmgr) · `mgr` (appr/admin/kmgr) · `secr` (sec + mgr — được xem số liệu cả tổ)
+Cờ toàn cục: `adm` (admin/kmgr — **chỉ việc bảo mật hệ thống**) · `mgr` (appr/admin/kmgr — duyệt đơn)
+· **`hrm`** (admin/kmgr/**sec** — nhân lực & bảng công ca, xem v7.7) · `secr` (sec + mgr — xem số liệu cả tổ)
 · `noSelf` (**sec / kmgr / ai đặt `shiftType='none'`** — không thuộc đối tượng chấm công).
+
+Hai chốt hàm dùng chung: **`hrGuard()`** cho việc nhân lực, **`admGuard()`** cho việc bảo mật,
+**`canEditSched()`** = `mgr || hrm` cho việc sửa ô lịch thực tế (cả ba ở `js/01-core.js`).
+Lớp CSS: `.hr-only` (hrm) · `.admin-only` (adm) · `.mgr-only` (mgr/myFE/**hrm**) · `.secr-only` (secr).
 
 **Người không nằm trong lịch ca** (thư ký, quản lý cấp trên) đặt **Kiểu ca = Không xếp lịch**
 (`shiftType='none'`): vẫn có tài khoản và thao tác phần mềm, nhưng `schedEmps()` loại họ khỏi
@@ -2339,3 +2344,192 @@ lại → xanh. Một bài kiểm hồi quy chưa từng thấy nó đỏ thì c
 > không?* Ở đây câu trả lời là có, qua bốn file.
 
 Toàn bộ harness xanh (**585 phép thử**). Cache bump **`?v=80`**.
+
+
+---
+
+# v7.7 — Thư ký làm được việc nhân lực
+
+## Yêu cầu
+
+Thư ký phải tự **tạo lịch kỳ ca mới, thêm người, bớt người, sửa đổi bảng công ca**
+— gần như mọi thứ Quản trị làm — *trừ* những gì dính tới **mật khẩu đăng nhập và
+bảo mật kho dữ liệu*. Giao diện màn đầu tiên thì giữ như **quản lý người Hàn**.
+
+## Vì sao trước đây không làm được
+
+Mọi việc hành chính nhân sự đều bị chặn bằng **một cờ duy nhất `adm`**, mà `adm`
+lại gộp hai nhóm việc rất khác nhau:
+
+| Nhóm việc | Ví dụ | Ai nên làm |
+|---|---|---|
+| Nhân lực & bảng công ca | thêm nhóm, thêm/bớt người, điền lịch cả kỳ, sửa ô lịch thực tế, ghi nhận sự kiện | Quản trị **và thư ký** |
+| Bảo mật hệ thống | đặt lại mật khẩu, đổi quyền, uỷ quyền duyệt cấp cuối, cấu hình Firebase, nạp lại toàn bộ dữ liệu | **chỉ** Quản trị |
+
+Gộp làm một nên mở cho thư ký nhóm trên thì hở luôn nhóm dưới.
+
+## Cách làm — tách `adm` thành `adm` + `hrm`
+
+`js/01-core.js` thêm cờ **`hrm`** (`applyPerm()` ở `js/10-account.js` đặt
+`hrm = adm || perm==='sec'`) cùng ba chốt dùng chung:
+
+```js
+function canEditSched(){return mgr||hrm;}   // sửa ô lịch thực tế
+function hrGuard(){…}                       // việc nhân lực  → toast nếu thiếu quyền
+function admGuard(){…}                      // việc bảo mật   → toast nếu thiếu quyền
+```
+
+Việc đã chuyển từ `adm` sang `hrm`:
+
+- `js/04-schedule.js` — `fillSchedule` (điền lịch cả kỳ), `clearSchedRange`,
+  `clearSchedAll`, `fillScheduleForOne`, `newHireSchedule`.
+- `js/05-roster.js` — `addGroup`, `addMember`, `renameGroup`, `delGroup`,
+  `delEmp`, `updEmp`, `updType`, `changeId` (trước đây không có chốt nào, chỉ
+  dựa vào việc ẩn tab — nay chốt thật ở từng hàm).
+- `js/06-calendar.js` — 11 chỗ gác bằng `mgr` đổi sang `canEditSched()`:
+  `openCell`, ô lịch bấm được, thẻ tuần, lưới ngày trên ĐT, nút 🔕 Giữ thông báo,
+  băng nhắc, dòng hướng dẫn.
+- `js/20-events.js` — 3 chốt ghi nhận sự kiện.
+
+Việc **giữ nguyên `adm`**: `updPerm`, `setPass`, `resetToDefaultPw`,
+`addAccountRow`, thẻ Firebase, thẻ Uỷ quyền phê duyệt cấp cuối, nút *Tải lại
+toàn bộ từ Firebase*, bộ Công cụ dữ liệu (xoá đơn hàng loạt) ở màn Duyệt.
+
+## Giao diện
+
+- `index.html` — hai nút 🛠️ **Nhóm & Lịch** và ⚙️ **Dữ liệu** (header + sheet Thêm)
+  cùng nút 📌 **Sự kiện** đổi từ `.admin-only` sang **`.hr-only`**.
+  `applyRoleUI()` (`js/13-portal.js`) xử lý lớp mới này; `.mgr-only` cũng nhận `hrm`
+  để thư ký thấy sub-tab 👥 Nhân lực và nút 🔕 Giữ thông báo.
+- **Tab Dữ liệu** với thư ký: thấy Xuất Excel · Bản tin Zalo 08:00 · Khai báo giờ &
+  mã ca · Cài đặt in đơn · Email báo cáo · Định mức. **Không** thấy thẻ Firebase
+  và thẻ Uỷ quyền; nút *Tải lại toàn bộ* và *＋ Thêm người* ẩn.
+- **Bảng Tài khoản** có thêm bản **chỉ đọc** `renderAccTblRO()`
+  (`js/11-stats-data.js`): thư ký tra được ai có tài khoản, quyền gì, mật khẩu còn
+  mặc định hay chưa — không một ô nhập, không một nút nào. Thêm/bớt người thì làm
+  ở tab Nhóm & Lịch.
+- **Màn Duyệt**: mốc chia sub-tab đổi từ `mgr` sang **`secr`**
+  (`renderApprTabs`/`renderAppr` ở `js/08-requests.js`, `asRender` ở
+  `js/17-appr-sum.js`) → thư ký xem được Nhật ký tăng ca, Bảng công tổng hợp,
+  Tổng quan, Biểu đồ. Nút ✓/✕ vẫn do `apprCanAct()` (= `canAppr()`) quyết định
+  nên **thư ký không duyệt được đơn** — chuỗi duyệt FE → Hoàng Trung → QL người
+  Hàn không đổi.
+- **In đơn**: `canPrintReq()` cho `secr` in **mọi** đơn. Trước đây thư ký rơi vào
+  nhánh "cùng nhóm" nên chỉ in được đơn nhóm Office — đúng cái nhóm ít đơn nhất,
+  trong khi họ mới là người cầm tờ đơn đi nộp nhân sự.
+- **Màn đầu tiên**: không phải sửa gì. `sec` vốn đã `noSelf=true` như `kmgr`, nên
+  cả hai vào app là thấy cùng một **bảng tin điều hành** (`noSelfHomeHtml()`),
+  không có nhánh nào trong hàm đó phân biệt quyền. Tab Báo cáo cá nhân nay ẩn với
+  mọi người `noSelf` (trước chỉ ẩn với `mgr`) — họ không có số liệu cá nhân để xem.
+
+## Kiểm chứng
+
+Hai harness Node nạp **code thật** (`config` → `01-core` → `14-i18n` → `04` → `05`
+→ `06` → `07` → `08` → `10` → `11` → `18`) với DOM giả, chạy 4 vai
+(staff / sec / appr / admin+kmgr):
+
+| Nhóm | Nội dung | Kết quả |
+|---|---|---|
+| Cờ quyền | `adm/mgr/hrm/secr/noSelf`, `canEditSched`, `canAppr` cho cả 4 vai | 16/16 |
+| Nhân lực | thư ký thêm nhóm · thêm người · sửa tên · đổi kiểu ca · xoá người · xoá nhóm · điền lịch cả kỳ (62 ô) · xoá lịch | 9/9 |
+| Chặn nhân viên | nhân viên thường vẫn không thêm/xoá/điền lịch, mỗi lần đều có lời nhắc | 4/4 |
+| Bảo mật | thư ký **không** đổi được quyền, **không** đặt lại mật khẩu, **không** thêm người ở bảng Tài khoản; quản trị thì được | 5/5 |
+| Bảng Tài khoản | thư ký: không `<input>`/`<select>`/nút nào, vẫn đọc được tên + quyền + trạng thái mật khẩu | 6/6 |
+| Home | `sec` và `kmgr` cùng `noSelf`, cùng `homeView()='me'` | 4/4 |
+| Lịch thực tế | thư ký mở & ghi được ô lịch; nhân viên bị chặn | 5/5 |
+| Màn Duyệt | thư ký có đủ sub-tab như quản trị; `apprCanAct()=false`; gọi thẳng `decide()` cũng không đổi được trạng thái đơn | 6/6 |
+| In đơn | thư ký in được đơn nhóm khác | 3/3 |
+
+Hai file harness: `_test/perm-v77-harness.js` (+ `.tests.js`) và
+`_test/perm-v77-appr-harness.js` (+ `perm-v77-appr.tests.js`).
+
+**58 phép thử xanh**, và **toàn bộ 19 harness cũ vẫn xanh** (682 phép thử) sau khi
+sửa. Riêng `cover-perday-harness.js` từng đỏ vì `canPrintReq()` đọc `secr` mà
+harness đó không khai — nay bọc `typeof secr!=='undefined'` cho chắc, đúng lối
+phòng thân đang dùng khắp mã nguồn. Cache bump **`?v=81`**.
+
+> Bài học: một cờ quyền gộp hai nhóm việc khác bản chất thì sớm muộn cũng phải tách.
+> Dấu hiệu nhận ra sớm: câu trả lời cho *"ai được làm việc này"* khác nhau giữa hai
+> việc đang cùng đứng sau một chốt.
+
+
+---
+
+# v7.7.1 — Sổ chờ bản tin 08:00 chỉ gom tin CHƯA GỬI LẦN NÀO
+
+## Câu hỏi
+
+> "Sổ chờ này là những tin chưa gửi thông báo lần nào thì mới gom gửi, tức là các
+> đơn mới phát sinh — chứ không phải gom hết đơn trong màn Phê duyệt rồi gửi lại,
+> đúng không?"
+
+## Trả lời: đúng, và đây là chỗ chứng minh
+
+`S.digest` được ghi **duy nhất** bởi `digestHold()`, mà `digestHold()` chỉ được gọi
+từ `zaloEnqueue()` — tức là **ngay lúc `newNotif()` sinh ra một thông báo mới**.
+Không có đường nào quét `S.requests` để dựng lại sổ chờ. Gửi xong thì
+`digestSweep()` xoá đúng những mục đã ghi được lên `zaloQueue`; khoá hàng đợi là
+`notifId` (quy tắc R6) nên cũng không có chuyện ghi trùng.
+
+Harness mới `_test/digest-onlynew-harness.js` dựng kho **200 đơn OT cũ đã duyệt và
+đã in** rồi kiểm:
+
+| | Kiểm | Kết quả |
+|---|---|---|
+| N1 | 200 đơn cũ, không tin mới → sổ chờ | **0 mục**, không gửi tin nào |
+| N2 | thêm 3 đơn mới trên kho 200 đơn cũ | sổ chờ **3**, không phải 203 |
+| N3 | bắn xong | sổ chờ rỗng, 1 tin gom 3 mục, kho đơn không bị đụng |
+| N4 | tin sinh sau khi bắn | chờ đợt sau; đợt sau chỉ có 1 mục mới |
+| N5 | gọi bắn lại trong ngày | không gửi lại gì |
+| N6 | đổi trạng thái 50 đơn cũ mà không sinh tin | sổ chờ vẫn 0 |
+| N7 | huỷ tin trước giờ bắn | bốc hơi khỏi sổ, không tốn tin |
+| N8 | 202 đơn đang chờ duyệt, 2 tin mới | ô "Đang chờ" ghi **2**, không phải 202 |
+
+## Nhưng có một lỗ hở đã bịt luôn
+
+Từ lúc vào sổ (VD 15h) tới lúc bắn (08:00 sáng sau) là gần **17 tiếng**, và trong
+khoảng đó việc có thể đã hết giá trị:
+
+- **Đơn bị huỷ / xoá.** `cancelReq()` chỉ gọi `notifDropForReq()`, mà hàm đó **chỉ**
+  dọn tin *chờ xác nhận* (`swapConfirm` / `coverConfirm` / `schedChange`).
+  Tin `apprNeed` / `approved` là loại `info`, **cố ý giữ lại làm lịch sử trong app**
+  — đúng cho app, nhưng để nó bắn Zalo sáng mai là báo một đơn không còn tồn tại.
+  `zaloWithdraw()` vốn có nhánh gỡ sổ chờ, chỉ là **đường huỷ đơn không đi qua đó**.
+  Harness cũ (A7) gọi `zaloWithdraw()` trực tiếp nên không bắt được.
+- **Đơn đã có quyết định.** Nhắc "còn đơn chờ duyệt" trong khi người ta đã duyệt từ
+  tối hôm trước là nhắc việc đã xong.
+
+Sửa bằng **`digestStale(id,row)`** mới ở `js/21-notify.js`, dùng trong cả
+`digestLive()` và `digestSweep()`:
+
+```js
+function digestStale(id,row){
+  const n=(S.notifs||{})[id];  if(!n) return 'notif';      // thông báo đã bị gỡ
+  const rid=n.reqId;           if(!rid) return '';
+  const r=(S.requests||{})[rid]; if(!r) return 'req';      // đơn đã huỷ / xoá
+  const zk=(row&&row.zk)||n.zk||'';
+  if(zk==='apprNeed'&&r.status!=='pending') return 'decided';
+  return '';
+}
+```
+
+Lọc **ở sổ chờ** thay vì đi sửa `cancelReq`/`decide` là cố ý: sổ tự soi lại mình
+ngay trước khi bắn thì chỉ **một chỗ** lo việc này, không phụ thuộc mọi đường
+huỷ / duyệt / xoá trong app có nhớ gọi hàm dọn hay không.
+
+Thêm hai phép thử đi theo **đường thật**: N9 (huỷ đơn kiểu `cancelReq` → sáng mai
+không bắn gì, mục lỗi thời bị dọn) và N10 (duyệt xong lúc 20h → lời nhắc "cần
+duyệt" tự rơi, chỉ còn tin kết quả duyệt).
+
+## Chữ trên màn Dữ liệu
+
+Thẻ *Bản tin Zalo gom lúc 08:00* thêm một đoạn nói rõ sổ chờ chỉ nhận đơn mới phát
+sinh, và nhãn đổi từ **"Đang chờ"** thành **"Chưa gửi lần nào"** — chính chữ "đang
+chờ" làm người dùng hiểu thành "số đơn đang chờ duyệt". +7 khoá i18n EN.
+
+**27 phép thử của harness mới xanh; toàn bộ 22 harness (≈780 phép thử) xanh.**
+Cache bump **`?v=82`**.
+
+> Bài học: một phép thử gọi thẳng hàm dọn (`zaloWithdraw`) thì chỉ chứng minh hàm
+> đó chạy đúng, **không** chứng minh có ai gọi nó. Muốn chắc thì phép thử phải đi
+> đúng đường mà người dùng bấm.
