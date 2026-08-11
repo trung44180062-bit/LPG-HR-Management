@@ -35,12 +35,16 @@ syncAccounts();
 }
 renderAll();
 initFb();
+/* Kỳ công cắt ngày 21. App để mở qua đêm phải TỰ nhảy sang kỳ mới, không
+   thì sáng 21 mọi màn vẫn đang hiển thị kỳ cũ. Xem perStartWatch()
+   ở js/04-schedule.js. */
+if(typeof perStartWatch==='function')perStartWatch();
 
 /* Màn hình đầu tiên sau khi đăng nhập: nhân viên → Trang chính;
    thư ký / quản lý người Hàn (không thuộc diện chấm công) → Lịch thực tế */
 renderGate();
 go(homeView());
-if(!noSelf)renderMe(true);
+renderMe(true);   /* nhóm noSelf nay cũng có Bảng tin — xem homeView() */
 
 /* Ngôn ngữ: Quản lý người Hàn (quyền kmgr) mặc định vào là tiếng Anh,
    ai đã tự bấm nút EN/VI thì theo lựa chọn đã lưu. Xem js/14-i18n.js. */

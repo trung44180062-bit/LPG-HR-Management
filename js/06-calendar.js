@@ -19,7 +19,7 @@ function teamColor(tm){
 const SCHEDBG={
   O:'#E3DBF5', D:'#BDD7EE', N:'#C6E0B4', R:'#FFFFFF',
   AL8:'#FBD9E4', AL4:'#FCE7EF', NP:'#FBD5D2', OFF:'#FDEBC8',
-  OTD:'#CFEFDF', OTN:'#CFEFDF',
+  OTD:'#CFEFDF', OTN:'#CFEFDF', OTO:'#CFEFDF',
   SD:'#E6DAFB', SN:'#E6DAFB', SO:'#E6DAFB',
   OTL:'#CFEFDF', OT2:'#CFEFDF', OT3:'#CFEFDF',
   /* Ca kép — nền chia đôi: nửa ca chuẩn, nửa tăng ca */
@@ -29,7 +29,7 @@ const SCHEDBG={
 const SCHEDTXT={
   O:'#000000', D:'#1F3B57', N:'#2E4B22', R:'#C00000',
   AL8:'#98123F', AL4:'#98123F', NP:'#A31B14', OFF:'#8A5A00',
-  OTD:'#0B6244', OTN:'#0B6244',
+  OTD:'#0B6244', OTN:'#0B6244', OTO:'#0B6244',
   SD:'#4C1D95', SN:'#4C1D95', SO:'#4C1D95',
   OTL:'#0B6244', OT2:'#0B6244', OT3:'#0B6244',
   'O+N':'#000000', 'D+N':'#1F3B57'
@@ -162,6 +162,7 @@ function renderMatrix(C){
   h+='</tr>';
   /* Ngày có sự kiện (nhập tàu, bảo dưỡng…) tô khác ngày thường — js/20-events.js */
   const evOn=typeof eventsOfDay==='function';
+  const trOn=typeof trCellCls==='function';       // lịch đào tạo — js/22-training.js
   const evCls=iso=>(evOn&&eventsOfDay(iso).length)?' evday':'';
   const evTit=iso=>(evOn&&eventsOfDay(iso).length)?` title="📌 ${esc(evTitleOfDay(iso))}"`:'';
   h+='<tr class="dnum"><th class="c0">No.</th><th class="c1">Tổ</th><th class="c2">ID</th><th class="c3">Họ tên</th><th class="c4">Vị trí</th>';
@@ -193,7 +194,12 @@ function renderMatrix(C){
         const r=getCode(e.id,iso);
         const editable=C.real&&mgr;
         const style=(diffOnly&&!r.ovr)?'':cellStyle(r.code);
-        h+=`<td class="cell${editable?' editable':''}${r.ovr?' ovr diff':''}${r.o&&r.o.prov?' prov':''}${iso===tIso?' today':''}" style="${style}" ${editable?`onclick="openCell('${e.id}','${iso}')"`:''}>${r.code||''}</td>`;
+        /* Ô có lịch đào tạo tô NỀN RIÊNG đè lên màu mã ca (js/22-training.js).
+           Lớp .trday ghi đè bằng !important nên style inline của mã ca vẫn để
+           nguyên — bỏ lớp đi là ô trả lại màu ca, không mất gì. */
+        const trC=trOn?trCellCls(e.id,iso):'';
+        const trT=trC?` title="${esc(trCellTitle(e.id,iso))}"`:'';
+        h+=`<td class="cell${editable?' editable':''}${r.ovr?' ovr diff':''}${r.o&&r.o.prov?' prov':''}${iso===tIso?' today':''}${trC}" style="${style}"${trT} ${editable?`onclick="openCell('${e.id}','${iso}')"`:''}>${r.code||''}</td>`;
       });
       h+='</tr>';
     });
@@ -204,7 +210,7 @@ function renderMatrix(C){
     /* Ca kép đếm theo nửa CA CHUẨN (workCodeOf) — người trực O rồi tăng ca đêm
        vẫn là một đầu người của ca O hôm đó. */
     emps.forEach(e=>{const c=workCodeOf(getCode(e.id,iso).code);
-      if(c==='D'||c==='SD'||c==='OTD')cD++;else if(c==='N'||c==='SN'||c==='OTN')cN++;else if(c==='O'||c==='SO')cO++;});
+      if(c==='D'||c==='SD'||c==='OTD')cD++;else if(c==='N'||c==='SN'||c==='OTN')cN++;else if(c==='O'||c==='SO'||c==='OTO')cO++;});
     const low=(cD<S.settings.minD||cN<S.settings.minN);
     h+=`<td class="${iso===tIso?'today':''}" style="${low?'color:#DC2626':''}">${cD}/${cN}/${cO}</td>`;
   });
@@ -218,6 +224,11 @@ function renderLegend(elId){
   s+=allCodes().filter(c=>c.cat==='leave'||c.cat==='ot'||c.cat==='combo').map(c=>(c.cat==='combo'
       ? `<span class="lg">${chip(c.c)}${c.l}</span>`                       /* ca kép vẽ chip 2 nửa */
       : `<span class="lg"><span class="box" style="background:${c.col};color:#fff">${c.c}</span>${c.l}</span>`)).join('');
+  /* Đào tạo KHÔNG phải một mã ca — nó là lớp màu phủ lên ô, nên chú giải
+     phải nói rõ điều đó, không xếp lẫn vào danh sách mã (js/22-training.js). */
+  if(typeof trCellCls==='function')
+    s+=`<span class="lg"><span class="box" style="background:var(--trc);color:#fff">🎓</span>${
+      t('Ô nền tím = có lịch đào tạo (sọc = chờ duyệt · vạch xanh mép phải = tính tăng ca)')}</span>`;
   $(elId||'legend').innerHTML=s;
 }
 function fillGroupFilter(selId){
@@ -664,6 +675,8 @@ function renderCalWeekGrid(){
 
   /* --- sự kiện trong tuần: dải nhắc ở trên đầu --- */
   if(typeof evBannerHtml==='function')h+=evBannerHtml(days);
+  /* --- lịch đào tạo CỦA CHÍNH MÌNH trong tuần --- */
+  if(typeof trBannerHtml==='function')h+=trBannerHtml(days,meCur);
 
   /* --- lưới --- */
   let body='';
@@ -680,8 +693,10 @@ function renderCalWeekGrid(){
         const editable=real&&mgr;
         const act=editable?`onclick="openCell('${e.id}','${iso}')"`
                           :(noSelf?'':`onclick="openDaySheet('${iso}')"`);
+        const trC=(typeof trCellCls==='function')?trCellCls(e.id,iso):'';
         body+=`<div class="c${iso===tIso?' today':''}${r.ovr?' ovr':''}${r.o&&r.o.prov?' prov':''}${
-          evOn&&eventsOfDay(iso).length?' ev':''}" ${act}>${r.code?chip(r.code):'<i class="dash">—</i>'}</div>`;
+          evOn&&eventsOfDay(iso).length?' ev':''}${trC}"${
+          trC?` title="${esc(trCellTitle(e.id,iso))}"`:''} ${act}>${r.code?chip(r.code):'<i class="dash">—</i>'}</div>`;
       });
       body+='</div>';
     });

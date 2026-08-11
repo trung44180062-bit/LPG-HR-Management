@@ -56,6 +56,11 @@ LPGT-CongCa-Web/
 │   ├── 15-report.js        # Tab Báo cáo: Nhân lực · Thống kê · Biểu đồ (SVG thuần)
 │   ├── 16-otlog-data.js    # Nhật ký tăng ca lấy từ file Excel của công ty
 │   ├── 17-appr-sum.js      # Sub-tab Tổng quan trong tab Duyệt (bảng cho giám đốc)
+│   ├── 18-advice.js        # Trợ lý duyệt đơn
+│   ├── 19-meal.js          # Cơm phát sinh
+│   ├── 20-events.js        # Sự kiện trên lịch (nhập tàu, bảo dưỡng…)
+│   ├── 22-training.js      # v7.0: Lịch đào tạo (nạp NGAY SAU 20-events.js)
+│   ├── 21-notify.js        # Hàng đợi + khuôn tin Zalo (tên file cố ý không có chữ "zalo")
 │   └── 12-main.js          # Boot — luôn nạp CUỐI CÙNG
 ├── BAO-MAT.md              # Đánh giá bảo mật + việc cần làm
 ├── firebase-rules.json     # Luật truy cập, dán vào Firebase Console
@@ -1501,3 +1506,701 @@ C1–C6 phủ phép trừ giờ trưa (kể cả biên 12:00 / 13:00, dữ liệ
 chỗ nào lọt `otHours` trần); D1–D3 phủ kênh của `approved` / `rejected`.
 
 Toàn bộ harness xanh. i18n **+4 khoá EN**. Cache bump **`?v=72`**.
+
+---
+
+# v7.0 — Lịch đào tạo · mã BT (công tác) · tự chuyển kỳ ca
+
+## 1. Lịch đào tạo — `js/22-training.js` (nạp ngay sau `20-events.js`)
+
+### Vấn đề đang có
+
+Đào tạo trước nay đi bằng miệng và tin nhắn lẻ: quản lý nhắn "thứ Năm anh đi học an
+toàn", người nghe tự nhớ. Đến ngày mới lòi ra hai chuyện:
+
+* hôm đó anh ta **trực ca đêm** — không ai đối chiếu trước;
+* học **ngoài giờ** mà **không ai khai đơn tăng ca** → không được tính giờ.
+
+### Mô hình dữ liệu
+
+Một **buổi đào tạo** = một bản ghi `S.trainings[id]`, gồm **nhiều ngày** và **nhiều
+người**. Xếp cho 8 người học 2 ngày vẫn chỉ là MỘT bản ghi — sửa một lần là sửa cho
+tất cả, đúng cách người ta nghĩ về việc này.
+
+```js
+S.trainings[id] = {
+  id, title, place, note,
+  days : ['2026-08-24','2026-08-25'],   // các ngày
+  emps : ['e1','e2'],                   // ai đi học
+  mode : 'shift' | 'ot',                // trong ca / tính tăng ca
+  otCode, preset, timeIn, timeOut, overnight, noLunch,   // chỉ khi mode='ot'
+  status: 'active' | 'pending',         // pending = NV tự khai, chờ duyệt
+  notify, by, at, editBy, editAt
+}
+```
+
+Nhánh Firebase riêng `trainings`, đồng bộ **delta** như `requests`/`notifs`/`events`
+(thêm vào `FB_MAP_BRANCHES` ở `js/02-storage.js`).
+
+### Ai xếp được cho ai
+
+| Quyền | Xếp cho người khác | Xếp cho mình | Duyệt |
+|---|---|---|---|
+| Quản trị (`admin`) · QL người Hàn (`kmgr`) · SC / Duyệt đơn (`appr`) · Thư ký (`sec`) | ✅ | ✅ | ✅ |
+| Nhân viên (`staff`) | ❌ | ✅ (chờ duyệt) | ❌ |
+
+Đúng bằng cờ `secr` đã có sẵn — **không đẻ thêm khái niệm quyền mới**. Chặn ở
+`trSave()` chứ không chỉ ở giao diện, nên gọi thẳng hàm trong console cũng không lách được.
+
+Nút mở: `🎓 Đào tạo` trên thanh tab **Lịch** (class `.secr-only` mới), kèm phù hiệu đỏ
+đếm số buổi đang chờ duyệt. Nhân viên thường vào bằng nút `🎓 Lịch đào tạo của tôi` ở
+Trang chính.
+
+### Hai chế độ
+
+**`shift` — trong ca làm việc.** Không sinh đơn, không đổi mã ca. Ô lịch chỉ đổi màu.
+
+**`ot` — ngoài ca, tính tăng ca.** Mỗi người **một đơn tăng ca THẬT** (`type:'ot'`), đi
+đúng luồng duyệt FE › SC › QL người Hàn, **in được biểu mẫu**, vào **báo cáo giờ OT** và
+**suất cơm**. Đơn ghi lý do `Đào tạo: <tên buổi>` và mang `r.trId` — sợi dây nối ngược
+về buổi đào tạo để về sau còn sửa/gỡ được.
+
+Màn xếp lịch hiện **tổng giờ tăng ca ước tính** (`giờ/người × số người`) **trước khi bấm
+lưu**. Con số này quyết định tiền — phải thấy ở đây, không phải phát hiện ở bảng lương.
+
+### Duyệt
+
+* Quản lý xếp → `status:'active'` ngay.
+* Nhân viên tự khai → `status:'pending'`, **luôn cần duyệt**. Bản chờ duyệt **vẫn hiện
+  trên lịch nhưng gạch sọc**, để người xếp ca biết "có người xin đi học ngày này" mà
+  chưa chốt. Chỉ khi duyệt xong mới sinh đơn tăng ca — bản chưa chốt mà đẻ đơn ngay thì
+  người duyệt nhận hai luồng cho một việc.
+
+Duyệt **ĐÀO TẠO** là chốt lịch; duyệt **ĐƠN OT** là chốt tiền. Hai việc khác nhau, cố ý
+tách.
+
+### Sửa lại sau khi assign
+
+`trSave()` với `id` có sẵn:
+
+1. **Gỡ trước** mọi đơn OT chưa duyệt của buổi (`trDropReqs`) — ngày/người/giờ có thể
+   đã đổi hết, giữ lại là để đơn mồ côi khai sai giờ.
+2. Ghi bản ghi mới.
+3. Tạo lại đơn theo giờ mới.
+4. **Thu hồi** thông báo cũ (xoá hẳn khỏi `S.notifs`, rút luôn khỏi hàng đợi Zalo qua
+   `notifDrop`) rồi **gửi lại** bản mới — cùng cơ chế với sự kiện và đổi lịch.
+
+Đơn **đã duyệt** thì **không đụng vào**: giấy tờ đã chốt, có thể đã in nộp nhân sự.
+Toast báo rõ `⚠ N đơn đã duyệt được giữ nguyên, kiểm tra lại`.
+
+> **Bẫy đã tránh:** `trDelete()` **KHÔNG** tự gọi `tombSet('trainings', id)`. `fbDiff()`
+> thấy khoá biến mất là tự dựng bia mộ **và** nhét `del/trainings/<id>` vào gói ghi; gọi
+> trước thì `tombSet` trả `false` ở trong `fbDiff`, đường dẫn `del` không được gửi lên,
+> và bản ghi **sống lại ở máy khác** — đúng cái bẫy đã sửa ở v6.7. Harness C4 canh chỗ này.
+
+### Mã màu trên lịch
+
+Ô có đào tạo tô **NỀN MÀU RIÊNG đè lên màu mã ca** (`--trc:#7C3AED`). Cố ý đè: nhìn cả
+bảng một lượt phải bật ra ngay hôm nào ai đi học. Mã ca vẫn đọc được vì chỉ đổi nền,
+chữ ép sang trắng cho đủ tương phản.
+
+| Lớp | Nghĩa | Chỗ áp dụng |
+|---|---|---|
+| `.trday` | buổi đã có hiệu lực (nền đặc) | ma trận PC · lưới tuần ĐT · lịch trang chính |
+| `.trday.trpend` | NV tự khai, chờ duyệt (nền **sọc**) | như trên |
+
+`trCellCls(empId, iso)` trả chuỗi lớp, `trCellTitle()` trả tooltip. Cả hai đọc từ chỉ
+mục `(empId|iso) → buổi` nhớ theo `S.rev` — ô lịch hỏi cho **từng ô** nên phải nhanh
+(cùng khuôn `evIndex()` ở `20-events.js`). `trResetCache()` được gọi trong
+`applyRemote()` cùng với `evResetCache()`.
+
+Chú giải mã ca thêm một dòng nói rõ **đào tạo không phải một mã ca** mà là lớp màu phủ.
+
+### Thông báo
+
+**Trong app** (`kind:'training'`, khối 🎓 riêng trong chuông, thêm vào `SEEN_KINDS`):
+
+* bản `active` → báo cho **từng người đi học**;
+* bản `pending` → báo cho **người duyệt được** (`admin`/`kmgr`/`appr`/`sec`), **không**
+  tự gửi cho chính người khai.
+
+**Zalo** — kênh `'batch'`, khoá gộp `'training'`, tin gửi CHUNG (`zaloIsBroadcast`):
+
+```
+🎓 TRAINING SCHEDULE
+Chemical safety training
+Wed 19/08 · Thu 20/08
+Overtime for training  17:00–20:00
+Venue: Meeting room 2
+Attendees (2): Tran Van A, Le Thi C
+An overtime request has been created for each attendee.
+👉 See the training schedule in app
+```
+
+Thân tin dựng từ **chính bản ghi**, không bê câu tiếng Việt của app sang. Nhãn nhóm
+`n.aud` giống nhau ở mọi tin của cùng một buổi → vân tay trùng → **8 người vẫn chỉ tốn
+ĐÚNG MỘT tin Zalo**.
+
+Vì sao `'batch'` chứ không `'now'`: đào tạo luôn được xếp trước vài ngày, biết muộn 10
+phút không ai đi sai giờ. **Không** cho vào kênh `'digest'` — digest chỉ nhận tin giấy
+tờ thuần (`apprNeed`/`approved`/`cancelled`), còn đây là tin đổi lịch đi làm.
+
+## 2. Mã **BT** — đi công tác (Business trip)
+
+```js
+{c:'BT', l:'Đi công tác (Business trip)', col:'var(--cBT)', cat:'leave'}   // 8 giờ
+```
+
+Xếp `cat:'leave'` vì cùng nghĩa vận hành với các mã nghỉ: hôm đó người này **không có
+mặt ở ca trực**, đếm quân số phải trừ ra. Nhưng **vẫn ăn 8h công** (khác hẳn NP/COM ăn
+0h) — đi công tác là đang làm việc cho công ty.
+
+Nhờ `cat:'leave'`, mã này **tự động** có mặt trong form đơn nghỉ phép (`dsCodesFor`) và
+trong hộp chọn mã ở ô lịch — **không phải khai thêm chỗ nào**.
+
+Màu `--cBT:#0E7490` (xanh mòng két), **cố ý không dùng đỏ** như các mã nghỉ: nhìn lịch
+phải phân biệt được ngay "vắng vì nghỉ" với "vắng vì đi làm việc chỗ khác".
+
+Kèm theo: `Z_SHIFT.BT = 'Business trip'` cho tin Zalo, và dòng
+`BT: Đi công tác (Business trip)` trong chú giải biểu mẫu in.
+
+## 3. Sang kỳ mới thì tự nhảy sang kỳ mới — `js/04-schedule.js`
+
+Kỳ công cắt ở **ngày 21**. App để mở suốt (máy phòng điều độ, điện thoại để nền cả
+tuần) nên sáng 21 vẫn đang hiển thị **kỳ cũ**: ô chọn kỳ giữ nguyên giá trị hôm qua,
+các màn Báo cáo / Tổng hợp duyệt / Thống kê cá nhân thì nhớ kỳ trong biến (`repYm`,
+`asYm`, `myStatYm`, `esYm`, `evYm`, `trYm`) và không ai xoá.
+
+`fillMonthSelects()` không cứu được: nó **cố ý** giữ lựa chọn đang có
+(`ms.includes(cur)?cur:…`) — phải thế, không thì đang xem kỳ tháng 5 mà dữ liệu đồng bộ
+về là bị đá ngược về kỳ hiện tại giữa chừng.
+
+**Cách làm:** nhớ kỳ hiện tại lúc khởi động (`_perWatch`), mỗi phút so lại
+(`perCheckRollover`), **chỉ khi mốc kỳ thật sự đổi** mới xoá các biến nhớ kỳ và kéo mọi
+ô chọn về kỳ mới (`perJumpTo`), kèm toast báo. Máy tính ngủ rồi mở lại có thể nhảy qua
+cả ngày mà không tick nào chạy → soi thêm ở `visibilitychange`.
+
+Nghĩa là **trong cùng một kỳ, người dùng vẫn tự do lật về kỳ cũ để tra cứu mà không bị
+giật lại** — chỉ đúng thời khắc sang kỳ mới app mới can thiệp, và đó chính là lúc người
+ta muốn nó can thiệp.
+
+## Kiểm chứng
+
+```
+node _test/training-harness.js       # 71 phép thử (A·B·C·D·E·F·G·H)
+node _test/zalo-format-harness.js    # 61 phép thử (mục 9 = tin đào tạo)
+```
+
+* **A** phân quyền · **B** sinh đơn tăng ca (kể cả trừ giờ trưa) · **C** sửa & xoá
+  (gồm C4 canh bẫy bia mộ) · **D** thông báo & thu hồi · **E** mã màu ô lịch ·
+  **F** mã BT · **G** tự chuyển kỳ ca · **H** dựng giao diện không nổ.
+
+Toàn bộ harness cũ vẫn xanh (403 phép thử). i18n **+62 khoá EN** (đã soi trùng khoá —
+`chờ duyệt` / `CHỜ DUYỆT` / `tăng ca` đã có sẵn nên **không khai lại**, khoá trùng trong
+object literal thì bản sau đè bản trước và làm đổi chữ ở màn khác). Cache bump **`?v=73`**.
+
+---
+
+# v7.1 — Đào tạo quyết theo TỪNG NGƯỜI TỪNG NGÀY · mã OTO · nới khổ màn hình
+
+## 1. Vì sao phải sửa ngay bản v7.0
+
+Bản v7.0 bắt chọn MỘT chế độ cho cả buổi. Thực tế không như vậy:
+
+* Buổi học hai ngày thì **hai ngày khác bản chất**: ngày 18 anh A nghỉ ca (R) nên đi
+  học là **tăng ca**; ngày 19 anh A trực ca hành chính (O) nên học **trong giờ làm**.
+* Tệ hơn: **cùng một ngày**, anh A đang R còn anh B đang O. Một chế độ cho cả buổi thì
+  dù chọn kiểu gì cũng sai với một nửa số người.
+
+Nên đơn vị quyết định nhỏ nhất phải là **cặp (người, ngày)**, không phải buổi.
+
+## 2. Ba tầng luật — tầng trên thắng tầng dưới
+
+| Tầng | Nguồn | Ý nghĩa |
+|---|---|---|
+| 1 | `tr.dayMode[iso]` | người xếp ép tay cho **riêng ngày đó** |
+| 2 | `tr.mode` = `'shift'` / `'ot'` | ép tay cho **cả buổi** |
+| 3 | `tr.mode` = `'auto'` (**mặc định**) | **app tự soi** ca thực tế của chính người đó |
+
+`trModeFor(tr, empId, iso)` là hàm kết luận duy nhất; mọi chỗ khác (sinh đơn, tô ô lịch,
+dựng tin Zalo, câu thông báo) đều đi qua nó — không nơi nào tự suy luận lại.
+
+### Luật "tự soi" (`trAutoModeFor`)
+
+```
+ca thực tế của người đó hôm đó (workCodeOf → baseShiftOf)
+  · không có ca (R / nghỉ phép / trống)     → TĂNG CA
+  · có ca, chưa khai giờ học                → TRONG CA
+  · có ca, giờ học NẰM GỌN trong ca         → TRONG CA
+  · có ca, giờ học TRÀN RA ngoài ca         → TĂNG CA
+```
+
+Phép "nằm gọn" (`trShiftCovers`) quy về phút: D = 08:00–20:00, O = 08:00–17:00,
+N = 20:00–08:00 **hôm sau** (nên đuôi cộng 1440 phút, và mốc bắt đầu trước 08:00 cũng
+thuộc phần hôm sau của ca đêm — học lúc 02:00 là **đang giữa ca N**, không phải ngoài ca).
+
+**Không vòng luẩn quẩn:** khi chưa khai giờ, phép soi chỉ xét vế "có ca hay không" — vế
+đó không phụ thuộc vào giờ. Nhờ vậy `trValidate()` mới hỏi được "có cặp nào tính tăng ca
+không" trước khi đòi khung giờ.
+
+## 3. Hệ quả ở đơn tăng ca
+
+`trMakeReqs()` nay gom **cặp (người, ngày)** rồi mới chia về từng người:
+
+* Người nào **mọi ngày đều trong ca** → **không có đơn nào**. Trước kia ai cũng có đơn
+  đủ mọi ngày, kể cả ngày họ đang trực — giấy tờ rỗng và sai giờ.
+* Đơn của một người **chỉ chứa những ngày tăng ca của chính họ**.
+
+Ví dụ đúng theo ảnh minh hoạ trên: 4 người học 2 ngày → chỉ **2 đơn** (hai người ngày 18
+đang R), mỗi đơn **1 dòng**.
+
+## 4. Mã **OTO** — tăng ca ca hành chính 08–17h
+
+```js
+{c:'OTO', l:'Tăng ca hành chính 08–17h', col:'var(--cOT)', cat:'ot'}   // 8 giờ
+```
+
+Khác **OTD** (08–20h, ca vận hành, 12 giờ): người đang nghỉ ca mà được gọi lên làm hoặc
+học nguyên ngày hành chính thì khai mã này — **8 giờ chứ không phải 12**.
+
+Mẫu giờ `OT_PRESETS` của OTO mang cờ **`noLunch:1`** — đây là mẫu **duy nhất** tự tích
+sẵn ô trừ trưa, vì 08:00→17:00 là **9 giờ đồng hồ** nhưng ca hành chính chỉ tính **8 giờ
+công**. OTD 08–20h thì công ty vẫn trả trọn 12 giờ nên **không** tích. Người khai bỏ tích
+lại được — chỉ là giá trị mặc định. Áp cho cả form đơn tăng ca (`dsSetPreset`) lẫn màn
+đào tạo (`trSetPreset`).
+
+Đã nối đủ: `baseShiftOf` quy về ca O · màu `SCHEDBG`/`SCHEDTXT` · đếm quân số cột O ở ma
+trận và thống kê · `Z_SHIFT.OTO` cho Zalo · gợi ý mẫu khi xác nhận ô lịch.
+
+## 5. Giao diện
+
+**Khổ rộng** `.modal.xwide` (960px) cho riêng màn đào tạo — khổ 560px cũ cắt cụt tên
+("Nguyễn Xuân Á…").
+
+**Thẻ người hai dòng:** tên chiếm **trọn dòng trên** nên không bao giờ bị cắt; dòng dưới
+là nhóm + ô ngày. Mỗi ô ngày hiện **số ngày + mã ca**, viền **xanh lá** = ngày đó tính
+tăng ca, viền **xanh dương** = trong ca. Nhìn một lượt là biết ai đi học ngày nào và ngày
+đó tính kiểu gì.
+
+**Bảng "Từng ngày là trong ca hay tăng ca?"** — mỗi ngày một dòng: ngày · các ca đang có
+(`D×1 O×1 R×2`) · kết luận của app (`2 tăng ca (8h) · 2 trong ca`) · ba nút
+**Tự động / Trong ca / Tăng ca**. Bấm lại đúng nút đang sáng = trả về Tự động.
+
+**Xem trước tiền:** `⚡ Sẽ tạo N đơn tăng ca · tổng H giờ (M lượt người-ngày)` — tính bằng
+**chính** `trOtPairs()` dùng lúc lưu, nên màn xem trước và kết quả thật không thể lệch nhau.
+
+**Ô lịch:** ô đào tạo tính tăng ca thêm **vạch xanh mép phải** (`--cOT`), phân biệt với ô
+học trong ca.
+
+**Thứ tự form** đổi lại cho đúng cách người ta nghĩ: chọn ngày → chọn người → chọn hình
+thức → khung giờ → **bảng từng ngày** → ước tính. Bảng kết luận phải đứng **sau** phần
+chọn người, vì nó đếm chính những người đó.
+
+## 6. Tin nhắn
+
+Tin Zalo nay in **mỗi ngày một dòng**, ngày trộn cả hai thì ghi số người mỗi bên:
+
+```
+🎓 TRAINING SCHEDULE
+Mixed session
+Wed 19/08  overtime 22:00–23:30 (1.5h) for 1 · during shift for 1
+Attendees (2): Tran Van A, Hoang Trung
+An overtime request has been created for each affected attendee.
+```
+
+Trước đây in một câu duy nhất cho cả buổi — với tin gửi chung thì đó là **nói sai với một
+nửa người nhận**. Câu thông báo **trong app** thì nói theo góc nhìn của **chính người
+nhận** (`trSummaryText(tr, id)`): họ chỉ cần biết ngày nào của mình là tăng ca.
+
+## 7. Tương thích ngược
+
+Bản ghi đào tạo **cũ** (v7.0, chỉ có `'shift'`/`'ot'` cho cả buổi) được **giữ nguyên ý
+người đã xếp** — `trEdit()` không tự nâng lên `'auto'` rồi phân loại lại sau lưng họ. Chỉ
+buổi tạo mới mới mặc định `'auto'`.
+
+`trCleanDayMode()` loại bỏ ép tay của những ngày **không còn được chọn**: bỏ ngày ra rồi
+chọn lại thì ép tay cũ **không sống lại** — người xếp đã không còn thấy nó trên màn hình,
+để nó âm thầm có hiệu lực là bẫy.
+
+## Kiểm chứng
+
+```
+node _test/training-harness.js       # 112 phép thử (thêm I · J · K)
+node _test/zalo-format-harness.js    # 64 phép thử (mục 9 = tin đào tạo)
+```
+
+* **I** — trong ca hay tăng ca theo từng cặp: R→tăng ca, O+giờ trong ca→trong ca, tràn ra
+  ngoài ca→tăng ca, ca đêm 22:00→trong ca / 13:00→tăng ca, cùng ngày hai người hai kết
+  luận, đơn chỉ chứa ngày của chính người đó, ba tầng ép tay, ép tay ngày đã bỏ chọn.
+* **J** — mã OTO: 8 giờ, mẫu 08–17h, tự tích trừ trưa và tự rơi khi đổi mẫu.
+* **K** — bảng từng ngày & thẻ người dựng được, **hiện tên đầy đủ**, tô đúng ot/shift,
+  bản nháp và bản lưu dùng chung một phép tính.
+
+> **Bẫy đã dính và đã ghi lại:** harness không nạp `js/08-requests.js` nên thiếu
+> `baseShiftOf` → `trAutoModeFor()` trả `'ot'` cho **mọi** ngày và 13 bài đỏ vì lý do sai.
+> Nay harness chép nguyên văn hàm đó vào sandbox. Bài kiểm dựa vào hàm của file khác thì
+> phải bơm hàm đó vào, không thì nó xanh/đỏ vì lý do không liên quan đến thứ đang kiểm.
+
+Toàn bộ harness cũ vẫn xanh (**443 phép thử**). i18n **+31 khoá EN** (đã soi trùng khoá).
+Cache bump **`?v=74`**.
+
+---
+
+# v7.2 — Giờ học khai riêng từng ngày · cột "Giờ đào tạo"
+
+## 1. Vấn đề
+
+Rất ít buổi đào tạo chiếm trọn một ngày. Phần lớn là **vài tiếng hoặc nửa buổi**, và một
+khoá 3 ngày thì ngày đầu học cả ngày, ngày sau chỉ sáng, ngày cuối hai tiếng rồi thi.
+
+Bản v7.1 chỉ có **một** khung giờ cho cả buổi, nên hoặc phải tách thành ba buổi rời (mất
+tính liền mạch của khoá học, ba lần thông báo, ba lần duyệt), hoặc khai một khung giờ sai
+cho hai ngày còn lại — mà khung giờ đó lại là **căn cứ tính tiền tăng ca**.
+
+## 2. Mô hình
+
+```js
+S.trainings[id] = {
+  timeIn:'08:00', timeOut:'17:00', overnight:false, noLunch:true,   // khung CHUNG
+  dayTime: {                                                        // ngày nào khác
+    '2026-08-19': {from:'08:00', to:'12:00'},
+    '2026-08-20': {from:'14:00', to:'16:00'}
+  }, …
+}
+```
+
+`trTimeOf(tr, iso)` là cửa duy nhất đọc giờ của một ngày: có khai riêng thì lấy riêng,
+không thì lấy khung chung. **Không nơi nào đọc thẳng `tr.timeIn` nữa** — nếu không, sửa
+một chỗ mà quên chỗ khác là số giờ ở bản in lệch số giờ trên màn hình.
+
+Kéo theo: `trAutoModeFor` (soi trong ca / tăng ca), `trHoursOfDay`, `trMakeReqs`,
+`trZaloDayLines`, tooltip ô lịch, dải nhắc — tất cả đi qua `trTimeOf`.
+
+### Mẫu giờ nhanh
+
+```js
+const TRAIN_PRESETS=[
+  {v:'full', label:'Cả ngày 08:00–17:00',   noLunch:1},   // → 8 giờ học
+  {v:'am',   label:'Buổi sáng 08:00–12:00'},              // → 4 giờ
+  {v:'pm',   label:'Buổi chiều 13:00–17:00'},             // → 4 giờ
+  {v:'',     label:'Tự điền giờ'}
+];
+```
+
+Khác `OT_PRESETS` ở `js/01-core.js` — cái đó là mẫu giờ **tăng ca**, cái này là mẫu giờ
+**học**. Chọn ở đầu form thì áp cho mọi ngày; chọn ngay trên dòng của một ngày thì chỉ
+ngày đó.
+
+### Mã OT suy từ khung giờ, không chọn tay
+
+`trOtCodeFor(from, to, overnight)`: khớp đúng một mẫu OT chuẩn của công ty thì lấy mã đó,
+không khớp thì quy theo khung ca mà đoạn giờ nằm vào — biểu mẫu HR chỉ có mấy ký hiệu này.
+
+| Khung giờ | Mã |
+|---|---|
+| gói gọn trong 08:00–17:00 (kể cả nửa buổi) | `OTO` |
+| 17:00–20:00 | `OT3` · 18:00–20:00 → `OT2` · 12:00–13:00 → `OTL` |
+| tràn quá 17:00 nhưng trong ngày | `OTD` |
+| vắt qua nửa đêm / bắt đầu ≥20:00 | `OTN` |
+
+Nhờ vậy người xếp lịch **không phải biết mã OT nào** — chỉ khai giờ học, app lo phần ký
+hiệu giấy tờ.
+
+## 3. Giờ học nay là BẮT BUỘC
+
+Bản v7.1 chỉ đòi khung giờ khi có phần tăng ca. Nay **mọi ngày đều phải có giờ**, kể cả
+buổi hoàn toàn trong ca — vì số giờ đó là nguồn của cột báo cáo. `trValidate()` chặn cả
+hai lỗi: chưa khai giờ, và khung giờ ra 0 giờ.
+
+## 4. Cột "Giờ đào tạo"
+
+`calcStats()` ở `js/10-account.js` trả thêm `hTrain`, cộng **trước** lối thoát
+`if(!c)return` (buổi học có thể rơi vào ngày chưa xếp ca — bỏ qua thì dòng Tổng có số mà
+không dòng nào bên trên giải thích được).
+
+> **`hTrain` ĐỨNG RIÊNG — không cộng vào giờ công, không cộng vào giờ OT.** Học trong ca
+> thì giờ công đã tính theo mã ca rồi; học ngoài ca thì đã có đơn tăng ca riêng. Cộng
+> thêm lần nữa là **tính hai lần**. Cột này chỉ trả lời "kỳ này ai đã học bao nhiêu giờ".
+> Harness M2 canh đúng chỗ này.
+
+Chỉ tính buổi **đã có hiệu lực** — bản nhân viên tự khai còn chờ duyệt thì chưa phải là
+giờ đã học (harness M3).
+
+Đã gắn vào: bảng công tổng hợp (cột tím, có dòng TỔNG) · thẻ điện thoại · ô số tổng đầu
+tab · bảng tổng hợp cả kỳ của một người (cột mới + dòng từng ngày) · Bảng công cá nhân ·
+file Excel xuất ra · email báo cáo.
+
+## 5. Giao diện
+
+Bảng từng ngày nay có **ô khai giờ ngay trên dòng**: mẫu nhanh · giờ từ · giờ đến · ô trừ
+trưa · **số giờ tính ra** (`8h` / `4h` / `2h`). Dòng nào khai riêng thì nền hổ phách và có
+nút *Về giờ chung*.
+
+Ô **trừ trưa CHỈ hiện khi khung giờ thật sự phủ 12:00–13:00**, và cờ cũ **tự rơi** khi sửa
+giờ ra ngoài trưa — cùng luật đã làm cho đơn tăng ca ở v6.9. Không có chốt này thì người
+xếp thấy ô đang tích mà số giờ lại không trừ, tưởng app tính sai (`otNetHours` vốn đã tự
+bảo vệ con số, nhưng giao diện nói dối thì vẫn là lỗi).
+
+Ô lịch, dải nhắc, thông báo trong app và tin Zalo nay đều ghi **giờ học của đúng ngày đó**,
+kể cả buổi học trong ca:
+
+```
+🎓 TRAINING SCHEDULE
+Half day course
+Wed 19/08  08:00–17:00  (8h)  overtime
+Thu 20/08  08:00–12:00  (4h)  overtime
+Lunch hour deducted.
+```
+
+## Kiểm chứng
+
+```
+node _test/training-harness.js       # 150 phép thử (thêm L · M)
+node _test/zalo-format-harness.js    # 67 phép thử
+```
+
+* **L** — giờ riêng từng ngày (8/4/2h), giờ riêng đổi luôn kết luận trong ca/tăng ca, đơn
+  OT lấy giờ của chính ngày đó, 4 mẫu nhanh, bỏ ngày → giờ riêng biến mất, cờ trừ trưa tự rơi.
+* **M** — cột giờ đào tạo cộng đúng, **không** lọt vào giờ công / giờ OT, bản chờ duyệt
+  chưa tính.
+
+> **Bẫy đã dính lần hai:** stub `otNetHours` trong `zalo-format-harness.js` bỏ qua tham số
+> `noLunch`, nên tin mẫu in `9h` cho một buổi thật ra `8h`. Đã sửa stub cho đúng thay vì
+> nới lỏng phép kiểm — stub sai làm bài kiểm xanh trong khi sản phẩm sai là kiểu hỏng tệ
+> nhất, vì nó còn cho cảm giác an toàn.
+
+Toàn bộ harness cũ vẫn xanh (**479 phép thử**). i18n **+18 khoá EN**. Cache bump **`?v=75`**.
+
+---
+
+# v7.3 — Vẽ lại không còn nhảy về đầu trang
+
+## Lỗi người dùng báo
+
+> "Mỗi lần click nó lại nhảy lên trên cùng, gõ search cũng thế."
+
+Ở màn Đào tạo: tích một người là màn hình vọt về đầu hộp thoại, phải cuộn lại từ đầu để
+tích người tiếp theo. Gõ vào ô tìm kiếm thì mất con trỏ ngay sau ký tự đầu tiên — gõ được
+đúng một chữ.
+
+## Nguyên nhân
+
+`renderTrainMgr()` (và `renderEventMgr()`) vẽ lại bằng cách **ghi đè toàn bộ innerHTML**.
+Cách này nhanh và dễ viết, nhưng trình duyệt vứt sạch mọi thứ **không nằm trong HTML**:
+
+* `scrollTop` của hộp thoại **và** của các danh sách cuộn bên trong (`.tr-people`, `.tr-days`)
+* phần tử đang có focus, và vị trí con trỏ trong phần tử đó
+
+Không phải lỗi CSS, không phải lỗi ở chỗ nào cụ thể — là hệ quả trực tiếp của kiểu vẽ lại.
+
+## Cách chữa
+
+Hai lớp, mỗi lớp giải một nửa vấn đề.
+
+### 1. Chụp và đặt lại trạng thái — `uiSnap` / `uiRestore` (`js/03-nav.js`)
+
+```js
+const snap = uiSnap('trBody', ['.tr-people','.tr-days']);
+box.innerHTML = …;
+uiRestore(snap);
+```
+
+Chụp `scrollTop` của hộp thoại + của từng danh sách con, và phần tử đang focus kèm
+`selectionStart/End`. Đặt ở `js/03-nav.js` (hạ tầng giao diện) chứ không nhân bản ở hai
+file — màn **Sự kiện** dính đúng lỗi này nên được chữa cùng lượt.
+
+Ba chốt nhỏ nhưng cần thiết:
+
+* Nhận diện ô bằng thuộc tính **`data-k`**, không phải bằng vị trí trong DOM — cây DOM
+  vừa bị dựng mới nên vị trí cũ vô nghĩa. **Mọi** `<input>` / `<select>` của màn Đào tạo
+  đều đã gắn `data-k`; harness D1 quét cả file để canh không sót ô nào về sau.
+* `selectionStart` của `<input type="time">` và `<select>` **ném lỗi** khi đọc → bọc
+  `try/catch`, không thì mở màn là vỡ.
+* `focus({preventScroll:true})` — không có cờ này thì chính thao tác trả focus lại kéo
+  màn hình đi lần nữa, chữa xong vẫn nhảy.
+
+### 2. Gõ tìm kiếm chỉ vẽ lại danh sách người
+
+Giữ focus mới chỉ là băng bó. Vấn đề thật: **không có lý do gì** để dựng lại cả hộp thoại
+sau mỗi phím — bảng từng ngày, ước tính giờ, danh sách buổi đã xếp đều không phụ thuộc
+vào chữ đang tìm.
+
+Danh sách người nay nằm trong `#trPeopleBox`; `trSetQ()` gọi `trRenderPeople()` chỉ ghi
+lại đúng hộp đó (và giữ chỗ cuộn bên trong nó). Tích một người thì vẫn vẽ lại đủ — lúc đó
+số liệu ở bảng ngày và dòng ước tính **thật sự** đổi.
+
+## Kiểm chứng
+
+```
+node _test/uistate-harness.js        # 19 phép thử
+```
+
+Harness dựng một DOM giả đủ dùng (`scrollTop`, `focus`, `setSelectionRange`,
+`querySelector` theo `data-k`) rồi mô phỏng đúng cái trình duyệt làm: thay toàn bộ phần
+tử con bằng phần tử mới, `scrollTop` về 0, `activeElement` về null. Sau `uiRestore` phải
+thấy chỗ cuộn và con trỏ y như cũ.
+
+Phủ cả bốn trường hợp biên: ô `type=time` ném lỗi khi đọc `selectionStart`; ô đã biến mất
+sau khi lọc; không có ai đang gõ (đừng tự cướp focus); và quét file để canh không ô nào
+thiếu `data-k`.
+
+> **Bẫy đã dính:** đặt `uiSnap` ở `js/03-nav.js` rồi gọi thẳng trong `20-events.js` làm
+> `render-v58.js` đỏ 6 bài — harness đó nạp `20-events.js` mà không nạp `03-nav.js`. Đã
+> bọc `typeof uiSnap==='function'` theo đúng lệ gọi chéo file của cả app. Bài kiểm cũ bắt
+> được lỗi này là đúng việc của nó: nó nói rằng file vừa mọc thêm một phụ thuộc ngầm.
+
+Toàn bộ harness xanh (**498 phép thử**). Cache bump **`?v=76`**.
+
+---
+
+# v7.4 — Dải nhắc đào tạo có đếm ngược · Bảng tin cho thư ký & QL người Hàn
+
+## 1. Dải nhắc: thêm đếm ngược, nhìn xa hơn kỳ hiện tại
+
+Dải nhắc **đào tạo** nay hiện ở Trang chính đúng như dải **sự kiện** (cùng khuôn
+`.ev-banner`, khác màu tím), và cả hai được thêm:
+
+* **Chip đếm ngược** *hôm nay · ngày mai · còn N ngày*. Cái người ta thật sự cần ở một
+  dải nhắc là **còn bao lâu**, không phải ngày tháng tuyệt đối — nhìn "12/08" phải nhẩm,
+  nhìn "ngày mai" thì không.
+* **Xếp ngày gần nhất lên trước.** Buổi học ngày mai không được nằm dưới buổi tuần sau.
+* **Nhìn 30 ngày tới** thay vì chỉ phần còn lại của kỳ đang xem (`pvAheadDays()`). Trước
+  đây buổi đào tạo rơi vào đầu kỳ sau thì tới ngày 20 mới hiện — quá muộn để thu xếp.
+
+Dải nhắc đào tạo chỉ nói về buổi **của chính người đang xem**, kèm giờ học từng ngày.
+
+## 2. Bảng tin — `noSelfHomeHtml()` ở `js/13-portal.js`
+
+### Vì sao cần
+
+Thư ký, quản lý người Hàn và ai đặt *Kiểu ca = Không xếp lịch* (`noSelf`) trước đây
+**không có Trang chính**: đăng nhập vào là rơi thẳng vào bảng lịch ca — một ma trận 30 cột
+mà họ không có tên trong đó. Thông báo, sự kiện, đơn chờ họ duyệt đều nằm sau một cái
+chuông nhỏ trên header. Việc quan trọng nhất của quản lý người Hàn — **duyệt đơn cấp
+cuối** — không có chỗ nào nhắc.
+
+### Cách làm
+
+Dùng **lại đúng khung Trang chính** của nhân viên (cùng thẻ tên, cùng dải nhắc, cùng dãy ô
+số ở cuối), chỉ thay phần **giữa**: chỗ lịch ca cá nhân đổi thành **lịch điều hành**.
+
+| Khối | Nội dung |
+|---|---|
+| Thẻ tên | tên · **chức danh** (thay cho "Nhóm A") · chuông có số · Báo cáo · Tài khoản · Thoát |
+| 📥 Lời gọi | *"N đơn đang chờ bạn duyệt"* — bấm cả dải là sang tab Duyệt |
+| 🎓 Lời gọi | *"N lịch đào tạo chờ duyệt"* — chỉ hiện với người duyệt được |
+| 📌 Dải nhắc | sự kiện 30 ngày tới, kèm đếm ngược |
+| 🗓 Sắp tới | lịch điều hành 3 tuần — xem dưới |
+| Ô số | Đơn chờ tôi duyệt · Quân số hôm nay D/N · Sự kiện 3 tuần · Buổi đào tạo sắp tới |
+
+### Lịch điều hành
+
+Ba tuần tới, **chỉ những ngày CÓ CHUYỆN**: sự kiện · buổi đào tạo (đã duyệt, kèm số người
+và giờ học) · **ngày thiếu quân số** (so ca D/N của khối sản xuất với `minD`/`minN`). Bấm
+một dòng là mở chi tiết ngày đó.
+
+> Nguyên tắc: **không liệt kê ngày trống**. Một danh sách 21 dòng trống trơn thì không ai
+> đọc tới dòng thứ ba, và ngày thật sự cần chú ý bị chìm mất.
+
+Buổi đào tạo **chờ duyệt** không lên lịch điều hành — chưa chốt thì chưa phải là lịch.
+
+### Định tuyến
+
+`homeView()` nay trả `'me'` cho **mọi người**. Ba chốt chặn cũ đã gỡ: `go()` không còn đá
+`noSelf` sang Lịch, `applyRoleUI()` không còn đẩy họ ra khỏi tab me, và tab Trang chính
+không còn class `.self-only`. Với nhóm `noSelf` tab đó **đổi tên thành "Bảng tin"** —
+cùng một màn nhưng nội dung khác hẳn, để tên gọi khỏi hứa nhầm.
+
+Các mục *Gửi đơn · Tăng ca của tôi · Đơn của tôi · Bảng công* vẫn ẩn với họ (`.self-only`)
+— họ không thuộc diện chấm công nên những màn đó rỗng.
+
+## Kiểm chứng
+
+```
+node _test/noself-home-harness.js    # 32 phép thử (A · B · C · D · E)
+```
+
+* **A** định tuyến (5 chốt) · **B** lịch điều hành chỉ ngày có chuyện, kể cả ngày thiếu
+  quân số, và bỏ qua buổi chờ duyệt · **C** đếm ngược · **D** dải nhắc nhìn 30 ngày và xếp
+  đúng thứ tự · **E** bảng tin dựng được cho cả thư ký lẫn QL người Hàn.
+
+> **Hai bẫy đã dính:**
+> 1. Dữ liệu mẫu ban đầu cho **cả tổ trực ca D** → ca N rỗng → **mọi** ngày đều "thiếu
+>    quân số", làm B1/B2 đỏ vì lý do chẳng liên quan tới thứ đang kiểm. Bài kiểm mà dữ
+>    liệu mẫu sai thì nó kiểm nhầm chuyện khác.
+> 2. Khoá i18n `'còn'` **đã tồn tại** với nghĩa "has"; khai đè thì câu đếm ngược tiếng Anh
+>    thành *"has 4 days"*. Đã đổi sang khoá cả cụm `'còn N ngày' → 'in N days'`, chỗ số
+>    thay bằng `N` — khoá cụm thì không thể va vào ai.
+
+Toàn bộ harness xanh (**530 phép thử**). i18n **+17 khoá EN**. Cache bump **`?v=77`**.
+
+---
+
+# v7.5 — Tên quản lý người Hàn hiện đầy đủ
+
+## Lỗi
+
+Thẻ tên trên Bảng tin hiện **"Mr. Ji Min"**, trong khi tên đầy đủ là *Mr. Kim Ji Min*.
+
+## Nguyên nhân
+
+`shortName()` rút mọi tên xuống **hai chữ cuối** rồi gắn lại tiền tố "Mr.":
+`"Mr. Kim Ji Min"` → `"Mr. Ji Min"`.
+
+Quy tắc đó đúng với **tên Việt** — họ đứng trước, tên gọi đứng sau, nên hai chữ cuối là
+phần người ta gọi nhau hằng ngày. Nhưng với **tên Hàn thì họ đứng TRƯỚC**: cắt hai chữ
+cuối là **cắt mất họ**, tức là gọi sai người chứ không phải gọi tắt.
+
+Nó cũng mâu thuẫn với quy tắc xưng hô đã ghi sẵn ở `js/01-core.js`:
+
+> Ở MỌI vị trí trong app và MỌI tin nhắn Zalo bot, người có quyền `kmgr` phải hiện là
+> **"Mr. + họ tên đầy đủ"**.
+
+Tin Zalo vốn đã đúng (`zName()` đọc thẳng `e.name`); chỉ giao diện app bị `shortName()`
+cắt. Sửa ở **một chỗ** là đúng cho cả **43 nơi** đang gọi hàm này — thẻ tên, thông báo,
+màn Duyệt, danh sách người, bản in cover.
+
+## Sửa
+
+```js
+function shortName(n){
+  const s=String(n||'').trim();
+  if(/^mr\.?\s+/i.test(s))return s;      // quản lý người Hàn → giữ nguyên
+  const w=s.split(/\s+/).filter(Boolean);
+  return w.slice(-2).join(' ')||s;
+}
+```
+
+Nhận diện bằng chính tiền tố `"Mr."` mà accessor tên đã gắn sẵn — không phải tra quyền ở
+đây, nên hàm vẫn thuần tuý và dùng được cả trong bài kiểm.
+
+## Kèm theo: chữ cái trên ô avatar
+
+Cùng một lỗi logic, chỗ khác: avatar lấy **hai chữ cái cuối** nên tên Hàn ra `JM` thay vì
+`KJ`. Tách thành `avatarInitials()`:
+
+| Kiểu tên | Quy tắc | Ví dụ |
+|---|---|---|
+| Việt (họ trước, tên sau) | hai chữ **CUỐI** | Nguyễn Hoàng Trung → `HT` |
+| Hàn (họ trước) | hai chữ **ĐẦU**, bỏ "Mr." | Mr. Kim Ji Min → `KJ` |
+| Một chữ / mã NV | hai **ký tự đầu** của chính nó | vc44180062 → `VC` |
+
+Trường hợp cuối là sửa thêm: một chữ cái đơn độc trong ô avatar 46px nhìn như lỗi hiển thị.
+
+## Kiểm chứng
+
+```
+node _test/krname-harness.js         # 33 phép thử
+node _test/noself-home-harness.js    # 35 phép thử
+```
+
+Phủ cả bốn hướng: tên Hàn không bị rút · tên Việt **giữ nguyên hành vi cũ** · tên Việt lỡ
+có chữ "Mr" ở giữa không bị bắt nhầm · avatar đúng quy tắc cho từng kiểu tên.
+
+> **Bẫy đã dính:** `noself-home-harness.js` tự viết một `shortName` giả rút gọn kiểu cũ,
+> nên nó **vẫn xanh** trong khi sản phẩm đang hiển thị sai. Nay harness chép **nguyên văn**
+> `shortName` + `avatarInitials` từ `js/13-portal.js`. Đây là lần thứ ba trong đợt này một
+> stub viết tay che mất lỗi thật — hàm giả chỉ nên thay thứ **không phải** là đối tượng
+> đang kiểm.
+
+Toàn bộ harness xanh (**535 phép thử**). Cache bump **`?v=78`**.

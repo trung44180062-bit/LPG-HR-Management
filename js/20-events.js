@@ -281,6 +281,9 @@ function evMiniCal(){
 }
 function renderEventMgr(){
   const box=$('evBody');if(!box)return;
+  /* Bấm một ngày trên lịch nhỏ cũng dựng lại cả hộp thoại → nhảy về đầu.
+     Cùng lỗi và cùng cách chữa với màn Đào tạo (uiSnap ở js/03-nav.js). */
+  const snap=(typeof uiSnap==='function')?uiSnap('evBody',['.ev-list']):null;
   const per=periodFor(evPeriod());
   const days=Object.keys(evSel).sort();
   const teams=teamList();
@@ -308,11 +311,11 @@ function renderEventMgr(){
   </div>
 
   <div class="fg"><label class="fl">${t('Tên sự kiện')}</label>
-    <input class="inp" id="evTitleIn" value="${esc(evTitle)}" placeholder="${t('VD: Nhập tàu LPG')}"
+    <input class="inp" id="evTitleIn" data-k="evTitle" value="${esc(evTitle)}" placeholder="${t('VD: Nhập tàu LPG')}"
            oninput="evTitle=this.value">
   </div>
   <div class="fg"><label class="fl">${t('Ghi chú (không bắt buộc)')}</label>
-    <input class="inp" value="${esc(evNote)}" placeholder="${t('VD: Tàu cập cầu 06:00, huy động thêm người trực')}"
+    <input class="inp" data-k="evNote" value="${esc(evNote)}" placeholder="${t('VD: Tàu cập cầu 06:00, huy động thêm người trực')}"
            oninput="evNote=this.value">
   </div>
 
@@ -342,6 +345,7 @@ function renderEventMgr(){
 
   <h4 style="margin:14px 0 6px">${t('Sự kiện đã ghi nhận')}</h4>
   <div class="ev-list">${evListHtml()}</div>`;
+  if(typeof uiRestore==='function')uiRestore(snap);
 }
 function evListHtml(){
   const list=evAll();
@@ -370,9 +374,11 @@ function evBannerHtml(isoList){
     if(seen[ev.id])return;seen[ev.id]=1;out.push(ev);
   }));
   if(!out.length)return '';
+  out.sort((a,b)=>String(evDays(a)[0]||'').localeCompare(String(evDays(b)[0]||'')));
   return `<div class="ev-banner">${out.map(ev=>`<div class="ev-b">
     <span class="ic">📌</span>
     <span class="tx"><b>${esc(ev.title||t('Sự kiện'))}</b>
       <i>${esc(evDateLabel(ev))}${ev.note?' · '+esc(ev.note):''}</i></span>
+    ${(typeof nsWhen==='function')?`<span class="when">${esc(nsWhen(evDays(ev).find(x=>x>=todayIso())||evDays(ev)[0]))}</span>`:''}
   </div>`).join('')}</div>`;
 }

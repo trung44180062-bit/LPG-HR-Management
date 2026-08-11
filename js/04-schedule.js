@@ -69,6 +69,73 @@ function shiftCalMonth(d){
   const sel=$('calMonth');const i=sel.selectedIndex+d;
   if(i>=0&&i<sel.options.length){sel.selectedIndex=i;renderCal();}
 }
+
+/* ============================================================
+   SANG KỲ MỚI THÌ TỰ NHẢY SANG KỲ MỚI
+   ------------------------------------------------------------
+   VẤN ĐỀ
+
+   Kỳ công cắt ở ngày 21. App mở suốt (máy tính phòng điều độ, điện thoại
+   để nền cả tuần) nên đến sáng 21 vẫn đang hiển thị kỳ CŨ: ô chọn kỳ giữ
+   nguyên giá trị người dùng thấy hôm qua, các màn Báo cáo / Tổng hợp duyệt
+   / Thống kê cá nhân thì nhớ kỳ trong biến (repYm, asYm, myStatYm…) và
+   không ai xoá. Người dùng nhìn vào tưởng lịch kỳ mới chưa có.
+
+   fillMonthSelects() không cứu được: nó CỐ Ý giữ lựa chọn đang có
+   (`ms.includes(cur)?cur:…`) — phải thế, không thì đang xem kỳ tháng 5 mà
+   dữ liệu đồng bộ về là bị đá ngược về kỳ hiện tại giữa chừng.
+
+   CÁCH LÀM
+
+   Nhớ kỳ hiện tại lúc khởi động. Cứ mỗi phút so lại: chỉ khi MỐC KỲ THẬT SỰ
+   ĐỔI (qua ngày 21) mới xoá các biến nhớ kỳ và kéo mọi ô chọn về kỳ mới.
+   Nghĩa là trong cùng một kỳ, người dùng vẫn tự do lật về kỳ cũ để tra cứu
+   mà không bị giật lại — chỉ đúng thời khắc sang kỳ mới app mới can thiệp,
+   và đó chính là lúc người ta muốn nó can thiệp.
+   ============================================================ */
+let _perWatch=curSchedMonth();
+const PER_TICK_MS=60*1000;
+let _perTick=null;
+/* Kéo mọi chỗ đang nhớ kỳ về kỳ `ym`. Tách riêng để test gọi thẳng được. */
+function perJumpTo(ym){
+  /* Ô chọn kỳ trên các tab — ép giá trị TRƯỚC khi dựng lại danh sách, vì
+     fillMonthSelects() sẽ giữ lại đúng giá trị đang có. */
+  ['calMonth','expMonth','stMonth'].forEach(id=>{const el=$(id);if(el)el.value=ym;});
+  /* Biến nhớ kỳ của từng màn. Đặt về '' để chúng tự rơi về curSchedMonth()
+     ở lần vẽ kế tiếp — an toàn hơn gán cứng, vì mỗi màn có quy tắc riêng. */
+  if(typeof repYm    !== 'undefined') repYm='';
+  if(typeof esYm     !== 'undefined') esYm='';
+  if(typeof asYm     !== 'undefined') asYm='';
+  if(typeof myStatYm !== 'undefined') myStatYm='';
+  if(typeof evYm     !== 'undefined') evYm='';
+  if(typeof trYm     !== 'undefined') trYm='';
+  /* Lịch cá nhân neo theo NGÀY chứ không theo kỳ → kéo về hôm nay. */
+  if(typeof pvAnchor !== 'undefined') pvAnchor=null;
+  if(typeof calWkMon !== 'undefined') calWkMon='';
+  if(typeof fillMonthSelects==='function')fillMonthSelects();
+  if(typeof renderAll==='function')renderAll();
+  else if(typeof renderCal==='function')renderCal();
+  if(typeof renderMe==='function'&&typeof noSelf!=='undefined'&&!noSelf)renderMe(true);
+  if(typeof toast==='function')
+    toast('📅 '+t('Đã sang')+' '+periodFor(ym).short+' — '+t('lịch hiển thị đã chuyển sang kỳ mới'));
+}
+function perCheckRollover(){
+  const now=curSchedMonth();
+  if(now===_perWatch)return false;
+  _perWatch=now;
+  perJumpTo(now);
+  return true;
+}
+function perStartWatch(){
+  if(_perTick)clearInterval(_perTick);
+  _perWatch=curSchedMonth();
+  _perTick=setInterval(perCheckRollover,PER_TICK_MS);
+  /* Máy tính ngủ rồi mở lại có thể nhảy qua cả ngày mà không tick nào chạy —
+     nên soi thêm lúc tab được nhìn lại. */
+  document.addEventListener('visibilitychange',()=>{
+    if(!document.hidden)perCheckRollover();
+  });
+}
 function daysInMonth(ym){const[y,m]=ym.split('-').map(Number);return new Date(y,m,0).getDate();}
 
 /* =================== SHIFT GENERATOR =================== */

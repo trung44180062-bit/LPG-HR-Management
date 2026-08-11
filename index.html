@@ -15,10 +15,10 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 
 <!-- ===== CSS ===== -->
-<link rel="stylesheet" href="css/app.css?v=72">
-<link rel="stylesheet" href="css/portal.css?v=72">
-<link rel="stylesheet" href="css/print.css?v=72">
-<link rel="stylesheet" href="css/ui.css?v=72">
+<link rel="stylesheet" href="css/app.css?v=78">
+<link rel="stylesheet" href="css/portal.css?v=78">
+<link rel="stylesheet" href="css/print.css?v=78">
+<link rel="stylesheet" href="css/ui.css?v=78">
 <style id="pageDyn">@page{size:A4 portrait;margin:8mm}</style>
 </head>
 <body class="locked">
@@ -87,7 +87,7 @@
 
 <!-- Desktop (≥768px): thanh tab ngang rút gọn -->
 <nav class="topbar" id="tabs">
-  <button class="tab on self-only" data-v="me" onclick="go('me')"><span class="ic">🏠</span>Trang chính</button>
+  <button class="tab on home-tab" data-v="me" onclick="go('me')"><span class="ic">🏠</span><span class="lb">Trang chính</span></button>
   <button class="tab" data-v="cal" onclick="go('cal')"><span class="ic">📅</span>Lịch</button>
   <button class="tab" data-v="appr" onclick="go('appr')" style="position:relative"><span class="ic">✅</span>Duyệt<span class="bdg" id="pendBdg" style="display:none">0</span></button>
   <button class="tab rep-tab" data-v="rep" onclick="go('rep')"><span class="ic">📊</span>Báo cáo</button>
@@ -95,7 +95,7 @@
 
 <!-- Mobile (<768px): bottom bar 5 mục cố định đáy -->
 <nav class="bottombar" id="bottombar">
-  <button class="bb on self-only" data-v="me" onclick="go('me')"><span class="ic">🏠</span>Trang chính</button>
+  <button class="bb on home-tab" data-v="me" onclick="go('me')"><span class="ic">🏠</span><span class="lb">Trang chính</span></button>
   <button class="bb" data-v="cal" onclick="go('cal')"><span class="ic">📅</span>Lịch</button>
   <button class="bb rep-tab" data-v="rep" onclick="go('rep')"><span class="ic">📊</span>Báo cáo</button>
   <button class="bb" data-v="appr" onclick="go('appr')"><span class="ic">✅</span>Duyệt<span class="bdg" id="pendBdgM" style="display:none">0</span></button>
@@ -187,6 +187,10 @@
       title="Sửa lịch hàng loạt (nhập tàu, bảo dưỡng…) mà chỉ gửi đúng 1 tin gộp">🔕 Giữ thông báo</button>
     <!-- Ghi nhận ngày đặc biệt (nhập tàu, bảo dưỡng…) — js/20-events.js -->
     <button class="btn sec sm admin-only" onclick="openEventMgr()" title="Đánh dấu ngày đặc biệt trên lịch và báo cho mọi người">📌 Sự kiện</button>
+    <!-- Xếp lịch đào tạo — js/22-training.js. Quản trị / SC / thư ký / QL người Hàn
+         xếp cho cả tổ; nhân viên thường vào bằng nút ở Trang chính để tự khai. -->
+    <button class="btn sec sm secr-only" id="trainBtn" style="position:relative" onclick="openTrainMgr()"
+      title="Xếp lịch đào tạo, đánh dấu trên bảng ca và báo cho từng người">🎓 Đào tạo<span class="bdg" id="trainBdg" style="display:none;position:static;margin-left:6px">0</span></button>
     <!-- Thu/Mở và "Theo ngày" là của bố cục thẻ tuần trên máy tính.
          Điện thoại có bố cục lịch tuần riêng (renderCalWeekGrid) nên ẩn đi. -->
     <button class="btn sec sm pc-only" id="calCollapseAllBtn" onclick="calCollapseAll()">Thu/Mở</button>
@@ -384,6 +388,13 @@
   <div class="modal" id="evBody"></div>
 </div>
 
+<!-- lịch đào tạo modal — js/22-training.js -->
+<div class="mask" id="trMask" onclick="if(event.target===this)closeTrainMgr()">
+  <!-- xwide: màn này có bảng người + bảng từng ngày, khổ 560px của .modal
+       thường cắt cụt tên nhân viên. Xem .modal.xwide trong css/ui.css. -->
+  <div class="modal xwide" id="trBody"></div>
+</div>
+
 <!-- email báo cáo modal -->
 <div class="mask" id="mailMask" onclick="if(event.target===this)closeMailReport()">
   <div class="modal" id="mailBody"></div>
@@ -437,32 +448,33 @@
      config.js PHAI dung dau tien (khong co trong repo GitHub,
      copy tu js/config.example.js)
      ============================================================ -->
-<script src="js/config.js?v=72"></script>
-<script src="js/01-core.js?v=72"></script>
+<script src="js/config.js?v=78"></script>
+<script src="js/01-core.js?v=78"></script>
 <!-- i18n phai nap ngay sau 01-core (can bien LS) va truoc moi man hinh -->
-<script src="js/14-i18n.js?v=72"></script>
-<script src="js/00-icons.js?v=72"></script>
-<script src="js/02-storage.js?v=72"></script>
-<script src="js/03-nav.js?v=72"></script>
-<script src="js/04-schedule.js?v=72"></script>
-<script src="js/05-roster.js?v=72"></script>
-<script src="js/06-calendar.js?v=72"></script>
-<script src="js/07-manpower.js?v=72"></script>
-<script src="js/08-requests.js?v=72"></script>
-<script src="js/09-print.js?v=72"></script>
-<script src="js/10-account.js?v=72"></script>
-<script src="js/11-stats-data.js?v=72"></script>
-<script src="js/13-portal.js?v=72"></script>
-<script src="js/16-otlog-data.js?v=72"></script>
-<script src="js/15-report.js?v=72"></script>
-<script src="js/17-appr-sum.js?v=72"></script>
-<script src="js/18-advice.js?v=72"></script>
-<script src="js/19-meal.js?v=72"></script>
-<script src="js/20-events.js?v=72"></script>
+<script src="js/14-i18n.js?v=78"></script>
+<script src="js/00-icons.js?v=78"></script>
+<script src="js/02-storage.js?v=78"></script>
+<script src="js/03-nav.js?v=78"></script>
+<script src="js/04-schedule.js?v=78"></script>
+<script src="js/05-roster.js?v=78"></script>
+<script src="js/06-calendar.js?v=78"></script>
+<script src="js/07-manpower.js?v=78"></script>
+<script src="js/08-requests.js?v=78"></script>
+<script src="js/09-print.js?v=78"></script>
+<script src="js/10-account.js?v=78"></script>
+<script src="js/11-stats-data.js?v=78"></script>
+<script src="js/13-portal.js?v=78"></script>
+<script src="js/16-otlog-data.js?v=78"></script>
+<script src="js/15-report.js?v=78"></script>
+<script src="js/17-appr-sum.js?v=78"></script>
+<script src="js/18-advice.js?v=78"></script>
+<script src="js/19-meal.js?v=78"></script>
+<script src="js/20-events.js?v=78"></script>
+<script src="js/22-training.js?v=78"></script>
 <!-- Tên file cố tình KHÔNG chứa chữ "zalo": mạng công ty chặn mọi URL có tên
      ứng dụng nhắn tin, file cũ js/21-zalo.js bị proxy cắt với lỗi HTTP 499. -->
-<script src="js/21-notify.js?v=72"></script>
-<script src="js/12-main.js?v=72"></script>
+<script src="js/21-notify.js?v=78"></script>
+<script src="js/12-main.js?v=78"></script>
 
 </body>
 </html>

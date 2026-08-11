@@ -243,6 +243,7 @@ function repStatsAll(){
     <div class="stat-box"><div class="v">${sum(s=>s.hWork)}</div><div class="k">TỔNG GIỜ CÔNG</div></div>
     <div class="stat-box"><div class="v">${sum(s=>s.hOT)}</div><div class="k">TỔNG GIỜ TĂNG CA</div></div>
     <div class="stat-box"><div class="v">${sum(s=>s.hLeave)}</div><div class="k">TỔNG GIỜ PHÉP</div></div>
+    ${sum(s=>s.hTrain)?`<div class="stat-box"><div class="v">${sum(s=>s.hTrain)}</div><div class="k">TỔNG GIỜ ĐÀO TẠO</div></div>`:''}
     <div class="stat-box"><div class="v">${rows.length}</div><div class="k">NHÂN SỰ</div></div>
   </div>`;
   /* ĐIỆN THOẠI: bảng 15 cột không nhét vừa màn hình → mỗi người MỘT THẺ:
@@ -260,6 +261,7 @@ function repStatsAll(){
           <span class="n hl">${rnd1(s.hWork)}<small>h ${t('công')}</small></span>
           <span class="n hl-ot">${rnd1(s.hOT)}<small>h OT${ot?' ('+ot+')':''}</small></span>
           <span class="n hl-lv">${rnd1(s.hLeave)}<small>h ${t('phép')}</small></span>
+          ${s.hTrain?`<span class="n hl-tr">${rnd1(s.hTrain)}<small>h ${t('đào tạo')}</small></span>`:''}
         </div>
         ${cnts?`<div class="cnts">${cnts}</div>`:''}
       </div>`;
@@ -290,7 +292,10 @@ function repStatsAll(){
     {l:'Ca OT',w:52,hd:'g-ot',get:({s})=>stCnt('OTD',otShifts(s)),tot:()=>rows.reduce((a,r)=>a+otShifts(r.s),0)},
     {l:'Giờ công',w:74,hd:'hl',   get:({s})=>stHr('hl',s.hWork),    tot:()=>`<td class="hl">${sum(s=>s.hWork)}</td>`,raw:true},
     {l:'Giờ OT', w:64,hd:'hl-ot', get:({s})=>stHr('hl-ot',s.hOT),   tot:()=>`<td class="hl-ot">${sum(s=>s.hOT)}</td>`,raw:true},
-    {l:'Giờ phép',w:70,hd:'hl-lv',get:({s})=>stHr('hl-lv',s.hLeave),tot:()=>`<td class="hl-lv">${sum(s=>s.hLeave)}</td>`,raw:true}
+    {l:'Giờ phép',w:70,hd:'hl-lv',get:({s})=>stHr('hl-lv',s.hLeave),tot:()=>`<td class="hl-lv">${sum(s=>s.hLeave)}</td>`,raw:true},
+    /* Giờ đào tạo ĐỨNG RIÊNG — không cộng vào ba cột giờ bên trái. Xem
+       calcStats() ở js/10-account.js để hiểu vì sao không cộng. */
+    {l:'Giờ đào tạo',w:80,hd:'hl-tr',get:({s})=>stHr('hl-tr',s.hTrain),tot:()=>`<td class="hl-tr">${sum(s=>s.hTrain)}</td>`,raw:true}
   ];
   /* stCnt/stHr trả sẵn <td>…</td>; cột chữ thì bọc ở đây — mỗi hàng LUÔN đúng ST_COLS.length ô */
   const cellOf=(c,row)=>{const v=c.get(row);return v.startsWith('<td')?v:`<td class="${c.cls||''}">${v}</td>`;};
@@ -364,7 +369,15 @@ function renderEmpSum(){
 
   /* --- từng ngày --- */
   const rows=days.map(iso=>{
-    const r=eff(id,iso),c=r.code;if(!c)return '';
+    const r=eff(id,iso),c=r.code;
+    const ht=(typeof trHoursFor==='function')?trHoursFor(id,iso):0;
+    /* Ngày chưa xếp ca nhưng CÓ buổi đào tạo thì vẫn phải hiện — nếu không,
+       giờ ở dòng Tổng lại không tìm thấy ở dòng nào bên trên. */
+    if(!c)return ht?`<tr class="${iso<=today?'':'fut'}">
+      <td>${fmtVN(iso)} <span class="muted">${dowOf(iso)}</span></td>
+      <td><span class="muted">—</span></td>
+      <td class="num"></td><td class="num ot"></td><td class="num lv"></td>
+      <td class="num tr">${rnd1(ht)}</td></tr>`:'';
     const ci=codeInfo(c),h=effHours(id,iso);
     const sp=comboSplitHours(c,h);
     const hw=sp?sp.work:((ci.cat==='work'||ci.cat==='swap')?h:0),
@@ -378,7 +391,8 @@ function renderEmpSum(){
         ${std&&std!==c?`<em class="chg" title="${t('Lịch chuẩn')}: ${esc(std)}">⇄${esc(std)}</em>`:''}</td>
       <td class="num">${hw?rnd1(hw):''}</td>
       <td class="num ot">${ho?rnd1(ho):''}</td>
-      <td class="num lv">${hl?rnd1(hl):''}</td></tr>`;
+      <td class="num lv">${hl?rnd1(hl):''}</td>
+      <td class="num tr">${ht?rnd1(ht):''}</td></tr>`;
   }).filter(Boolean).join('');
 
   /* --- các lần tăng ca trong kỳ --- */
@@ -454,12 +468,13 @@ function renderEmpSum(){
 
     <div class="ds-block"><h4>🗓 ${t('Chi tiết từng ngày')}</h4>
       <table class="tbl mp-sum-tbl">
-        <colgroup><col><col style="width:96px"><col style="width:17%"><col style="width:15%"><col style="width:17%"></colgroup>
+        <colgroup><col><col style="width:92px"><col style="width:14%"><col style="width:13%"><col style="width:14%"><col style="width:15%"></colgroup>
         <thead><tr><th>${t('Ngày')}</th><th>${t('Mã')}</th><th class="num">${t('Công')}</th>
-          <th class="num">OT</th><th class="num">${t('Phép')}</th></tr></thead>
-        <tbody>${rows||`<tr><td colspan="5" class="muted">${t('Kỳ này chưa có dữ liệu.')}</td></tr>`}
+          <th class="num">OT</th><th class="num">${t('Phép')}</th><th class="num">🎓 ${t('Đào tạo')}</th></tr></thead>
+        <tbody>${rows||`<tr><td colspan="6" class="muted">${t('Kỳ này chưa có dữ liệu.')}</td></tr>`}
           <tr class="sum-total"><td colspan="2">${t('Tổng')}</td><td class="num">${rnd1(s.hWork)}</td>
-            <td class="num ot">${rnd1(s.hOT)}</td><td class="num lv">${rnd1(s.hLeave)}</td></tr>
+            <td class="num ot">${rnd1(s.hOT)}</td><td class="num lv">${rnd1(s.hLeave)}</td>
+            <td class="num tr">${s.hTrain?rnd1(s.hTrain):'·'}</td></tr>
         </tbody></table>
       <p class="muted sm2" style="margin-top:6px">${t('Tính theo lịch thực tế (chuẩn + điều chỉnh + đơn đã duyệt). Ô có ⇄ là ngày khác lịch chuẩn.')}</p>
     </div>`;
@@ -477,6 +492,7 @@ function repStatsMe(){
       <div class="stat-box"><div class="v">${rnd1(s.hWork)}</div><div class="k">GIỜ CÔNG</div></div>
       <div class="stat-box"><div class="v">${rnd1(s.hOT)}</div><div class="k">GIỜ TĂNG CA</div></div>
       <div class="stat-box"><div class="v">${rnd1(s.hLeave)}</div><div class="k">GIỜ PHÉP</div></div>
+      ${s.hTrain?`<div class="stat-box"><div class="v">${rnd1(s.hTrain)}</div><div class="k">GIỜ ĐÀO TẠO</div></div>`:''}
       <div class="stat-box"><div class="v">${rnd1(left)}</div><div class="k">PHÉP NĂM CÒN LẠI</div></div>
     </div>
     <div class="card"><h3 class="rep-h3">${esc(e.name||id)} · ${esc(periodFor(repYm).label)}</h3>
@@ -1168,6 +1184,7 @@ function buildReportSummary(ym){
   L.push('  • Giờ công: '+sum(s=>s.hWork));
   L.push('  • Giờ tăng ca: '+sum(s=>s.hOT));
   L.push('  • Giờ phép: '+sum(s=>s.hLeave));
+  if(sum(s=>s.hTrain))L.push('  • Giờ đào tạo: '+sum(s=>s.hTrain));
   L.push('');
   L.push('— Email tạo tự động từ phần mềm Quản lý Công Ca. Bảng chi tiết vui lòng xem file Excel đính kèm (Xuất Excel trong tab Thống kê).');
   return{subject:'[LPGT Cavern] Báo cáo công ca '+p.label,body:L.join('\n')};

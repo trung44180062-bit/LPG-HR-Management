@@ -220,6 +220,128 @@ function short(name,s,max){
   ok('tin bằng tiếng Anh', !/[àáảãạăâđêôơưèéẹìíòóùúỳý]/i.test(all), all);
 }
 
+/* ============================================================
+   9. LỊCH ĐÀO TẠO (js/22-training.js → kênh 'training')
+   Tin dựng từ CHÍNH bản ghi đào tạo, không bê câu tiếng Việt của app.
+   ============================================================ */
+S.base.e1['2026-08-20']='D'; S.base.e2['2026-08-20']='D'; S.base.e3['2026-08-20']='O';
+S.base.mgr[ISO]='N';
+S.trainings={
+  /* mode 'auto': ngày 19 cả hai đang ca D (08–20) nên học 17–20 là TRONG CA;
+     ngày 20 cũng vậy → tr1 dùng ép tay để có mẫu tin "tăng ca" mà kiểm. */
+  tr1:{id:'tr1',title:'Chemical safety training',place:'Meeting room 2',
+       days:[ISO,'2026-08-20'],emps:['e1','e2'],mode:'ot',dayMode:{},
+       timeIn:'17:00',timeOut:'20:00',otCode:'OT3',status:'active',by:'mgr'},
+  tr2:{id:'tr2',title:'DCS refresher',days:[ISO],emps:['e3'],mode:'shift',dayMode:{},
+       status:'pending',by:'e3'},
+  /* tr3: đúng ví dụ nghiệp vụ — cùng một buổi, người này tăng ca người kia không.
+     e1 đang ca D (08–20) nên học 22:00 là NGOÀI ca → tăng ca;
+     mgr đang ca N (20–08) nên 22:00 là GIỮA ca → trong ca. */
+  tr3:{id:'tr3',title:'Mixed session',days:[ISO],emps:['e1','mgr'],mode:'auto',dayMode:{},
+       timeIn:'22:00',timeOut:'23:30',otCode:'OTD',status:'active',by:'mgr'}
+};
+/* zaloLines gọi trDays / trEmps / trDaySplit / trIsOt / trZaloDayLines của
+   js/22-training.js. NẠP HẲN FILE THẬT thay vì viết lại vài hàm giả — chế độ
+   "trong ca hay tăng ca" nay quyết theo từng cặp (người, ngày) và đó chính là
+   thứ tin Zalo phải in đúng; hàm giả thì bài kiểm xanh mà tin vẫn sai.
+   Bơm trước mấy hàm file đó gọi sang chỗ khác. */
+Object.assign(ctx,{
+  secr:true, noSelf:false, adm:true, mgr:true,
+  workCodeOf:c=>{const b=COMBO[c];return b?b.work:c;},
+  baseShiftOf:code=>{
+    const cb=COMBO[code]; if(cb)code=cb.work;
+    if(code==='D'||code==='SD'||code==='OTD')return 'D';
+    if(code==='N'||code==='SN'||code==='OTN')return 'N';
+    if(code==='O'||code==='SO'||code==='OTO')return 'O';
+    return null;
+  },
+  addDaysIso:(iso,n)=>{const d=new Date(iso+'T00:00:00');d.setDate(d.getDate()+n);
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');},
+  fmtVN:iso=>{const[y,m,d]=String(iso).split('-');return d+'/'+m;},
+  rnd1:v=>Math.round(v*10)/10,
+  /* Bản rút gọn của otNetHours ở js/01-core.js — PHẢI trừ giờ trưa, không thì
+     tin mẫu in 9h cho một buổi thật ra 8h và bài kiểm hoá ra kiểm sai. */
+  otNetHours:(iso,a,isoEnd,b,noLunch)=>{
+    const hm=x=>{const m=/^(\d{1,2}):(\d{2})$/.exec(String(x||''));return m?(+m[1]*60 + +m[2]):0;};
+    let z=hm(b),k=hm(a); if(z<=k||isoEnd)z+=1440;
+    let mins=z-k;
+    if(noLunch&&k<13*60&&z>12*60)mins-=60;
+    return Math.round(mins/6)/10;
+  },
+  otSpansLunch:(iso,a,isoEnd,b)=>{
+    const hm=x=>{const m=/^(\d{1,2}):(\d{2})$/.exec(String(x||''));return m?(+m[1]*60 + +m[2]):0;};
+    let z=hm(b),k=hm(a); if(z<=k||isoEnd)z+=1440;
+    return k<13*60&&z>12*60;
+  },
+  esc:x=>String(x==null?'':x), shortName:n=>String(n||''), noAccent:x=>String(x||'').toLowerCase(),
+  schedEmps:()=>S.employees, activeEmps:()=>S.employees, teamList:()=>['A','B'],
+  chip:c=>c, dowOf:()=>'', dowShort:()=>'', fmtVNfull:x=>x, curSchedMonth:()=>'2026-08',
+  schedMonthOf:()=>'2026-08', schedYmShift:x=>x, daysOfPeriod:()=>[], periodFor:()=>({label:''}),
+  todayIso:()=>ISO, permOf:()=>'staff', newNotif:()=>{}, notifDrop:()=>0, defaultNoPrint:()=>true
+});
+vm.runInContext(fs.readFileSync(path.join(ROOT,'js/22-training.js'),'utf8'),ctx,{filename:'22'});
+{
+  const s=txt({to:'e1',from:'mgr',trId:'tr1',iso:ISO,aud:'Training attendees',trSt:'active'},'training');
+  ok('đào tạo: có tên buổi', /Chemical safety training/.test(s), s);
+  ok('đào tạo: có ngày', /19\/08/.test(s)&&/20\/08/.test(s), s);
+  ok('đào tạo OT: mỗi ngày một dòng, khung giờ đứng ngay sau ngày',
+     /19\/08\s+17:00–20:00\s+\(3h\)\s+overtime/.test(s)
+   &&/20\/08\s+17:00–20:00\s+\(3h\)\s+overtime/.test(s), s);
+  ok('đào tạo: liệt kê người đi học', /Tran Van A/.test(s)&&/Le Thi C/.test(s), s);
+  ok('đào tạo OT: nhắc đã tạo đơn tăng ca', /overtime request has been created/i.test(s), s);
+  ok('đào tạo OT: có số giờ trong ngoặc', /\(3h\)/.test(s), s);
+  clean('đào tạo OT', s);
+  short('đào tạo OT', s, 8);
+}
+{
+  const s=txt({to:'e3',from:'mgr',trId:'tr2',iso:ISO,aud:'Training attendees',trSt:'active'},'training');
+  ok('đào tạo trong ca: ghi "during shift"', /during shift/i.test(s), s);
+  ok('đào tạo trong ca: không nhắc đơn tăng ca', !/overtime request/i.test(s), s);
+  clean('đào tạo trong ca', s);
+}
+{
+  const s=txt({to:'mgr',from:'e3',trId:'tr2',iso:ISO,aud:'Approvers',trSt:'pending'},'training');
+  ok('đào tạo chờ duyệt: ghi rõ ai xin và đang chờ duyệt',
+     /pending approval/i.test(s)&&/Pham Van D/.test(s), s);
+}
+{
+  /* Bản ghi đã bị xoá mà tin còn trong hàng đợi → KHÔNG được nuốt tin */
+  const s=txt({to:'e1',from:'mgr',trId:'khong-co',text:'🎓 Bạn có lịch đào tạo'},'training');
+  ok('đào tạo: buổi đã xoá vẫn ra được một dòng', s.trim().length>0, JSON.stringify(s));
+}
+
+{
+  /* ★ v7.2 — mỗi ngày một khung giờ khác nhau thì tin phải in đúng từng dòng */
+  S.trainings.tr4={id:'tr4',title:'Half day course',days:[ISO,'2026-08-20'],
+    emps:['e1'],mode:'ot',dayMode:{},timeIn:'08:00',timeOut:'17:00',noLunch:true,
+    dayTime:{'2026-08-20':{from:'08:00',to:'12:00'}},status:'active',by:'mgr'};
+  const s=txt({to:'e1',from:'mgr',trId:'tr4',iso:ISO,aud:'Training attendees',trSt:'active'},'training');
+  ok('đào tạo: ngày khai giờ riêng in đúng giờ của ngày đó',
+     /19\/08\s+08:00–17:00\s+\(8h\)/.test(s)&&/20\/08\s+08:00–12:00\s+\(4h\)/.test(s), s);
+  ok('đào tạo: nhắc đã trừ giờ trưa', /Lunch hour deducted/.test(s), s);
+  clean('đào tạo giờ riêng', s);
+}
+{
+  /* ★ v7.1 — cùng một ngày, người tăng ca người trong ca: tin PHẢI nói cả hai,
+     không được chọn một vế rồi nói dối nửa số người nhận. */
+  const s=txt({to:'e1',from:'mgr',trId:'tr3',iso:ISO,aud:'Training attendees',trSt:'active'},'training');
+  ok('đào tạo hỗn hợp: một dòng nói cả hai bên',
+     /overtime .*for 1 · during shift for 1/.test(s), s);
+  clean('đào tạo hỗn hợp', s);
+}
+{
+  ok('đào tạo: tiêu đề đúng', /TRAINING SCHEDULE/.test(ctx.zaloTitle({},'training')), ctx.zaloTitle({},'training'));
+  ok('đào tạo: tính là tin gửi CHUNG (không gắn tên 1 người)',
+     ctx.zaloIsBroadcast({},'training')===1);
+  ok('đào tạo: nhãn nhóm lấy từ n.aud',
+     ctx.zaloAudienceName({aud:'Training attendees'},'training')==='Training attendees');
+  /* ZALO_CHANNEL là const → biến lexical, không thành thuộc tính sandbox */
+  const ch=vm.runInContext('ZALO_CHANNEL.training',ctx);
+  ok('đào tạo: đi kênh gộp (batch), không bắn ngay', ch==='batch', ch);
+  ok('đào tạo: gộp cùng khoá nhóm "training"',
+     vm.runInContext('ZALO_GROUP_KEY.training',ctx)==='training');
+}
+
 let bad=0;
 R.forEach(([p,n,e])=>{if(!p)bad++;console.log((p?'  ok  ':'  HỎNG')+'  '+n+(e&&!p?'\n         → '+String(e).replace(/\n/g,'\n           '):''));});
 console.log('\n'+R.length+' phép thử · '+(R.length-bad)+' đạt · '+bad+' hỏng');

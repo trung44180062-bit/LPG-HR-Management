@@ -19,18 +19,18 @@ function exportStats(){
   /* Ca kép cộng vào đúng cột ca chuẩn của nó (O+N → cột Ca O, D+N → cột Ca D) */
   const cD=s=>cntShift(s.cnt,'D'),cN=s=>cntShift(s.cnt,'N'),cO=s=>cntShift(s.cnt,'O');
   const aoa=[['LPGT CAVERN — THỐNG KÊ CÔNG CA',p.label],[],
-    ['Nhóm','Mã NV','Họ tên','Vị trí','Ca D','Ca N','Ca O','R','AL8','AL4','NP','OFF','Ca OT','Giờ công','Giờ OT','Giờ phép']];
+    ['Nhóm','Mã NV','Họ tên','Vị trí','Ca D','Ca N','Ca O','R','AL8','AL4','NP','OFF','Ca OT','Giờ công','Giờ OT','Giờ phép','Giờ đào tạo']];
   rows.forEach(({e,s})=>{
-    aoa.push([e.team||'',e.id,e.name||'',posLabel(posCode(e)),cD(s),cN(s),cO(s),s.cnt.R||0,s.cnt.AL8||0,s.cnt.AL4||0,s.cnt.NP||0,s.cnt.OFF||0,otShifts(s),rnd1(s.hWork),rnd1(s.hOT),rnd1(s.hLeave)]);
+    aoa.push([e.team||'',e.id,e.name||'',posLabel(posCode(e)),cD(s),cN(s),cO(s),s.cnt.R||0,s.cnt.AL8||0,s.cnt.AL4||0,s.cnt.NP||0,s.cnt.OFF||0,otShifts(s),rnd1(s.hWork),rnd1(s.hOT),rnd1(s.hLeave),rnd1(s.hTrain||0)]);
   });
   aoa.push([]);
   aoa.push(['TỔNG','','','',
     rows.reduce((a,r)=>a+cD(r.s),0),rows.reduce((a,r)=>a+cN(r.s),0),rows.reduce((a,r)=>a+cO(r.s),0),
     rows.reduce((a,r)=>a+(r.s.cnt.R||0),0),rows.reduce((a,r)=>a+(r.s.cnt.AL8||0),0),rows.reduce((a,r)=>a+(r.s.cnt.AL4||0),0),
     rows.reduce((a,r)=>a+(r.s.cnt.NP||0),0),rows.reduce((a,r)=>a+(r.s.cnt.OFF||0),0),rows.reduce((a,r)=>a+otShifts(r.s),0),
-    rnd1(rows.reduce((a,r)=>a+r.s.hWork,0)),rnd1(rows.reduce((a,r)=>a+r.s.hOT,0)),rnd1(rows.reduce((a,r)=>a+r.s.hLeave,0))]);
+    rnd1(rows.reduce((a,r)=>a+r.s.hWork,0)),rnd1(rows.reduce((a,r)=>a+r.s.hOT,0)),rnd1(rows.reduce((a,r)=>a+r.s.hLeave,0)),rnd1(rows.reduce((a,r)=>a+(r.s.hTrain||0),0))]);
   const ws=XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols']=[{wch:7},{wch:11},{wch:22},{wch:16}].concat(Array(12).fill({wch:8}));
+  ws['!cols']=[{wch:7},{wch:11},{wch:22},{wch:16}].concat(Array(13).fill({wch:8}));
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'ThongKe');
   XLSX.writeFile(wb,`LPGT_ThongKe_${ym}.xlsx`);
@@ -196,7 +196,7 @@ function exportXlsx(){
   days.forEach(iso=>{
     let cD=0,cN=0,cO=0;
     activeEmps().forEach(e=>{const c=workCodeOf(what==='eff'?eff(e.id,iso).code:(S.base[e.id]&&S.base[e.id][iso]||''));
-      if(c==='D'||c==='SD'||c==='OTD')cD++;else if(c==='N'||c==='SN'||c==='OTN')cN++;else if(c==='O'||c==='SO')cO++;});
+      if(c==='D'||c==='SD'||c==='OTD')cD++;else if(c==='N'||c==='SN'||c==='OTN')cN++;else if(c==='O'||c==='SO'||c==='OTO')cO++;});
     tD.push(cD);tN.push(cN);tO.push(cO);
   });
   aoa.push(tD,tN,tO);

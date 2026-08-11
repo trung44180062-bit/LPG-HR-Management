@@ -27,7 +27,7 @@ function baseShiftOf(code){
   if(cb)code=cb.work;
   if(code==='D'||code==='SD'||code==='OTD')return 'D';
   if(code==='N'||code==='SN'||code==='OTN')return 'N';
-  if(code==='O'||code==='SO')return 'O';
+  if(code==='O'||code==='SO'||code==='OTO')return 'O';
   return null;
 }
 function shiftLabelOf(code){const b=baseShiftOf(code);return b==='D'?'Day':b==='N'?'Night':b==='O'?'Office':'—';}

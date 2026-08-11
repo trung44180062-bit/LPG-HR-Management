@@ -30,11 +30,22 @@ const DEFAULT_CODES=[
  {c:'FUN',l:'Nghỉ tang',      col:'var(--cAL)', cat:'leave'},
  {c:'MAT',l:'Nghỉ thai sản / đẻ', col:'var(--cAL)', cat:'leave'},
  {c:'ALP',l:'Nghỉ phép năm thêm', col:'var(--cAL)', cat:'leave'},
+ /* BT — ĐI CÔNG TÁC (Business trip).
+    Xếp cat 'leave' vì cùng một nghĩa vận hành với các mã nghỉ: hôm đó người
+    này KHÔNG có mặt ở ca trực, đếm quân số phải trừ ra. Nhưng vẫn ăn 8h công
+    (khác hẳn NP/COM ăn 0h) — đi công tác là đang làm việc cho công ty.
+    Nhờ cat 'leave', mã này TỰ ĐỘNG có mặt trong form đơn nghỉ phép
+    (dsCodesFor) và trong hộp chọn mã ở ô lịch, không phải khai thêm chỗ nào. */
+ {c:'BT', l:'Đi công tác (Business trip)', col:'var(--cBT)', cat:'leave'},
  {c:'SD', l:'Đổi sang ca D', col:'var(--cSW)', cat:'swap'},
  {c:'SN', l:'Đổi sang ca N', col:'var(--cSW)', cat:'swap'},
  {c:'SO', l:'Đổi sang ca O', col:'var(--cSW)', cat:'swap'},
  {c:'OTD',l:'Tăng ca ngày 08–20h',   col:'var(--cOT)', cat:'ot'},
  {c:'OTN',l:'Tăng ca đêm 20–08h',    col:'var(--cOT)', cat:'ot'},
+ /* OTO — tăng ca TRỌN CA HÀNH CHÍNH 08–17h. Khác OTD (08–20h, ca vận hành):
+    người đang nghỉ ca mà được gọi lên làm/học nguyên ngày hành chính thì khai
+    mã này, không phải OTD — 8 giờ chứ không phải 12. */
+ {c:'OTO',l:'Tăng ca hành chính 08–17h', col:'var(--cOT)', cat:'ot'},
  {c:'OTL',l:'Tăng ca giờ nghỉ trưa', col:'var(--cOT)', cat:'ot'},
  {c:'OT2',l:'Tăng ca 18–20h',        col:'var(--cOT)', cat:'ot'},
  {c:'OT3',l:'Tăng ca 17–20h',        col:'var(--cOT)', cat:'ot'},
@@ -46,8 +57,8 @@ const DEFAULT_CODES=[
 ];
 // Giờ công mặc định theo mã ca (chỉnh / thêm ở tab Dữ liệu)
 const DEFAULT_HOURS={O:8,D:12,N:12,R:0,AL8:8,AL4:4,NP:0,COM:0,OFF:0,
-                     WED:8,FUN:8,MAT:8,ALP:8,SD:12,SN:12,SO:8,
-                     OTD:12,OTN:12,OTL:1,OT2:2,OT3:3,
+                     WED:8,FUN:8,MAT:8,ALP:8,BT:8,SD:12,SN:12,SO:8,
+                     OTD:12,OTN:12,OTO:8,OTL:1,OT2:2,OT3:3,
                      'O+N':20,'D+N':24};
 
 /* ============================================================
@@ -110,6 +121,11 @@ const OT_PRESETS=[
   {v:'OTL', code:'OTL', label:'Nghỉ trưa 12:00–13:00', from:'12:00', to:'13:00'},
   {v:'OT2', code:'OT2', label:'Sau giờ HC 18:00–20:00', from:'18:00', to:'20:00'},
   {v:'OT3', code:'OT3', label:'Sau giờ HC 17:00–20:00', from:'17:00', to:'20:00'},
+  /* noLunch:1 — 08:00→17:00 là 9 giờ đồng hồ nhưng ca hành chính chỉ tính 8
+     giờ công (nghỉ trưa 12–13 không tính). Đây là mẫu DUY NHẤT tự tích sẵn
+     ô trừ trưa; OTD 08–20h thì công ty vẫn tính trọn 12 giờ nên không tích.
+     Người khai bỏ tích lại được — chỉ là giá trị mặc định. */
+  {v:'OTO', code:'OTO', label:'Ca hành chính 08:00–17:00', from:'08:00', to:'17:00', noLunch:1},
   {v:'OTD', code:'OTD', label:'Ca ngày 08:00–20:00',    from:'08:00', to:'20:00'},
   {v:'OTN', code:'OTN', label:'Ca đêm 20:00–08:00 (qua đêm)', from:'20:00', to:'08:00', overnight:true},
   {v:'',    code:'OTD', label:'Tự điền giờ',            from:'',      to:''}
@@ -184,6 +200,7 @@ let S={
   printLog:{},            // printLog[batchId] = {ts, by, formType, reqIds:[...], rows, pages, reprint}
   notifs:{},              // notifs[id] = {kind, to, from, status, createdAt, ...payload} — xác nhận đổi lịch / đổi ca
   events:{},              // events[id] = {title, from, to, days?, scope, teams, notify} — sự kiện trên lịch (js/20-events.js)
+  trainings:{},           // trainings[id] = {title, days:[iso], emps:[id], mode:'shift'|'ot', ...} — lịch đào tạo (js/22-training.js)
   digest:{},              // digest[notifId] = {to,toName,title,lines,group,zk,at} — sổ chờ bản tin 08:00 (js/21-notify.js)
   meta:{schedFrom:'',schedTo:''},
   rev:0
@@ -198,7 +215,11 @@ let mgr=false, adm=false, secr=false, noSelf=false, myFE=false, fb=null, fbRef=n
 /* Được vào màn Duyệt: quản lý (mgr) hoặc Field Engineer duyệt cấp 1 của nhóm */
 function canAppr(){return mgr||myFE;}
 /* Màn hình đầu tiên sau khi đăng nhập */
-function homeView(){return noSelf?'real':'me';}
+/* ★ v7.4 — MỌI người đều có màn đầu tiên là Trang chính.
+   Thư ký / QL người Hàn không có lịch cá nhân, nhưng vẫn cần một chỗ để
+   đăng nhập vào là thấy ngay việc của mình: đơn chờ duyệt, sự kiện, buổi
+   đào tạo, quân số hôm nay. Xem noSelfHomeHtml() ở js/13-portal.js. */
+function homeView(){return 'me';}
 /* v4 mobile cal state */
 let calMode='std', calMobileView='week', calDate=null, calCollapsed={};
 const isMobile=()=>window.matchMedia('(max-width:767px)').matches;

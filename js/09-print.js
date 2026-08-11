@@ -171,6 +171,7 @@ const LEGEND_LEAVE=`<div class="pp-legend"><b>Ký hiệu loại phép/ Leave typ
 <span>NPL: Nghỉ không lương (Unpaid leave)</span><span>LA: Nghỉ TNLĐ (Labor Accident)</span><span>CS: Con ốm (Children sick)</span><span>WB: Vợ sinh (Wife born)</span>
 <span>SL: Nghỉ ốm (Sick leave)</span><span>WED: Nghỉ cưới (Wedding)</span><span>PC: Nghỉ khám thai (Pregnancy check)</span><span>WI: Vợ sinh hưởng BHXH (Wife born insurance)</span>
 <span>NCN: Nghỉ nuôi con nhỏ (Nursing child)</span><span>MS: Nghỉ sảy thai (Miscarrige Leave)</span><span>SH: Nghỉ dưỡng sức (Save Health)</span><span>NVCT: Nghỉ CĐ người cao tuổi (Elderly employee)</span>
+<span>BT: Đi công tác (Business trip)</span>
 </div></div>`;
 const LEGEND_SHIFT=`<div class="pp-legend"><b>Ký hiệu loại ca/ Shift type:</b><div class="pp-legend-grid2">
 <span><b>D</b>: Ca ngày/ Day Shift (8:00 ~ 20:00)</span><span><b>O</b>: Ca hành chính/ Office Hour (8:00 ~ 17:00)</span>

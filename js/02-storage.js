@@ -54,7 +54,7 @@
 /* Nhánh dạng bảng: khoá là mã NV / id đơn → nghe & ghi ở mức con */
 /* 'digest' = SỔ CHỜ BẢN TIN 08:00 (★ v6.8) — tin không gấp nằm đây tới sáng
    hôm sau mới gom thành một tin Zalo. Xem js/21-notify.js. */
-const FB_MAP_BRANCHES=['base','over','requests','accounts','printLog','notifs','events','digest'];
+const FB_MAP_BRANCHES=['base','over','requests','accounts','printLog','notifs','events','digest','trainings'];
 /* Nhánh nghe trọn gói (nhỏ, và luôn cần đủ để render).
    'del' = SỔ BIA MỘ: id nào đã bị xoá thì mọi máy tôn trọng, không hồi sinh —
    xem applyTombstones() và mục "CHỐNG HỒI SINH" bên dưới. */
@@ -139,6 +139,7 @@ function normalizeState(){
   S.accounts=S.accounts||{};S.printLog=S.printLog||{};S.notifs=S.notifs||{};
   S.events=S.events||{};                 // sự kiện trên lịch — xem js/20-events.js
   S.digest=S.digest||{};                 // sổ chờ bản tin 08:00 — xem js/21-notify.js
+  S.trainings=S.trainings||{};           // lịch đào tạo — xem js/22-training.js
   S.del=S.del||{};                       // sổ bia mộ id đã xoá — xem applyTombstones()
   S.settings=S.settings||{minD:3,minN:3};
   S.settings.hours=S.settings.hours||{};
@@ -431,6 +432,7 @@ function fbTouch(){
      đệm khoá theo S.rev phải được xoá tay ở đây, nếu không sẽ hiện số cũ. */
   if(typeof mealResetCache==='function')mealResetCache();
   if(typeof evResetCache==='function')evResetCache();
+  if(typeof trResetCache==='function')trResetCache();
   _fbRenderT=setTimeout(()=>{
     if(typeof renderAll==='function')renderAll();
   },120);

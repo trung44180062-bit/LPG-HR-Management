@@ -57,6 +57,10 @@ function applyRoleUI(){
   applyPerm();
   document.querySelectorAll('.mgr-only').forEach(el=>{el.style.display=(mgr||myFE)?'':'none';});
   document.querySelectorAll('.admin-only').forEach(el=>{el.style.display=adm?'':'none';});
+  /* .secr-only = quản trị / QL người Hàn / SC (duyệt đơn) / thư ký.
+     Đúng nhóm được xếp lịch đào tạo cho người khác — xem trCanManage()
+     ở js/22-training.js. */
+  document.querySelectorAll('.secr-only').forEach(el=>{el.style.display=secr?'':'none';});
   /* Tab Báo cáo giờ chỉ dành cho nhân viên (số liệu/biểu đồ CỦA MÌNH);
      quản lý xem Nhân lực ở tab Lịch, Bảng công tổng hợp + Biểu đồ ở tab Duyệt */
   document.querySelectorAll('.rep-tab').forEach(el=>{el.style.display=mgr?'none':'';});
@@ -64,20 +68,45 @@ function applyRoleUI(){
      (Trang chính, Gửi đơn, Tăng ca của tôi, Đơn của tôi) */
   document.querySelectorAll('.self-only').forEach(el=>{el.style.display=noSelf?'none':'';});
   document.querySelectorAll('.noself-only').forEach(el=>{el.style.display=noSelf?'':'none';});
-  /* Đang đứng ở Trang chính mà người dùng không thuộc diện chấm công → đẩy
-     sang Lịch thực tế (VD quản trị đổi quyền của chính mình lúc đang mở) */
-  if(noSelf&&curView==='me'&&typeof go==='function')go('real');
+  /* ★ v7.4 — nhóm noSelf NAY CŨNG có màn đầu tiên, nhưng nội dung là bảng tin
+     điều hành chứ không phải lịch cá nhân → đổi tên tab cho khỏi hiểu nhầm.
+     (Trước đây tab này bị ẩn và họ bị đẩy thẳng sang Lịch thực tế.) */
+  document.querySelectorAll('.home-tab .lb').forEach(el=>{
+    el.textContent=noSelf?t('Bảng tin'):t('Trang chính');
+  });
 }
 
 /* Tên rút gọn 2 chữ cuối: "Nguyễn Hoàng Trung" → "Hoàng Trung".
-   Tiền tố "Mr. " của Quản lý người Hàn được giữ lại, không tính là một chữ:
-   "Mr. Kim Jong Su" → "Mr. Jong Su". */
+   Người Việt có họ đứng đầu, hai chữ cuối là tên gọi — rút như vậy vẫn nhận
+   ra nhau, lại vừa chỗ trong ô lịch và danh sách.
+
+   ★ v7.5 — QUẢN LÝ NGƯỜI HÀN thì KHÔNG RÚT: hiện trọn "Mr. <họ tên đầy đủ>".
+   Bản trước rút cả tên họ ("Mr. Kim Ji Min" → "Mr. Ji Min"), trái với quy tắc
+   xưng hô đã ghi ở js/01-core.js — và với tên Hàn thì cắt đi phần họ là gọi
+   sai người, chứ không phải gọi tắt. Nhận diện bằng chính tiền tố "Mr." mà
+   accessor tên đã gắn sẵn, nên không phải tra quyền ở đây. */
 function shortName(n){
   const s=String(n||'').trim();
-  const m=s.match(/^(mr\.?)\s+(.+)$/i);
-  const body=m?m[2]:s, pre=m?'Mr. ':'';
-  const w=body.trim().split(/\s+/).filter(Boolean);
-  return pre+(w.slice(-2).join(' ')||body);
+  if(/^mr\.?\s+/i.test(s))return s;            // quản lý người Hàn → giữ nguyên
+  const w=s.split(/\s+/).filter(Boolean);
+  return w.slice(-2).join(' ')||s;
+}
+/* Hai chữ cái cho ô avatar.
+   Tên Việt: HỌ đứng trước, TÊN GỌI đứng sau → lấy hai chữ CUỐI
+             ("Nguyễn Hoàng Trung" → HT).
+   Tên Hàn : HỌ đứng TRƯỚC → lấy hai chữ ĐẦU sau khi bỏ "Mr."
+             ("Mr. Kim Ji Min" → KJ, không phải JM).
+   Cùng một quy tắc "lấy 2 chữ cuối" áp cho cả hai là ra sai một nửa số ca. */
+function avatarInitials(name,fallback){
+  const s=String(name||fallback||'').trim();
+  if(!s)return '';
+  const kr=/^mr\.?\s+/i.test(s);
+  const w=(kr?s.replace(/^\s*mr\.?\s+/i,''):s).split(/\s+/).filter(Boolean);
+  /* Tên (hoặc mã NV) chỉ có MỘT chữ thì lấy 2 ký tự đầu của chính nó —
+     một chữ cái đơn độc trong ô avatar 46px nhìn như lỗi hiển thị. */
+  if(w.length<2)return String(w[0]||s).slice(0,2).toUpperCase();
+  const pick=kr?w.slice(0,2):w.slice(-2);
+  return pick.map(x=>x[0]).join('').toUpperCase();
 }
 
 /* ---- Đơn liên quan tới 1 ngày của 1 người ---- */
@@ -252,7 +281,7 @@ function myNotifs(id){
     .sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
 }
 /* Thông báo một chiều chưa xem: tin nhắn info + sự kiện trên lịch */
-const SEEN_KINDS=['info','event'];
+const SEEN_KINDS=['info','event','training'];
 function notifUnseenCount(id){
   return pendingConfirms(id).length
     + unseenDecisions(id).length
@@ -295,7 +324,7 @@ function inferReqFromChange(empId,iso,oldCode,newCode){
       ],note:t2('Làm liên tục')+' '+oldBase+'+'+newBase+' ('+t2('khoảng 24h')+') — '+t2('bổ sung công')};
     }
     // Tăng ca thường: 1 dòng theo mẫu của mã
-    const preset=['OTL','OT2','OT3','OTD','OTN'].includes(newCode)?newCode:'';
+    const preset=['OTL','OT2','OT3','OTO','OTD','OTN'].includes(newCode)?newCode:'';
     const p=otPreset(preset);
     return{type:'ot',rows:[{iso,preset,code:newCode,
       timeIn:p.from||'',timeOut:p.to||'',isoEnd:p.overnight?addDaysIso(iso,1):''}],
@@ -767,10 +796,12 @@ function renderMe(force){
   login.style.display=id?'none':'';
   body.style.display=id?'':'none';
   if(!id)return;
-  // Thư ký / quản lý người Hàn không có trang chính cá nhân
-  if(noSelf){body.style.display='none';body.innerHTML='';return;}
   // đang gõ trong sheet thì không vẽ lại (tránh mất chữ khi Firebase đẩy dữ liệu về)
   if(!force&&document.activeElement&&/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))return;
+  /* ★ v7.4 — Thư ký / QL người Hàn không có lịch cá nhân, nhưng vẫn cần một
+     màn đầu tiên. Cùng khung với nhân viên, chỉ khác phần giữa: chỗ lịch ca
+     của mình đổi thành LỊCH ĐIỀU HÀNH của cả tổ. Xem noSelfHomeHtml(). */
+  if(noSelf){body.innerHTML=noSelfHomeHtml(id);return;}
 
   const e=empById(id);
   const ym=schedMonthOf(pvAnchorIso());     // kỳ công chứa ngày đang xem
@@ -781,7 +812,7 @@ function renderMe(force){
   const st=calcStats(id,pastDays);
   const stFull=calcStats(id,allDays);
   const ot=otSummary(id,ym);
-  const initials=(e.name||id).trim().split(/\s+/).map(w=>w[0]).slice(-2).join('').toUpperCase();
+  const initials=avatarInitials(e.name,id);
   const streak=workStreak(id);
   const news=unseenDecisions(id);
   const confirms=pendingConfirms(id);
@@ -823,7 +854,12 @@ function renderMe(force){
        </div>`).join('')}
   </div>`:''}
 
-  ${(typeof evBannerHtml==='function')?evBannerHtml(allDays.filter(iso=>iso>=todayIso())):''}
+  ${(typeof evBannerHtml==='function')?evBannerHtml(pvAheadDays()):''}
+  ${(typeof trBannerHtml==='function')?trBannerHtml(pvAheadDays(),id):''}
+  ${(typeof trCanSelf==='function'&&trCanSelf())?`<div class="row" style="gap:8px;margin:6px 0">
+    <button class="btn sec sm" onclick="openTrainMgr()"
+      title="${t('Khai lịch đào tạo của bạn — quản lý duyệt xong mới có hiệu lực')}">🎓 ${t('Lịch đào tạo của tôi')}</button>
+  </div>`:''}
 
   <div class="card pv-cal-card">
     <div class="pv-cal-head">
@@ -858,6 +894,169 @@ function renderMe(force){
   </div>`;
 
   renderPvCal();
+}
+
+/* Khoảng ngày dùng cho DẢI NHẮC ở Trang chính: từ hôm nay tới 30 ngày sau.
+   Trước đây chỉ lấy phần còn lại của KỲ ĐANG XEM, nên buổi đào tạo rơi vào
+   đầu kỳ sau thì tới ngày 20 mới hiện — quá muộn để nhớ mà thu xếp. */
+function pvAheadDays(n){
+  const t0=todayIso();
+  return Array.from({length:(n||30)},(_,i)=>addDaysIso(t0,i));
+}
+
+/* ============================================================
+   BẢNG TIN CHO NGƯỜI KHÔNG THUỘC DIỆN CHẤM CÔNG   ★ v7.4
+   (thư ký · quản lý người Hàn · ai đặt Kiểu ca = Không xếp lịch)
+   ------------------------------------------------------------
+   VÌ SAO CẦN
+
+   Nhóm này trước đây KHÔNG có Trang chính: đăng nhập vào là rơi thẳng
+   vào bảng lịch ca — một ma trận 30 cột mà họ không có tên trong đó.
+   Thông báo, sự kiện, đơn chờ họ duyệt đều nằm sau một cái chuông nhỏ
+   trên header mà nhiều người không để ý. Việc quan trọng nhất của quản
+   lý người Hàn (duyệt đơn cấp cuối) thì không có chỗ nào nhắc.
+
+   CÁCH LÀM
+
+   Dùng LẠI đúng khung Trang chính của nhân viên — cùng thẻ tên, cùng
+   dải sự kiện, cùng ô số ở cuối — chỉ thay phần GIỮA: chỗ lịch ca cá
+   nhân đổi thành LỊCH ĐIỀU HÀNH: những ngày sắp tới có gì đáng biết
+   (sự kiện · buổi đào tạo · thiếu quân số), mỗi ngày một dòng, bấm vào
+   là mở chi tiết ngày đó.
+
+   Nguyên tắc: chỉ liệt kê ngày CÓ CHUYỆN. Một danh sách 30 ngày trống
+   trơn thì không ai đọc tới ngày thứ ba.
+   ============================================================ */
+const NS_AHEAD_DAYS=21;          // nhìn trước bao nhiêu ngày
+const NS_MAX_ROWS=12;            // quá dài thì cắt, kèm dòng "… còn N ngày nữa"
+
+/* Đếm ngược thân thiện: hôm nay / ngày mai / còn N ngày */
+function nsWhen(iso){
+  const d=Math.round((new Date(iso+'T00:00:00')-new Date(todayIso()+'T00:00:00'))/86400000);
+  if(d===0)return t('hôm nay');
+  if(d===1)return t('ngày mai');
+  /* Cả cụm là MỘT khoá i18n, chỗ số thay bằng N. Ghép 't("còn")+số+t("ngày")'
+     thì đụng khoá 'còn' đã có sẵn với nghĩa khác ("has") — tiếng Anh sẽ ra
+     "has 4 days". Khoá cụm thì không thể va vào ai. */
+  return t('còn N ngày').replace('N',d);
+}
+/* Những ngày sắp tới CÓ CHUYỆN — nguồn của lịch điều hành */
+function nsAgenda(){
+  const t0=todayIso(), out=[];
+  for(let i=0;i<NS_AHEAD_DAYS;i++){
+    const iso=addDaysIso(t0,i);
+    const evs=(typeof eventsOfDay==='function')?eventsOfDay(iso):[];
+    const trs=(typeof trOfDay==='function')?trOfDay(iso).filter(trIsActive):[];
+    /* Thiếu quân số: chỉ soi ca D/N của khối sản xuất, đúng cái định mức
+       minD/minN đang canh ở bảng lịch. */
+    let low=null;
+    if(typeof mpBuckets==='function'){
+      const B=mpBuckets(iso,(typeof POOL_PROD!=='undefined')?POOL_PROD:null);
+      const nD=B.D.length,nN=B.N.length;
+      const mD=+((S.settings||{}).minD)||0, mN=+((S.settings||{}).minN)||0;
+      if((mD&&nD<mD)||(mN&&nN<mN))low={nD,nN,mD,mN};
+    }
+    if(evs.length||trs.length||low)out.push({iso,evs,trs,low});
+  }
+  return out;
+}
+function nsAgendaHtml(){
+  const rows=nsAgenda();
+  if(!rows.length)return `<p class="muted sm2" style="padding:10px 2px">✓ ${
+    t('Ba tuần tới không có sự kiện, buổi đào tạo hay ngày thiếu quân số nào.')}</p>`;
+  const shown=rows.slice(0,NS_MAX_ROWS);
+  return `<div class="ns-ag">${shown.map(r=>`
+    <button type="button" class="ns-d${r.iso===todayIso()?' today':''}" onclick="openDaySheet('${r.iso}')">
+      <span class="dt"><b>${fmtVN(r.iso)}</b><i>${dowOf(r.iso)}</i><u>${esc(nsWhen(r.iso))}</u></span>
+      <span class="it">
+        ${r.evs.map(e=>`<span class="tag ev">📌 ${esc(e.title||t('Sự kiện'))}</span>`).join('')}
+        ${r.trs.map(x=>`<span class="tag tr">🎓 ${esc(x.title||t('Đào tạo'))} · ${
+            trEmps(x).length} ${t('người')}${
+            (typeof trTimeLabelOf==='function'&&trTimeLabelOf(x,r.iso))?' · '+esc(trTimeLabelOf(x,r.iso)):''}</span>`).join('')}
+        ${r.low?`<span class="tag low">⚠ ${t('Thiếu quân số')} — D ${r.low.nD}/${r.low.mD} · N ${r.low.nN}/${r.low.mN}</span>`:''}
+      </span>
+    </button>`).join('')}
+    ${rows.length>shown.length?`<p class="muted sm2" style="padding:4px 2px">… ${t('và')} ${
+      rows.length-shown.length} ${t('ngày nữa')}</p>`:''}
+  </div>`;
+}
+/* Bảng tin — dựng bằng CÙNG các khối của Trang chính nhân viên */
+function noSelfHomeHtml(id){
+  const e=empById(id)||{};
+  const initials=avatarInitials(e.name,id);
+  const bellN=notifUnseenCount(id);
+  const confirms=pendingConfirms(id);
+  const t0=todayIso();
+  const ahead=Array.from({length:NS_AHEAD_DAYS},(_,i)=>addDaysIso(t0,i));
+
+  /* Đơn đang chờ CHÍNH NGƯỜI NÀY duyệt — việc chính của quản lý người Hàn */
+  const mine=(typeof reqNeedsMyAction==='function')
+    ? Object.values(S.requests||{}).filter(reqNeedsMyAction).length : 0;
+  const trPend=(typeof trPendingCount==='function')?trPendingCount():0;
+  const nEv=(typeof eventsOfDay==='function')
+    ? ahead.reduce((a,iso)=>a+eventsOfDay(iso).length,0) : 0;
+  const nTr=(typeof trOfDay==='function')
+    ? new Set([].concat(...ahead.map(iso=>trOfDay(iso).filter(trIsActive).map(x=>x.id)))).size : 0;
+  /* Quân số hôm nay — khối sản xuất, đúng định mức đang canh ở bảng lịch */
+  const B=(typeof mpBuckets==='function')?mpBuckets(t0,(typeof POOL_PROD!=='undefined')?POOL_PROD:null):null;
+  const mD=+((S.settings||{}).minD)||0, mN=+((S.settings||{}).minN)||0;
+  const lowToday=!!(B&&((mD&&B.D.length<mD)||(mN&&B.N.length<mN)));
+
+  return `
+  <div class="pv-top">
+    <div class="av">${esc(initials)}</div>
+    <div class="who">
+      <div class="nm">${esc(shortName(e.name)||id)}</div>
+      <div class="ps">${esc(PERM_LABEL[permOf(id)]||'')}${e.id?' · '+esc(e.id):''}</div>
+    </div>
+    <button class="pv-icon pv-bell" onclick="openMyPanel('ntf')" title="${t('Thông báo')}">🔔${
+      bellN?`<span class="bell-bdg">${bellN>9?'9+':bellN}</span>`:''}</button>
+    <button class="pv-icon" onclick="go('rep')" title="${t('Báo cáo')}">📊</button>
+    <button class="pv-icon" onclick="openMyPanel('acc')" title="${t('Tài khoản')}">🔑</button>
+    <button class="pv-icon" onclick="doLogout()" title="${t('Đăng xuất')}">↪</button>
+  </div>
+
+  ${confirms.length?`<div class="pv-confirm">
+    <div class="pv-confirm-h">⚠️ ${confirms.length} ${t('việc cần bạn xác nhận')}</div>
+    <p class="muted sm2" style="padding:0 2px">${t('Mở chuông để xem chi tiết.')}
+      <button class="btn sec sm" onclick="openMyPanel('ntf')">🔔 ${t('Mở thông báo')}</button></p>
+  </div>`:''}
+
+  ${mine?`<button type="button" class="ns-cta" onclick="go('appr')">
+    <span class="ic">📥</span>
+    <span class="tx"><b>${mine} ${t('đơn đang chờ bạn duyệt')}</b>
+      <i>${t('Bấm để mở tab Duyệt đơn')}</i></span>
+    <span class="go">›</span>
+  </button>`:''}
+  ${(trPend&&typeof trCanManage==='function'&&trCanManage())?`<button type="button" class="ns-cta tr" onclick="openTrainMgr()">
+    <span class="ic">🎓</span>
+    <span class="tx"><b>${trPend} ${t('lịch đào tạo chờ duyệt')}</b>
+      <i>${t('Nhân viên tự khai — mở để duyệt')}</i></span>
+    <span class="go">›</span>
+  </button>`:''}
+
+  ${(typeof evBannerHtml==='function')?evBannerHtml(ahead):''}
+
+  <div class="card pv-cal-card">
+    <div class="pv-cal-head">
+      <div class="pv-range"><b>🗓 ${t('Sắp tới')}</b> <span class="muted sm2">${
+        t('3 tuần tới · chỉ những ngày có chuyện')}</span></div>
+      <span style="flex:1"></span>
+      <button class="btn sec sm" onclick="go('cal')">${t('Xem lịch đầy đủ')} ›</button>
+    </div>
+    ${nsAgendaHtml()}
+  </div>
+
+  <div class="pv-stats">
+    <button class="sbox rq" onclick="go('appr')"><div class="v">${mine}</div>
+      <div class="k">${t('Đơn chờ tôi duyệt')}</div></button>
+    <button class="sbox" onclick="go('cal')"><div class="v">${B?B.D.length+'/'+B.N.length:'—'}</div>
+      <div class="k">${t('Quân số hôm nay D/N')}${lowToday?' ⚠':''}</div></button>
+    <button class="sbox al" onclick="openEventMgr()"><div class="v">${nEv}</div>
+      <div class="k">${t('Sự kiện 3 tuần tới')}</div></button>
+    <button class="sbox ot" onclick="openTrainMgr()"><div class="v">${nTr}</div>
+      <div class="k">${t('Buổi đào tạo sắp tới')}</div></button>
+  </div>`;
 }
 
 /* =================== LỊCH TUẦN / THÁNG =================== */
@@ -903,6 +1102,7 @@ function renderPvCal(){
   for(let i=0;i<7;i++)h+=`<div class="hd${i>4?' we':''}">${dowShort(i)}</div>`;
   for(let k=0;k<lead;k++)h+='<div class="pd"></div>';
   const evOn=typeof eventsOfDay==='function';
+  const trOn=typeof trCellCls==='function';
   days.forEach(iso=>{
     const r=eff(id,iso), f=pvDayFlags(id,iso);
     const dw=new Date(iso+'T00:00:00').getDay();
@@ -912,12 +1112,17 @@ function renderPvCal(){
     const head=pvMode==='month'&&dd>=21;
     /* Ngày có sự kiện (nhập tàu, bảo dưỡng…) đổi màu — js/20-events.js */
     const ev=evOn?eventsOfDay(iso):[];
-    h+=`<button class="pv-d${iso===t?' today':''}${r.code?'':' empty'}${dw===0||dw===6?' we':''}${head?' pmo':''}${ev.length?' evday':''}"
-        onclick="openDaySheet('${iso}')" title="${fmtVNfull(iso)} ${dowOf(iso)}${info?' — '+esc(info.l):''}${ev.length?' · 📌 '+esc(evTitleOfDay(iso)):''}">
+    /* Ngày mình có lịch đào tạo — js/22-training.js */
+    const trL=trOn?trOfCell(id,iso):[];
+    const trC=trOn?trCellCls(id,iso):'';
+    h+=`<button class="pv-d${iso===t?' today':''}${r.code?'':' empty'}${dw===0||dw===6?' we':''}${head?' pmo':''}${ev.length?' evday':''}${trC}"
+        onclick="openDaySheet('${iso}')" title="${fmtVNfull(iso)} ${dowOf(iso)}${info?' — '+esc(info.l):''}${ev.length?' · 📌 '+esc(evTitleOfDay(iso)):''}${trL.length?' · '+esc(trCellTitle(id,iso)):''}">
       <span class="dn">${dd}${dd===1?`<i class="mo">/${mm}</i>`:''}</span>
       ${pvMode==='week'?`<span class="dw">${dowOf(iso)}</span>`:''}
       <span class="cbox">${r.code?chip(r.code):'<span class="dash">—</span>'}</span>
       ${pvMode==='week'&&info?`<span class="clbl">${esc(info.l)}</span>`:''}
+      ${trL.length?`<span class="trtag">🎓 ${esc((typeof trTimeLabelOf==='function'&&trTimeLabelOf(trL[0],iso))
+          ||trL[0].title||t('Đào tạo'))}</span>`:''}
       ${ev.length?`<span class="evtag">📌 ${esc(ev[0].title||t('Sự kiện'))}</span>`:''}
       <span class="flags">
         ${r.ovr?'<i class="d-ovr"></i>':''}
@@ -1005,6 +1210,9 @@ function dsSetPreset(i,v){
   const p=otPreset(v);
   r.preset=v;r.code=p.code;
   if(p.from){r.timeIn=p.from;r.timeOut=p.to;r.isoEnd=p.overnight?addDaysIso(r.iso,1):'';}
+  /* Mẫu có sẵn cờ trừ trưa (hiện chỉ OTO 08–17h) thì tích sẵn giúp người khai —
+     đó là cách tính đúng của ca hành chính, để họ tự nhớ là sai số 1 giờ. */
+  if(p.noLunch&&otSpansLunch(r.iso,r.timeIn,r.isoEnd,r.timeOut))r.noLunch=1;
   /* Mẫu mới không phủ giờ trưa thì cờ nghỉ trưa cũ phải rơi theo */
   if(r.noLunch&&!otSpansLunch(r.iso,r.timeIn,r.isoEnd,r.timeOut))r.noLunch=0;
   dsRenderForm();
@@ -1241,6 +1449,7 @@ function renderDaySheet(){
    </div>
 
    ${(typeof evBannerHtml==='function')?evBannerHtml([iso]):''}
+   ${(typeof trBannerHtml==='function')?trBannerHtml([iso],id):''}
 
    ${rs.length?`<div class="ds-block">
      <h4>📋 Đơn của ngày này</h4>
@@ -1786,6 +1995,7 @@ function myPanelSum(id){
       <th>${t('Ngày')}</th><th>${t('Mã')}</th><th class="num">${t('Công')}</th><th class="num">OT</th><th class="num">${t('Phép')}</th>
     </tr></thead><tbody>${rows||`<tr><td colspan="5" class="muted">${t('Kỳ này chưa có dữ liệu.')}</td></tr>`}
       <tr class="sum-total"><td colspan="2">${t('Tổng')}</td><td class="num">${rnd1(st.hWork)}</td><td class="num ot">${rnd1(st.hOT)}</td><td class="num lv">${rnd1(st.hLeave)}</td></tr>
+      ${st.hTrain?`<tr class="sum-total"><td colspan="2">🎓 ${t('Giờ đào tạo')}</td><td class="num" colspan="3">${rnd1(st.hTrain)}h</td></tr>`:''}
     </tbody></table>
   </div>`;
 }
@@ -1856,6 +2066,15 @@ function myPanelNtf(id){
        <span class="ic">📌</span>
        <span class="tx">${esc(n.text||'')}
          <i class="tm">${fmtDateTime(n.createdAt)}</i></span></div>`).join('')}</div>`:'';
+  /* Lịch đào tạo (js/22-training.js) — bấm vào mở màn xếp lịch để xem chi
+     tiết; quản lý bấm là vào đúng chỗ có nút duyệt. */
+  const trs=myNotifs(id).filter(n=>n.kind==='training');
+  const trBlock=trs.length?`<div class="ds-block"><h4>🎓 ${t('Đào tạo')} (${trs.length})</h4>
+    ${trs.slice(0,15).map(n=>`<div class="ntf-item training${n.seen?'':' fresh'}"
+       onclick="closeMyPanel();openTrainMgr()">
+       <span class="ic">🎓</span>
+       <span class="tx">${esc(n.text||'')}
+         <i class="tm">${fmtDateTime(n.createdAt)}</i></span></div>`).join('')}</div>`:'';
   /* Tin "có đơn chờ bạn duyệt" (zk:'apprNeed') bấm vào là nhảy thẳng sang tab
      Duyệt đơn — đây là lối vào chính của Quản lý người Hàn và cấp duyệt, họ
      không có Trang chính nên phải đi qua chuông. Câu chữ đã đủ ý nên KHÔNG
@@ -1889,7 +2108,7 @@ function myPanelNtf(id){
   setTimeout(()=>markNotifSeen(id),0);
   return `
   <h3 style="margin:4px 0 10px">🔔 Thông báo</h3>
-  ${cfBlock}${evBlock}${infoBlock}
+  ${cfBlock}${trBlock}${evBlock}${infoBlock}
   <div class="ds-block"><h4>📋 Kết quả đơn (${list.length})</h4>
   ${list.length?`<div class="ntf-list">${list.map(item).join('')}</div>`
     :'<p class="muted">Chưa có đơn nào được duyệt hay từ chối.</p>'}</div>

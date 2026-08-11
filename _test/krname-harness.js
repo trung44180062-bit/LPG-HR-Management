@@ -10,6 +10,9 @@ const helper=core.slice(core.indexOf('const KR_TITLE'),core.indexOf('const ROLE_
 const portal=fs.readFileSync('js/13-portal.js','utf8');
 const shortSrc=portal.slice(portal.indexOf('function shortName'),
                             portal.indexOf('function shortName')+400).split('\n}')[0]+'\n}';
+/* avatarInitials nằm ngay dưới shortName — lấy cả khối, không cắt theo số dòng */
+const avSrc=portal.slice(portal.indexOf('function avatarInitials'),
+                         portal.indexOf('\n}',portal.indexOf('function avatarInitials'))+2);
 const rep=fs.readFileSync('js/15-report.js','utf8');
 const otSrc=rep.match(/function otNorm[^\n]*\n/)[0];
 
@@ -28,7 +31,7 @@ const ctx={S,console,Object,String,Number,Array,JSON,Math,Set,Date,
               return PERM_VALUES.includes(p)?p:'staff';},
   noAccent:s=>String(s||'').toLowerCase()};
 ctx.window=ctx;vm.createContext(ctx);
-vm.runInContext(helper+'\n'+shortSrc+'\n'+otSrc,ctx,{filename:'krname'});
+vm.runInContext(helper+'\n'+shortSrc+'\n'+avSrc+'\n'+otSrc,ctx,{filename:'krname'});
 
 const T=[];const ok=(n,c,x)=>T.push([!!c,n,x===undefined?'':String(x)]);
 const E=id=>ctx.empById(id);
@@ -44,11 +47,28 @@ ok('tên GỐC lấy qua rawName() không có tiền tố', ctx.rawName(E('K1'))
 ok('rawName của người Việt = chính tên đó', ctx.rawName(E('V1'))==='Nguyễn Hoàng Trung');
 
 /* ---- 2. Tên rút gọn vẫn giữ "Mr." ---- */
-ok('shortName giữ "Mr." và lấy 2 chữ cuối',
-   ctx.shortName(E('K1').name)==='Mr. Jong Su', ctx.shortName(E('K1').name));
+/* ★ v7.5 — quy tắc ĐỔI: quản lý người Hàn hiện TRỌN họ tên, không rút.
+   Bản trước ra "Mr. Jong Su" — cắt mất họ "Kim" là gọi sai người, và trái
+   với quy tắc "Mr. + họ tên đầy đủ ở MỌI vị trí" ghi ở js/01-core.js. */
+ok('shortName KHÔNG rút tên quản lý người Hàn',
+   ctx.shortName(E('K1').name)==='Mr. Kim Jong Su', ctx.shortName(E('K1').name));
+ok('shortName giữ trọn cả tên Hàn 4 chữ',
+   ctx.shortName('Mr. Kim Jong Su Park')==='Mr. Kim Jong Su Park',
+   ctx.shortName('Mr. Kim Jong Su Park'));
+ok('shortName không bắt nhầm tên Việt bắt đầu bằng "Mr"',
+   ctx.shortName('Nguyen Mr Anh')==='Mr Anh', ctx.shortName('Nguyen Mr Anh'));
 ok('shortName người Việt không đổi hành vi cũ',
    ctx.shortName(E('V1').name)==='Hoàng Trung', ctx.shortName(E('V1').name));
 ok('shortName tên 1 chữ vẫn ra chính nó', ctx.shortName('Mr. Kim')==='Mr. Kim', ctx.shortName('Mr. Kim'));
+/* ---- avatar: tên Việt lấy 2 chữ CUỐI, tên Hàn lấy 2 chữ ĐẦU ---- */
+ok('avatar tên Việt lấy 2 chữ cuối',
+   ctx.avatarInitials('Nguyễn Hoàng Trung','')==='HT', ctx.avatarInitials('Nguyễn Hoàng Trung',''));
+ok('avatar tên Hàn lấy 2 chữ ĐẦU (họ đứng trước)',
+   ctx.avatarInitials('Mr. Kim Ji Min','')==='KJ', ctx.avatarInitials('Mr. Kim Ji Min',''));
+ok('avatar bỏ "Mr." không tính là một chữ; tên 1 chữ lấy 2 ký tự đầu',
+   ctx.avatarInitials('Mr. Kim','')==='KI', ctx.avatarInitials('Mr. Kim',''));
+ok('avatar tên rỗng → rơi về mã NV',
+   ctx.avatarInitials('','vc44180062')==='VC', ctx.avatarInitials('','vc44180062'));
 ok('shortName chuỗi rỗng không vỡ', ctx.shortName('')==='' , '['+ctx.shortName('')+']');
 
 /* ---- 3. Sửa tên: setter cất tên gốc ---- */

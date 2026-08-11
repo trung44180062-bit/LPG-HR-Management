@@ -53,7 +53,16 @@ const ZALO_CHANNEL = {
   coverConfirm: 'now',      // A3/A4 vai trò hay bị quên nhất
 
   /* --- Nhóm D: sự kiện trên lịch --- */
-  event       : 'batch'     // D1 admin đã chủ động bấm gửi
+  event       : 'batch',    // D1 admin đã chủ động bấm gửi
+
+  /* --- Nhóm G: lịch đào tạo (js/22-training.js) ---
+     'batch' chứ không 'now': đào tạo luôn được xếp trước vài ngày, biết
+     muộn 10 phút không ai đi sai giờ. Đổi lại, một buổi xếp cho 8 người
+     đẻ ra 8 thông báo trong app nhưng chỉ tốn ĐÚNG MỘT tin Zalo — chúng
+     sinh cùng lúc trên cùng một máy nên hộp gửi gộp được (xem zaloOut*).
+     KHÔNG cho vào kênh 'digest': digest chỉ nhận tin giấy tờ thuần
+     (apprNeed / approved / cancelled), còn đây là tin đổi lịch đi làm. */
+  training    : 'batch'
 };
 
 /* Nhóm B & C đi chung kind:'info' nên phân biệt bằng trường phụ `zk`
@@ -154,7 +163,7 @@ const ZALO_GROUP_KEY = {
   schedChange:'sched', schedRevoke:'sched', schedDecline:'sched',
   swapConfirm:'swap', swapNo:'swap',
   coverConfirm:'cover', coverNo:'cover', coverRemoved:'cover',
-  event:'event'
+  event:'event', training:'training'
 };
 
 /* ============================================================
@@ -196,6 +205,7 @@ const ZALO_TITLE = {
   swapConfirm : '🔄 SWAP REQUEST',
   coverConfirm: '🙋 OT COVER REQUEST',
   event       : '📢 ANNOUNCEMENT',
+  training    : '🎓 TRAINING SCHEDULE',
   approved    : '✅ APPROVED',
   rejected    : '❌ REJECTED',
   revoked     : '↩️ APPROVAL WITHDRAWN',
@@ -215,6 +225,7 @@ const ZALO_ACTION = {
   swapConfirm : 'Accept / decline in app',
   coverConfirm: 'Accept / decline in app',
   rejected    : 'Submit a new request if needed',
+  training    : 'See the training schedule in app',
   swapNo      : 'Choose another colleague',
   coverNo     : 'Assign another colleague'
 };
@@ -232,7 +243,8 @@ const Z_SHIFT = {
   AL8:'AL (full day)', AL4:'AL (half day)',
   NP:'Unpaid', COM:'Comp off', OFF:'Day off',
   WED:'Marriage', FUN:'Bereavement', MAT:'Maternity', ALP:'AL extra',
-  OTD:'OT 08:00–20:00', OTN:'OT 20:00–08:00', OTL:'OT 12:00–13:00',
+  BT:'Business trip',
+  OTD:'OT 08:00–20:00', OTN:'OT 20:00–08:00', OTO:'OT 08:00–17:00', OTL:'OT 12:00–13:00',
   OT2:'OT 18:00–20:00', OT3:'OT 17:00–20:00'
 };
 function zShift(code){
@@ -496,7 +508,7 @@ function zaloTitle(n, zk){
 /* Tin gửi CHUNG cho cả nhóm chứ không phải riêng một người → Apps Script bỏ
    dòng "👤 <tên người nhận>" ở đầu tin, vì ghi tên một người là gây hiểu nhầm. */
 function zaloIsBroadcast(n, zk){
-  return (zk==='event' || zk==='schedBulk') ? 1 : 0;
+  return (zk==='event' || zk==='schedBulk' || zk==='training') ? 1 : 0;
 }
 /* NHÃN NGƯỜI NHẬN — tin gửi CHUNG ghi nhãn NHÓM, tin cá nhân ghi tên cá nhân.
    ------------------------------------------------------------
@@ -512,6 +524,10 @@ function zaloIsBroadcast(n, zk){
    giữ nguyên tên cá nhân. */
 function zaloAudienceName(n, zk, emp){
   if(zk==='event')     return (n && n.aud) || 'All staff';
+  /* Đào tạo: nhãn nhóm do js/22-training.js gắn ('Training attendees' hoặc
+     'Approvers'). Giống nhau ở mọi tin của cùng một buổi → vân tay trùng →
+     8 người vẫn chỉ tốn MỘT tin Zalo. */
+  if(zk==='training')  return (n && n.aud) || 'Training attendees';
   if(zk==='schedBulk'){
     const p=new Set(((n&&n.hold)||[]).map(x=>x.to)).size;
     return p>1 ? (p+' employees') : (emp ? (emp.name||n.to) : n.to);
@@ -1126,6 +1142,41 @@ function zaloLines(n, zk){
       L.push(((n.aud)?('👥 '+n.aud):'')+(n.iso?('  '+zDate(n.iso)):''));
       if(n.text) L.push(n.text);
       break;
+
+    /* ---- Nhóm G: lịch đào tạo (js/22-training.js) ----
+       Dựng thân tin từ CHÍNH BẢN GHI đào tạo, không bê câu tiếng Việt của
+       app sang. Ba thứ người đọc cần: ngày nào · trong ca hay tăng ca (mấy
+       giờ) · ai đi. Tên buổi đứng đầu vì đó là kết luận. */
+    case 'training': {
+      const tr=(n && n.trId && S.trainings) ? S.trainings[n.trId] : null;
+      if(!tr){ if(n.text) L.push(String(n.text).replace(/^[^\p{L}\p{N}]+/u,'').trim()); break; }
+      const days=(typeof trDays==='function')?trDays(tr):(tr.days||[]);
+      const emps=(typeof trEmps==='function')?trEmps(tr):(tr.emps||[]);
+      L.push(String(tr.title||'Training').trim());
+      /* ★ v7.1 — MỖI NGÀY MỘT DÒNG, nói rõ ngày đó là trong ca hay tăng ca.
+         Trước đây in một câu duy nhất cho cả buổi; nay chế độ quyết theo
+         từng cặp (người, ngày) nên một câu là NÓI SAI với một nửa người
+         nhận. trZaloDayLines() ở js/22-training.js dựng các dòng này.
+         Tối đa 5 ngày rồi "+N more" — tin đọc trên điện thoại. */
+      const dls=(typeof trZaloDayLines==='function')
+        ? trZaloDayLines(tr)
+        : [days.slice(0,5).map(zDate).join(' · ')];
+      dls.slice(0,5).forEach(x=>L.push(x));
+      if(dls.length>5)L.push('… +'+(dls.length-5)+' more days');
+      if(tr.overnight||tr.noLunch)
+        L.push((tr.overnight?'Ends next day.':'')+(tr.noLunch?' Lunch hour deducted.':'').trim());
+      if(tr.place) L.push('Venue: '+tr.place);
+      const who=emps.slice(0,12).map(zName).join(', ');
+      if(who) L.push('Attendees ('+emps.length+'): '+who+(emps.length>12?', …':''));
+      if(tr.note) L.push(tr.note);
+      /* Chờ duyệt thì nói thẳng — người nhận là cấp duyệt, không phải người
+         đi học, mà hai tin nhìn giống nhau thì họ bỏ qua. */
+      if(n.trSt==='pending')
+        L.push('⏳ Requested by '+zName(tr.by)+' — pending approval');
+      else if(typeof trIsOt==='function' && trIsOt(tr))
+        L.push('An overtime request has been created for each affected attendee.');
+      break;
+    }
 
     /* ---- Nhóm B: kết quả duyệt đơn ---- */
     case 'approved': case 'rejected': case 'revoked': case 'cancelled': {

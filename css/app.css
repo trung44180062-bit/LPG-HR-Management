@@ -5,6 +5,10 @@
   /* Shift colours matched to the app screenshot */
   --cD:#F5A623; --cN:#5B50E0; --cO:#1FB6D3; --cR:#9AA6B2;
   --cAL:#EF4444; --cOT:#10B981; --cSW:#A855F7; --cNP:#F43F5E;
+  /* BT = đi công tác. Tông xanh mòng két, KHÔNG dùng đỏ như các mã nghỉ —
+     nhìn lịch phải phân biệt được ngay "vắng vì nghỉ" với "vắng vì đi làm
+     việc chỗ khác". --cTR là màu ĐÀO TẠO (js/22-training.js). */
+  --cBT:#0E7490; --cTR:#7C3AED;
   --rad:12px; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
 }
 *{box-sizing:border-box;margin:0;padding:0}
@@ -293,6 +297,12 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
 .stbl-fix .hl-ot{background:#FFF7ED;color:#9A3412;font-weight:800}
 .stbl-fix .hl-lv{background:#EFF6FF;color:#1E40AF;font-weight:800}
 .stbl-fix th.hl{background:#DCFCE7}.stbl-fix th.hl-ot{background:#FFEDD5}.stbl-fix th.hl-lv{background:#DBEAFE}
+/* Giờ đào tạo — tông tím, cùng màu --trc của lịch đào tạo (js/22-training.js) */
+.stbl .hl-tr,.stbl-fix .hl-tr{background:#F5F3FF;font-weight:800;color:#5B21B6}
+.stbl tbody tr:nth-child(even) td.hl-tr{background:#EDE9FE}
+.stbl th.hl-tr,.stbl-fix th.hl-tr{background:#EDE9FE;color:#5B21B6}
+.st-card .n.hl-tr{color:#5B21B6}
+td.num.tr{color:#5B21B6;font-weight:800}
 /* Thanh Lịch khi mở sub-tab Nhân lực: ẩn control của lịch, chỉ giữ sub-tab */
 .cal-bar.mp-on>*:not(.keep-mp){display:none!important}
 /* Thống kê trên ĐIỆN THOẠI: mỗi người một thẻ thay cho bảng 15 cột */

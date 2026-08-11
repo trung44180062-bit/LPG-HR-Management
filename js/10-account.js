@@ -424,8 +424,13 @@ async function changeMyPass(){
 
 /* ===== Thống kê cá nhân / chung ===== */
 function calcStats(id,days){
-  const cnt={};let hWork=0,hOT=0,hLeave=0;
+  const cnt={};let hWork=0,hOT=0,hLeave=0,hTrain=0;
   days.forEach(iso=>{
+    /* GIỜ ĐÀO TẠO — cộng TRƯỚC lối thoát `if(!c)return`, vì buổi học có thể
+       rơi vào ngày chưa xếp ca. Con số này ĐỨNG RIÊNG: không cộng vào giờ
+       công (học trong ca đã tính theo mã ca) cũng không cộng vào giờ OT (học
+       ngoài ca đã có đơn tăng ca riêng). Xem trHoursFor ở js/22-training.js. */
+    if(typeof trHoursFor==='function')hTrain+=trHoursFor(id,iso);
     const c=eff(id,iso).code;if(!c)return;
     cnt[c]=(cnt[c]||0)+1;
     const cat=codeInfo(c).cat,h=effHours(id,iso);
@@ -436,7 +441,7 @@ function calcStats(id,days){
     else if(cat==='ot')hOT+=h;
     else if(cat==='leave')hLeave+=h;
   });
-  return{cnt,hWork,hOT,hLeave};
+  return{cnt,hWork,hOT,hLeave,hTrain:rnd1(hTrain)};
 }
 /* Số CA tăng ca — ca kép cũng là một lần tăng ca */
 function otShifts(s){return Object.entries(s.cnt)

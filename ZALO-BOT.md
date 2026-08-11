@@ -438,6 +438,7 @@ Mục 3, 4, 7, 8 không cần liên kết từng người — chúng vốn hợp
 | R5 — không gửi bản tin rỗng | — | chưa có bản tin nào |
 | R6 — chống trùng | ✅ đã cài | khoá hàng đợi chính là `notifId` |
 | R11 — bản tin gom 08:00 | ✅ đã cài 10/08/2026 | kênh `'digest'` + sổ chờ `S.digest`; transaction trên `meta/digestDay` chọn đúng 1 máy bắn. Áp cho đơn `ot/multi/late/wt`, tin `apprNeed`/`cancelled`. Hộp gửi `zaloOut*` KHÔNG làm nổi việc này vì chỉ gộp được tin cùng máy trong 4 giây. Xem `js/21-notify.js` và README mục v6.8 |
+| R13 — tin đào tạo gộp một tin | ✅ đã cài 11/08/2026 | kênh `'training'` = `'batch'`, khoá gộp `'training'`, `zaloIsBroadcast=1`. Nhãn nhóm `n.aud` ('Training attendees' / 'Approvers') **giống nhau ở mọi tin của cùng một buổi** → vân tay `zaloFp` trùng → xếp 8 người vẫn tốn ĐÚNG 1 tin. Xem `js/22-training.js` và README mục v7.0 |
 | R12 — kết quả duyệt OT không bắn lẻ | ✅ đã cài 10/08/2026 | `approved` của đơn `ot/multi/late/wt` vào bản tin 08:00. `rejected` GIỮ kênh 'now' (bị từ chối mà biết muộn thì đi làm thừa). Nghỉ phép / đổi ca vẫn 'now' toàn bộ |
 
 ---
@@ -531,3 +532,110 @@ Tin `apprNeed` trong bảng Thông báo **bấm được**, nhảy thẳng sang 
 
 `refreshBellBadge()` ở `js/03-nav.js` cập nhật cả hai chấm đỏ; gọi từ
 `refreshBadge()`, `openMoreSheet()` và sau khi `markSeen`.
+
+---
+
+## 2d. Thay đổi 11/08/2026 — bản app v7.0
+
+### Kênh mới `training` — lịch đào tạo
+
+`js/22-training.js` cho phép quản trị / SC / thư ký / QL người Hàn xếp lịch đào tạo cho
+cả tổ, và nhân viên tự khai lịch của mình (chờ duyệt). Mỗi lần lưu, app sinh **một
+thông báo trong app cho mỗi người** — và đó chính là chỗ dễ đẻ ra fan-out.
+
+| Trường | Giá trị |
+|---|---|
+| `ZALO_CHANNEL.training` | `'batch'` |
+| `ZALO_GROUP_KEY.training` | `'training'` |
+| `zaloIsBroadcast(_, 'training')` | `1` — tin gửi CHUNG, Apps Script bỏ dòng `👤 <tên>` |
+| `zaloAudienceName` | lấy `n.aud`: `'Training attendees'` hoặc `'Approvers'` |
+| `ZALO_TITLE.training` | `🎓 TRAINING SCHEDULE` |
+| `ZALO_ACTION.training` | `See the training schedule in app` |
+
+**Vì sao `'batch'` chứ không `'now'`:** đào tạo luôn được xếp trước vài ngày; biết muộn
+10 phút không ai đi sai giờ. Tin gấp (đổi ca, cover, sửa lịch) vẫn ở `'now'`.
+
+**Vì sao KHÔNG cho vào kênh `'digest'`:** bản tin 08:00 chỉ nhận **tin giấy tờ thuần**
+(`apprNeed` / `approved` / `cancelled`). Đào tạo là **tin đổi lịch đi làm** — dời sang
+sáng hôm sau thì có người đã lỡ buổi tối nay.
+
+### Thân tin dựng từ bản ghi, không bê tiếng Việt sang
+
+`zaloLines()` case `'training'` đọc thẳng `S.trainings[n.trId]`:
+
+```
+🎓 TRAINING SCHEDULE
+Chemical safety training
+Wed 19/08 · Thu 20/08
+Overtime for training  17:00–20:00
+Venue: Meeting room 2
+Attendees (2): Tran Van A, Le Thi C
+An overtime request has been created for each attendee.
+👉 See the training schedule in app
+```
+
+Bốn chốt trong khuôn này:
+
+1. **Ngày cắt ở 5** rồi `+N more` — tin đọc trên điện thoại không chịu nổi 20 dòng.
+2. **Người cắt ở 12** rồi `, …`.
+3. Bản `pending` ghi hẳn `⏳ Requested by <tên> — pending approval`. Người nhận là **cấp
+   duyệt**, không phải người đi học; hai tin nhìn giống nhau thì họ bỏ qua.
+4. Buổi đã bị xoá mà tin còn trong hàng đợi → rơi về `n.text`, **không nuốt tin**.
+
+Mã ca nội bộ không lọt ra (không có mã ca nào trong khuôn này) — harness mục 9 vẫn quét.
+
+### Mã ca mới BT
+
+`Z_SHIFT.BT = 'Business trip'`. Đi công tác là `cat:'leave'` ở phía app (đếm quân số trừ
+ra) nhưng ăn 8h công — phía Zalo chỉ cần in đúng chữ, không quy đổi gì.
+
+### Kiểm thử
+
+```
+node _test/zalo-format-harness.js    # mục 9 — 19 phép thử riêng cho tin đào tạo
+node _test/training-harness.js       # D1–D4 — thu hồi & gửi lại, nhãn nhóm
+```
+
+### Sửa 11/08/2026 (chiều) — bản app v7.1: mỗi ngày một dòng
+
+Chế độ "trong ca hay tăng ca" nay quyết theo **từng cặp (người, ngày)**, nên một câu
+duy nhất cho cả buổi là **nói sai với một nửa người nhận** của tin gửi chung. Thân tin
+đổi sang **mỗi ngày một dòng**, ngày trộn cả hai thì ghi rõ số người mỗi bên:
+
+```
+🎓 TRAINING SCHEDULE
+Mixed session
+Wed 19/08  overtime 22:00–23:30 (1.5h) for 1 · during shift for 1
+Attendees (2): Tran Van A, Hoang Trung
+An overtime request has been created for each affected attendee.
+```
+
+Các dòng này do `trZaloDayLines()` ở `js/22-training.js` dựng — `zaloLines()` gọi sang,
+có nhánh dự phòng nếu file đó chưa tải. Cắt ở **5 ngày** rồi `… +N more days`.
+
+Kèm theo: mã **OTO** (tăng ca ca hành chính 08–17h) có `Z_SHIFT.OTO = 'OT 08:00–17:00'`.
+
+> Harness `zalo-format-harness.js` nay **nạp hẳn `js/22-training.js`** thay vì viết lại
+> vài hàm giả. Hàm giả thì bài kiểm xanh mà tin vẫn sai — đúng thứ khuôn tin này phải in
+> đúng lại là thứ hàm giả không mô phỏng nổi.
+
+
+### Sửa 11/08/2026 (tối) — bản app v7.2: khung giờ của từng ngày
+
+Giờ học nay khai **riêng cho từng ngày** (`tr.dayTime`), vì phần lớn buổi đào tạo chỉ vài
+tiếng hoặc nửa buổi. Dòng ngày trong tin đổi khuôn: **khung giờ đứng ngay sau ngày**, rồi
+số giờ, rồi mới tới cách tính.
+
+```
+🎓 TRAINING SCHEDULE
+Half day course
+Wed 19/08  08:00–17:00  (8h)  overtime
+Thu 20/08  08:00–12:00  (4h)  overtime
+Lunch hour deducted.
+Attendees (1): Tran Van A
+An overtime request has been created for each affected attendee.
+```
+
+Khung giờ là thứ người đọc cần nhất ở tin này, và mỗi ngày một khác nên **không gộp lên
+một dòng chung được**. Buổi học trong ca cũng in giờ — trước đây chỉ ghi "during shift"
+mà không nói mấy giờ, người nhận không biết phải xin nghỉ nửa ngày hay cả ngày.
