@@ -511,7 +511,11 @@ function lvlLabel(k){
      'Site Manager' → 'Section Chief' cho khớp (js/21-notify.js zLevel). */
   if(k==='trung'){const e=empById(ROOT_ADMIN);const n=(e&&e.name)||'';
                   return n?('Section Chief ('+n+')'):'Section Chief';}
-  if(k==='kmgr'){const n=krMgrName();return n?('Quản lý người Hàn ('+n+')'):'Quản lý người Hàn';}
+  /* Chức danh đi qua t() để đổi theo ngôn ngữ đang xem — chuỗi này chảy vào
+     chuông thông báo và màn Duyệt, mà Quản lý người Hàn đọc bản EN. Tên
+     người trong ngoặc là DỮ LIỆU, giữ nguyên. */
+  if(k==='kmgr'){const L=(typeof t==='function')?t('Quản lý người Hàn'):'Quản lý người Hàn';
+                 const n=krMgrName();return n?(L+' ('+n+')'):L;}
   return k;
 }
 

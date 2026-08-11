@@ -274,6 +274,100 @@ function pendingConfirms(id){
     .filter(n=>!notifIsStale(n))
     .sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
 }
+/* ============================================================
+   CHỮ CỦA THÔNG BÁO — DỰNG LÚC HIỂN THỊ, KHÔNG PHẢI LÚC TẠO   ★ v7.6
+   ------------------------------------------------------------
+   LỖI
+
+   Quản lý người Hàn bật giao diện EN nhưng chuông vẫn toàn tiếng Việt:
+   "Đơn Tăng ca của Vũ Ngọc Quốc đang chờ Quản lý người Hàn duyệt".
+
+   NGUYÊN NHÂN
+
+   `n.text` được dựng NGAY LÚC TẠO, bằng ngôn ngữ của NGƯỜI TẠO, rồi cất
+   xuống Firebase. Nhân viên người Việt gửi đơn → câu tiếng Việt được đóng
+   băng → ai mở ra cũng thấy tiếng Việt, đổi nút EN/VI không cứu được.
+   Nút đổi ngôn ngữ chỉ dịch được thứ dựng lúc VẼ.
+
+   CÁCH CHỮA
+
+   Không dịch `n.text` (không thể — nó là chuỗi đã đông cứng). Thay vào đó
+   DỰNG LẠI câu từ DỮ LIỆU GỐC ngay lúc vẽ:
+     · tin về đơn      → đọc lại S.requests[n.reqId]
+     · tin sự kiện     → đọc lại S.events[n.evId]
+     · tin đào tạo     → đọc lại S.trainings[n.trId]
+   Đúng nguyên tắc đã dùng cho tin Zalo (js/21-notify.js): thân tin dựng từ
+   dữ liệu, không bê chuỗi có sẵn.
+
+   `n.text` GIỮ NGUYÊN làm bản dự phòng cho tin cũ và cho trường hợp bản
+   ghi gốc đã bị xoá — thà một câu tiếng Việt còn hơn một dòng trống.
+   ============================================================ */
+/* Câu cho tin liên quan tới ĐƠN (zk = apprNeed / approved / rejected / …) */
+function notifReqText(n,r){
+  const type=t2(REQ_LABEL[r.type]||r.type);
+  const day=fmtVN(r.from);
+  if(n.zk==='apprNeed'){
+    const e=empById(r.empId);
+    return '📥 '+tf('Đơn {type} của {who} đang chờ {lvl} duyệt',
+      {type,who:(e&&e.name)||r.empId,
+       lvl:(typeof lvlLabel==='function')?lvlLabel(n.lvl||reqNextLevel(r)):''})+' · '+day;
+  }
+  const H={
+    approved    :'✅ '+tf('Đơn {type} đã được DUYỆT chính thức',{type}),
+    provapproved:'🕒 '+tf('Đơn {type} đã được {lvl} TẠM DUYỆT (chờ Quản lý người Hàn chốt)',
+                    {type,lvl:(typeof lvlLabel==='function')?lvlLabel('trung'):''}),
+    fe          :'☑️ '+tf('Đơn {type} đã được Field Engineer duyệt (chờ cấp trên)',{type}),
+    rejected    :'❌ '+tf('Đơn {type} bị TỪ CHỐI',{type}),
+    revoked     :'↩️ '+tf('Đơn {type} đã bị HUỶ DUYỆT',{type}),
+    cancelled   :'🗑️ '+tf('Đơn {type} đã bị HUỶ',{type})
+  }[n.zk];
+  if(!H)return '';
+  /* Lý do từ chối là chữ NGƯỜI DÙNG GÕ — giữ nguyên, không dịch */
+  const extra=(n.zk==='rejected'&&r.reason)?(' · '+r.reason):'';
+  return H+' · '+day+extra;
+}
+/* Câu cho các tin phản hồi hai chiều giữa nhân viên (nhóm C) */
+const NOTIF_C_TEXT={
+  schedRevoke :'đã THU HỒI thay đổi lịch {day} — lịch trả về ca chuẩn {code}. Nếu bạn đã gửi đơn theo thay đổi này, hãy vào Đơn của tôi để huỷ.',
+  schedDecline:'đã HUỶ thay đổi lịch bạn tạo: {day} {old} → {now}',
+  swapOk      :'đã XÁC NHẬN đổi ca với bạn: {day}',
+  swapNo      :'đã TỪ CHỐI đổi ca với bạn: {day}',
+  coverOk     :'đã NHẬN OT cover cho bạn: {day}',
+  coverNo     :'đã TỪ CHỐI OT cover: {day} — hãy chọn người khác',
+  coverRemoved:'đã gỡ bạn khỏi vai trò OT cover · {day}'
+};
+/* CHỮ HIỂN THỊ của một thông báo — mọi nơi vẽ chuông phải gọi hàm này,
+   KHÔNG đọc thẳng n.text nữa. */
+function notifText(n){
+  if(!n)return '';
+  try{
+    /* Sự kiện trên lịch */
+    if(n.kind==='event'&&n.evId&&S.events&&S.events[n.evId]&&typeof evDateLabel==='function'){
+      const ev=S.events[n.evId];
+      return t('Sự kiện trên lịch')+': '+(ev.title||t('Sự kiện'))
+        +' — '+evDateLabel(ev)+(ev.note?' · '+ev.note:'');
+    }
+    /* Lịch đào tạo */
+    if(n.kind==='training'&&n.trId&&S.trainings&&S.trainings[n.trId]&&typeof trSummaryText==='function'){
+      const tr=S.trainings[n.trId];
+      return '🎓 '+(n.trSt==='pending'?t('Lịch đào tạo chờ duyệt'):t('Bạn có lịch đào tạo'))
+        +': '+trSummaryText(tr,n.to);
+    }
+    /* Tin về đơn */
+    if(n.reqId&&S.requests&&S.requests[n.reqId]){
+      const s=notifReqText(n,S.requests[n.reqId]);
+      if(s)return s;
+    }
+    /* Phản hồi hai chiều */
+    if(n.zk&&NOTIF_C_TEXT[n.zk]){
+      const r=n.reqId&&S.requests?S.requests[n.reqId]:null;
+      const day=fmtVN(n.iso||(r&&r.from)||'');
+      return tf(NOTIF_C_TEXT[n.zk],{day,code:n.std||'—',old:n.oldCode||'—',now:n.newCode||'—'});
+    }
+  }catch(e){/* dữ liệu hỏng thì rơi về bản đã lưu, không để vỡ chuông */}
+  return n.text||'';
+}
+
 /* Toàn bộ thông báo gửi tới id (cho tab Thông báo) */
 function myNotifs(id){
   return Object.values(S.notifs||{})
@@ -2064,7 +2158,7 @@ function myPanelNtf(id){
     ${evs.slice(0,15).map(n=>`<div class="ntf-item event${n.seen?'':' fresh'}"${
        n.iso?` onclick="closeMyPanel();openDaySheet('${n.iso}')"`:''}>
        <span class="ic">📌</span>
-       <span class="tx">${esc(n.text||'')}
+       <span class="tx">${esc(notifText(n))}
          <i class="tm">${fmtDateTime(n.createdAt)}</i></span></div>`).join('')}</div>`:'';
   /* Lịch đào tạo (js/22-training.js) — bấm vào mở màn xếp lịch để xem chi
      tiết; quản lý bấm là vào đúng chỗ có nút duyệt. */
@@ -2073,7 +2167,7 @@ function myPanelNtf(id){
     ${trs.slice(0,15).map(n=>`<div class="ntf-item training${n.seen?'':' fresh'}"
        onclick="closeMyPanel();openTrainMgr()">
        <span class="ic">🎓</span>
-       <span class="tx">${esc(n.text||'')}
+       <span class="tx">${esc(notifText(n))}
          <i class="tm">${fmtDateTime(n.createdAt)}</i></span></div>`).join('')}</div>`:'';
   /* Tin "có đơn chờ bạn duyệt" (zk:'apprNeed') bấm vào là nhảy thẳng sang tab
      Duyệt đơn — đây là lối vào chính của Quản lý người Hàn và cấp duyệt, họ
@@ -2086,7 +2180,7 @@ function myPanelNtf(id){
       return `<div class="ntf-item info${isAppr?' appr':''}${n.seen?'':' fresh'}"${
          isAppr?` onclick="closeMyPanel();go('appr')" title="${t('Mở tab Duyệt đơn')}"`:''}>
        <span class="ic">${isAppr?'📥':'📣'}</span>
-       <span class="tx">${isAppr?'':who+' '}${esc(n.text||'')}
+       <span class="tx">${isAppr?'':who+' '}${esc(notifText(n))}
          ${isAppr?`<i>${t('Bấm để mở tab Duyệt đơn')}</i>`:''}
          <i class="tm">${fmtDateTime(n.createdAt)}</i></span></div>`;
     }).join('')}</div>`:'';

@@ -79,6 +79,23 @@ function i18nLookup(k){
 }
 /* Bí danh cho những hàm đã dùng biến cục bộ tên `t` (loại đơn) — cùng chức năng */
 function t2(s){return t(s);}
+/* ============================================================
+   DỊCH CÂU CÓ CHỖ TRỐNG   ★ v7.6
+   ------------------------------------------------------------
+       tf('Đơn {type} của {who} đang chờ {lvl} duyệt', {type:…, who:…, lvl:…})
+
+   Vì sao không ghép mảnh (t('Đơn')+' '+t(label)+' '+t('đang chờ')…): trật tự
+   từ của tiếng Anh KHÁC tiếng Việt, ghép mảnh thì bản EN đọc như máy dịch.
+   Cả câu là MỘT khoá, người dịch tự xếp lại chỗ trống theo ngữ pháp của họ.
+   Tên chỗ trống có nghĩa (không phải %s) nên đổi thứ tự cũng không lẫn.
+   ============================================================ */
+function tf(key,vars){
+  let s=t(key);
+  if(vars)for(const k in vars)s=s.split('{'+k+'}').join(vars[k]==null?'':vars[k]);
+  /* Chỗ trống nào không được truyền giá trị thì XOÁ HẲN — thà thiếu một mẩu
+     còn hơn để người dùng đọc thấy "{type}" giữa câu. */
+  return s.replace(/\{[a-zA-Z0-9_]+\}/g,'').replace(/\s{2,}/g,' ').trim();
+}
 /* Ngày tháng theo ngôn ngữ */
 function localeTag(){return LANG==='en'?'en-GB':'vi-VN';}
 
@@ -1536,6 +1553,24 @@ const I18N_EN={
 'Thông báo đã gửi và đơn tăng ca chưa duyệt cũng bị thu hồi.':'The notification already sent and any not-yet-approved overtime requests will be revoked too.',
 'Bạn có lịch đào tạo':'You have training scheduled',
 'Lịch đào tạo chờ duyệt':'Training awaiting approval',
+/* ---- v7.6 · chữ thông báo dựng lúc hiển thị (tf + chỗ trống {…}) ----
+   Cả câu là MỘT khoá để bản EN xếp lại được trật tự từ. Chỗ trống giữ
+   nguyên tên trong bản dịch, KHÔNG dịch phần trong ngoặc nhọn. */
+'Đơn {type} của {who} đang chờ {lvl} duyệt':'{type} request from {who} — waiting for {lvl}',
+'Đơn {type} đã được DUYỆT chính thức':'{type} request APPROVED',
+'Đơn {type} đã được {lvl} TẠM DUYỆT (chờ Quản lý người Hàn chốt)':'{type} request PROVISIONALLY approved by {lvl} (awaiting the Korean manager)',
+'Đơn {type} đã được Field Engineer duyệt (chờ cấp trên)':'{type} request approved by the Field Engineer (awaiting the next level)',
+'Đơn {type} bị TỪ CHỐI':'{type} request REJECTED',
+'Đơn {type} đã bị HUỶ DUYỆT':'{type} request approval WITHDRAWN',
+'Đơn {type} đã bị HUỶ':'{type} request CANCELLED',
+'đã THU HỒI thay đổi lịch {day} — lịch trả về ca chuẩn {code}. Nếu bạn đã gửi đơn theo thay đổi này, hãy vào Đơn của tôi để huỷ.':'withdrew the schedule change on {day} — back to the standard shift {code}. If you already submitted a request for it, cancel it under My requests.',
+'đã HUỶ thay đổi lịch bạn tạo: {day} {old} → {now}':'declined the schedule change you made: {day} {old} → {now}',
+'đã XÁC NHẬN đổi ca với bạn: {day}':'ACCEPTED the shift swap with you: {day}',
+'đã TỪ CHỐI đổi ca với bạn: {day}':'DECLINED the shift swap with you: {day}',
+'đã NHẬN OT cover cho bạn: {day}':'ACCEPTED the OT cover for you: {day}',
+'đã TỪ CHỐI OT cover: {day} — hãy chọn người khác':'DECLINED the OT cover: {day} — please pick someone else',
+'đã gỡ bạn khỏi vai trò OT cover · {day}':'removed you from OT cover · {day}',
+
 /* ---- v7.4 · Bảng tin của thư ký / QL người Hàn ---- */
 'Bảng tin':'Dashboard',
 'Sắp tới':'Coming up',
@@ -1867,9 +1902,30 @@ function i18nWatch(){
 /* ============================================================
    ĐỔI NGÔN NGỮ
    ============================================================ */
+/* ============================================================
+   CHỐNG TÁI NHẬP setLang()   ★ v7.6.1 — sửa lỗi ĐƠ TRẮNG MÀN HÌNH
+   ------------------------------------------------------------
+   v7.6 cho setLang() vẽ lại màn hình để chuông đổi ngôn ngữ ngay. Nhưng
+   vẽ lại đi qua một VÒNG KÍN:
+
+       setLang → renderMe → applyRoleUI → applyPerm
+               → applyLangForUser → setLang → …
+
+   applyPerm() (js/10-account.js) gọi applyLangForUser() ở cuối, mà hàm đó
+   lại gọi setLang(). Vòng lặp vô hạn ngay lúc khởi động → trình duyệt treo,
+   cổng đăng nhập đứng ở "Đang tải dữ liệu…" và không gõ được gì.
+
+   Hai chốt, mỗi chốt tự nó đủ để chặn:
+     1. NGÔN NGỮ KHÔNG ĐỔI thì không vẽ lại — applyLangForUser() gọi lại
+        đúng ngôn ngữ đang dùng nên rơi vào đây, thoát ngay.
+     2. Cờ _langBusy: đang trong một lượt setLang thì lượt lồng bên trong
+        chỉ đặt biến rồi thoát, không vẽ.
+   ============================================================ */
+let _langBusy=false;
 function setLang(l,remember){
   const want=(l==='en')?'en':'vi';
   const wasEn=(LANG==='en');
+  const changed=(want!==LANG);
   LANG=want;
   if(remember){try{localStorage.setItem(langKeyFor(meId()),LANG);}catch(e){}}
   const b=$('langBtn');
@@ -1880,6 +1936,22 @@ function setLang(l,remember){
   // ngược lại được, nên khi rời chế độ EN thì nạp lại trang cho sạch.
   if(wasEn&&LANG==='vi'){location.reload();return;}
   if(LANG==='en'){i18nApply();i18nWatch();}
+  /* ★ v7.6 — VẼ LẠI những màn dựng chữ bằng JS.
+     i18nApply() dịch được các NÚT chữ đã có sẵn trong HTML, nhưng chuông
+     thông báo dựng câu bằng notifText() lúc vẽ — chuỗi đó không nằm trong
+     từ điển (nó là câu đã ghép xong), nên chỉ vẽ lại mới đổi được ngôn ngữ.
+     CHỈ vẽ khi ngôn ngữ THẬT SỰ đổi và không đang ở trong một lượt setLang
+     khác — xem khối chú thích chống tái nhập ở trên. */
+  if(!changed||_langBusy)return;
+  _langBusy=true;
+  try{
+    if(typeof renderMyPanel==='function'&&$('myPanelMask')
+       &&$('myPanelMask').classList.contains('on'))renderMyPanel();
+    if(typeof renderMe==='function'&&typeof curView!=='undefined'&&curView==='me')renderMe(true);
+    if(typeof renderTrainMgr==='function'&&$('trMask')&&$('trMask').classList.contains('on'))renderTrainMgr();
+    if(typeof renderEventMgr==='function'&&$('evMask')&&$('evMask').classList.contains('on'))renderEventMgr();
+  }catch(e){console.warn('[i18n] vẽ lại sau khi đổi ngôn ngữ:',e);}
+  finally{_langBusy=false;}
 }
 function toggleLang(){setLang(LANG==='en'?'vi':'en',true);}
 /* Gọi sau khi đăng nhập / đổi quyền: lấy lựa chọn đã lưu, không có thì theo quyền */

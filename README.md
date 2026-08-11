@@ -2204,3 +2204,138 @@ có chữ "Mr" ở giữa không bị bắt nhầm · avatar đúng quy tắc ch
 > đang kiểm.
 
 Toàn bộ harness xanh (**535 phép thử**). Cache bump **`?v=78`**.
+
+---
+
+# v7.6 — Thông báo trong app dịch theo ngôn ngữ đang xem
+
+## Lỗi
+
+Quản lý người Hàn bật giao diện **EN**, nhưng chuông vẫn toàn tiếng Việt:
+
+> 📥 Đơn Tăng ca của Vũ Ngọc Quốc đang chờ Quản lý người Hàn duyệt · 07/08
+
+## Nguyên nhân
+
+`n.text` được dựng **ngay lúc TẠO**, bằng ngôn ngữ của **người tạo**, rồi cất xuống
+Firebase. Nhân viên người Việt gửi đơn → câu tiếng Việt bị **đóng băng** → ai mở ra cũng
+thấy tiếng Việt. Nút EN/VI không cứu được: nó chỉ dịch được thứ dựng lúc **VẼ**.
+
+Đây không phải lỗi thiếu khoá từ điển — thêm bao nhiêu khoá cũng vô ích, vì chuỗi đã ghép
+xong không còn khớp khoá nào.
+
+## Cách chữa
+
+Dựng lại câu từ **dữ liệu gốc** ngay lúc vẽ — đúng nguyên tắc đã dùng cho tin Zalo:
+
+| Loại tin | Dựng lại từ |
+|---|---|
+| về đơn (`apprNeed` / `approved` / `rejected` / …) | `S.requests[n.reqId]` |
+| sự kiện | `S.events[n.evId]` |
+| đào tạo | `S.trainings[n.trId]` |
+| phản hồi hai chiều (nhóm C) | `n.iso` / `n.oldCode` / `n.newCode` |
+
+`notifText(n)` là cửa duy nhất; ba khối chuông (sự kiện · đào tạo · thông báo) đều gọi nó
+thay vì đọc thẳng `n.text`.
+
+**`n.text` vẫn giữ nguyên** làm bản dự phòng: tin cũ tạo trước bản này, và trường hợp bản
+ghi gốc đã bị xoá. Thà một câu tiếng Việt còn hơn một dòng trống.
+
+### `tf()` — dịch câu có chỗ trống
+
+```js
+tf('Đơn {type} của {who} đang chờ {lvl} duyệt', {type, who, lvl})
+// EN: "{type} request from {who} — waiting for {lvl}"
+```
+
+Cả câu là **một khoá**, không ghép mảnh — trật tự từ tiếng Anh khác tiếng Việt, ghép mảnh
+thì bản EN đọc như máy dịch. Chỗ trống mang **tên có nghĩa** (không phải `%s`) nên người
+dịch đổi vị trí thoải mái. Chỗ trống nào không được truyền giá trị thì **xoá hẳn** — thà
+thiếu một mẩu còn hơn để người dùng đọc thấy `{type}` giữa câu.
+
+### Cái gì KHÔNG dịch
+
+Tên người, tên sự kiện, tên buổi học, **lý do từ chối do người dùng gõ** — đó là **dữ
+liệu**, không phải câu chữ của app. Harness B5 canh riêng chỗ này.
+
+### Hai chỗ phải sửa kèm
+
+* `lvlLabel('kmgr')` trả chuỗi Việt cứng `'Quản lý người Hàn'` → nay đi qua `t()`. Tên
+  người trong ngoặc vẫn giữ nguyên.
+* `setLang()` nay **vẽ lại** chuông và các hộp thoại đang mở. Không có bước này thì bấm EN
+  xong chuông vẫn tiếng Việt cho tới khi người dùng tự đóng mở lại — `i18nApply()` chỉ
+  dịch được chữ có sẵn trong HTML, không dịch được câu do JS ghép.
+
+## Kiểm chứng
+
+```
+node _test/notif-i18n-harness.js     # 38 phép thử (A–F)
+```
+
+Harness nạp **i18n thật** (`js/14-i18n.js`) chứ không stub — chính nó là thứ đang kiểm.
+Phủ: `tf()` với chỗ trống thiếu/thừa · cả 7 loại tin về đơn · sự kiện · đào tạo · 3 loại
+phản hồi hai chiều · bản dự phòng khi bản ghi gốc đã xoá · và quét file để canh không nơi
+nào còn vẽ thẳng `n.text`.
+
+Phép kiểm chính: **bóc tên người ra rồi soi xem còn chữ Việt nào không**. Tên là dữ liệu
+cố ý giữ nguyên — không bóc thì bài kiểm báo đỏ ở đúng chỗ sản phẩm đang làm đúng.
+
+Toàn bộ harness xanh (**573 phép thử**). i18n **+15 khoá EN** (dạng câu có chỗ trống).
+Cache bump **`?v=79`**.
+
+---
+
+# v7.6.1 — SỬA GẤP: app đơ ở cổng đăng nhập
+
+## Triệu chứng
+
+Cổng đăng nhập đứng ở *"Đang tải dữ liệu… · chưa có dữ liệu nhân sự"*, **không gõ được**
+mã NV lẫn mật khẩu, cả giao diện đơ. Do bản v7.6 gây ra.
+
+## Nguyên nhân
+
+v7.6 cho `setLang()` **vẽ lại màn hình** để chuông đổi ngôn ngữ ngay. Nhưng vẽ lại đi qua
+một **vòng gọi kín** đã có sẵn trong app:
+
+```
+setLang → renderMe → applyRoleUI → applyPerm → applyLangForUser → setLang → …
+```
+
+`applyPerm()` (`js/10-account.js`) gọi `applyLangForUser()` ở cuối, mà hàm đó lại gọi
+`setLang()`. Lặp vô hạn ngay trong lượt khởi động → luồng JS không bao giờ nhả → trình
+duyệt treo, không nhận cả thao tác gõ phím.
+
+## Sửa
+
+Hai chốt, **mỗi chốt tự nó đủ** để chặn:
+
+1. **Ngôn ngữ không đổi thì không vẽ lại** (`if(!changed||_langBusy)return`).
+   `applyLangForUser()` luôn gọi lại đúng ngôn ngữ đang dùng nên rơi vào đây, thoát ngay.
+2. **Cờ `_langBusy`** — đang trong một lượt `setLang` thì lượt lồng bên trong chỉ đặt biến
+   rồi thoát. Thả cờ trong `finally` để vẽ lỗi cũng không kẹt cờ.
+
+Lỗi vẽ lại nay được `catch` và ghi `console.warn` thay vì nuốt im lặng.
+
+## Vì sao 573 phép thử không bắt được
+
+Vì **không phép thử nào nạp cả app**. Mỗi harness dựng sandbox riêng với đúng vài file nó
+cần, nên một **vòng gọi kín bắc qua bốn file** (`14-i18n` → `13-portal` → `10-account` →
+ngược lại `14-i18n`) rơi vào đúng khoảng trống giữa chúng.
+
+Đã bổ sung `_test/boot-harness.js`:
+
+* Đọc **thứ tự nạp thẳng từ `index.html`** (không chép tay — thêm file mới là nó tự biết),
+  nạp lần lượt vào một DOM giả, rồi chạy nguyên trình tự khởi động của `js/12-main.js`.
+* Vòng lặp vô hạn thì Node **treo im lặng**, không ném lỗi — nên harness **đếm số lần vào
+  `setLang`** và ném lỗi khi vượt ngưỡng, biến "treo" thành "đỏ rõ ràng".
+
+**Đã kiểm ngược:** bỏ chốt ra → `B1`/`B2` đỏ ngay (`setLang lặp vô hạn`, 52 lần); gắn chốt
+lại → xanh. Một bài kiểm hồi quy chưa từng thấy nó đỏ thì chưa chứng minh được điều gì.
+
+## Bài học ghi lại
+
+> Thêm lời gọi **vẽ lại** vào một hàm nằm **trên đường vẽ lại** là tự tạo vòng lặp.
+> Trước khi đặt `renderX()` vào đâu, phải hỏi: *hàm này có bị chính `renderX()` gọi lại
+> không?* Ở đây câu trả lời là có, qua bốn file.
+
+Toàn bộ harness xanh (**585 phép thử**). Cache bump **`?v=80`**.
