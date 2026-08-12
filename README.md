@@ -2533,3 +2533,529 @@ Cache bump **`?v=82`**.
 > Bài học: một phép thử gọi thẳng hàm dọn (`zaloWithdraw`) thì chỉ chứng minh hàm
 > đó chạy đúng, **không** chứng minh có ai gọi nó. Muốn chắc thì phép thử phải đi
 > đúng đường mà người dùng bấm.
+
+---
+
+# v7.8 — Khoá đào tạo · phân loại sự kiện · mặc định in · HR hai trạng thái
+
+## Yêu cầu
+
+Bốn việc rời nhau, gộp một bản:
+
+1. **Đơn làm liên tục nhiều ngày** và **đơn đổi ca** mặc định *phải in*; các loại
+   còn lại mặc định *không cần in*.
+2. **HR chỉ có hai lựa chọn**: chưa lên hệ thống HR / đã lên hệ thống HR.
+3. **Sự kiện**: thêm nút gọi lại **bảng** sự kiện, và **phân loại** sự kiện
+   (VLGC unloading, internal training, external training, maintenance, audit…).
+4. **Đào tạo**: một lần đào tạo thường chia **nhiều buổi**. Phải khai được
+   **khoá**, phân phối người vào từng buổi, và **chuyển người qua lại giữa các
+   buổi** của khoá đó. Kèm **bảng tổng hợp** để bấm vào xem.
+
+## 1 · Mặc định in đổi theo đúng quy định nộp giấy
+
+`js/08-requests.js`:
+
+```js
+const REQ_MUST_PRINT=['multi','swap'];      // trước: ['wt','swap']
+function defaultNoPrint(type){return !REQ_MUST_PRINT.includes(type);}
+```
+
+Một hằng, mọi nơi đọc theo: form khai đơn (`dsNoPrint`), đơn OT do đào tạo sinh
+ra, thanh lọc "Chờ in / Không in" ở màn Duyệt. Đơn **bổ sung công (`wt`)** rời
+khỏi danh sách bắt buộc in — nhân sự nhận loại này qua hệ thống HR.
+
+## 2 · HR chỉ còn hai trạng thái
+
+Dữ liệu vốn đã chỉ có `r.hrAt` (có = đã lên HR). Nhưng thanh lọc lại bày **bốn**
+chip, trong đó `todo` ("⏰ Cần nhập HR" = đã duyệt chốt mà chưa gõ) là một
+**trạng thái thứ ba trá hình** — người dùng phải tự nghĩ ra nó khác "chưa nhập" ở
+chỗ nào. Nay:
+
+```
+Mọi đơn  ·  ○ Chưa lên hệ thống HR  ·  ✅ Đã lên hệ thống HR
+```
+
+`apprMatch()` vẫn nhận mã `'todo'` cũ nhưng **viết lại thành `'no'`** ngay tại
+chỗ. Lý do: bộ lọc còn lưu trong phiên làm việc của người đang mở app; bỏ nhánh
+`todo` đi mà không quy đổi thì bộ lọc âm thầm thành "không lọc gì" — kiểu lỗi khó
+thấy nhất, vì màn hình vẫn đầy dữ liệu, chỉ là **sai dữ liệu**.
+
+## 3 · Sự kiện có loại, và có bảng
+
+`js/20-events.js` thêm `ev.cat`:
+
+- **Loại dựng sẵn** — `EV_CATS`: 🚢 VLGC unloading · 🎓 Internal training ·
+  🏫 External training · 🛠 Maintenance · 📋 Audit · 🔎 Inspection ·
+  🚨 Emergency drill · 👔 Visitor · 📌 Khác.
+- **Loại tự thêm** — chính là chuỗi người dùng gõ. **Không** có bảng danh mục
+  riêng, **không** thêm nhánh Firebase: loại tự thêm *sống nhờ* các sự kiện đang
+  dùng nó, `evCatAll()` quét ra từ `S.events`. Không còn sự kiện nào dùng thì loại
+  tự biến mất — không đẻ rác phải đi dọn.
+
+Lịch vẫn **một màu** cho mọi sự kiện (theo yêu cầu cũ); phân loại chỉ để **lọc và
+tổng hợp**, cộng thêm icon trong tooltip / dải nhắc / tin Zalo.
+
+**Bảng sự kiện** dùng chung hộp thoại với form, chuyển bằng hai tab, và có nút
+riêng trên thanh công cụ Lịch (`openEventMgr('','table')`). Lọc theo **loại** và
+theo **kỳ**, kèm số đếm trên từng chip. Một sự kiện vắt qua hai kỳ thì hiện ở cả
+hai — `evInPeriod()` xét *có ngày nào rơi vào kỳ*, không xét ngày đầu.
+
+## 4 · Khoá đào tạo — `js/23-course.js`
+
+### Vì sao phải có
+
+Bản cũ coi **mỗi lần xếp là một buổi rời**. Bốn buổi của cùng một khoá là bốn bản
+ghi không liên quan gì nhau, nên không trả lời được "khoá này ai học rồi, ai
+chưa", và chuyển một người từ buổi 2 sang buổi 3 phải mở hai bản ghi sửa hai lần
+— không gì bảo đảm không xếp anh ta vào **cả hai**.
+
+### Mô hình
+
+| Bản ghi | Giữ cái gì | Nhánh Firebase |
+|---|---|---|
+| **Khoá** `S.courses[id]` | tên khoá, hình thức (internal / external), đơn vị đào tạo, địa điểm, ghi chú, danh sách học viên cả khoá | `courses` (mới) |
+| **Buổi** `S.trainings[id]` | y như cũ, chỉ thêm `courseId` | `trainings` |
+
+Khoá **không** phải cơ chế song song — nó là **cái kẹp hồ sơ**. Mọi thứ đã chạy
+tốt của buổi (soi trong ca / tăng ca theo từng cặp *người × ngày*, sinh đơn OT,
+thông báo, tô lịch) giữ nguyên không đụng tới.
+
+`coEmps(cid)` = danh sách khai ở khoá **HỢP** mọi người đang có tên trong các buổi.
+Vì sao phải hợp: người xếp có thể thêm thẳng ai đó vào một buổi mà quên khai ở
+khoá — nếu bảng phân bổ không thấy họ thì họ vô hình, và không ai chuyển họ đi đâu
+được.
+
+### Bảng tích: sửa nháp rồi mới lưu
+
+Phân bổ người = bảng **học viên × buổi**, ô tích nghĩa là người đó học buổi đó.
+Chuyển người giữa hai buổi = bỏ tích ô này, tích ô kia (có sẵn ô chọn *chuyển →
+chỉ buổi N* để khỏi quên bỏ tích chỗ cũ).
+
+Bảng tích chỉ sửa **bản nháp trong bộ nhớ** (`coMx`). Bấm **Lưu phân bổ** mới ghi
+thật, và chỉ ghi những buổi **thực sự đổi** (`coMxChanged()` so danh sách
+trước/sau). Vì mỗi lần đổi người là một lần gỡ & tạo lại đơn tăng ca, thu hồi &
+gửi lại thông báo, và một lượt ghi Firebase — kéo người qua lại mười lần mà lần
+nào cũng bắn tin thì cả tổ nhận mười thông báo mâu thuẫn nhau.
+
+Lúc ghi thật, mỗi buổi đi qua **`trSave()`** như khi sửa tay — không có đường tắt,
+vì đường tắt là chỗ hai lối ghi bắt đầu lệch nhau. Buổi bị bỏ hết người thì
+**không lưu** (báo lại để người dùng tự xoá buổi): xoá buổi là quyết định lớn,
+không làm ngầm.
+
+### Xoá khoá không xoá buổi
+
+Buổi đã diễn ra gắn với đơn tăng ca đã duyệt và giờ đào tạo trong báo cáo. Xoá
+khoá chỉ **gỡ cái kẹp**: các buổi trở lại thành buổi lẻ, còn nguyên. `coDelete()`
+cũng **không** tự `tombSet` — để `fbDiff()` còn dựng được bia mộ và gửi đường
+`del/courses/<id>` (bẫy v6.7).
+
+## 5 · Bảng tổng hợp đào tạo
+
+Hai câu hỏi hay bị hỏi nhất, mỗi câu một bảng — đổi bằng chip:
+
+- **Theo khoá / buổi** — dòng khoá đậm, các buổi thụt vào dưới nó, kèm ngày, giờ
+  học, số người, giờ/người, giờ tăng ca, số đơn OT; cuối mỗi khoá một dòng cộng.
+  Buổi lẻ xếp thành nhóm cuối bảng. Bấm 👥 nhảy thẳng sang bảng phân bổ của khoá.
+- **Theo người** — mỗi người một dòng: số buổi, giờ đào tạo, trong đó bao nhiêu
+  giờ là tăng ca; có dòng tổng.
+
+Mọi con số tính bằng **chính các hàm của `js/22-training.js`** (`trHoursOfEmp`,
+`trOtPairs`, `trOtTotalHours`) — không có công thức bản sao nào ở file mới.
+
+## Ba màn trong một hộp thoại
+
+Cả Sự kiện lẫn Đào tạo đều **không** mở thêm modal: chuyển màn bằng tab trong
+chính hộp thoại đang mở (`evView`, `trView`). Người dùng đi qua lại giữa "khai" và
+"tra cứu" liên tục; mỗi lần mở modal mới là một lần mất chỗ đang đứng.
+
+## Tệp đụng tới
+
+`js/23-course.js` (mới) · `js/20-events.js` · `js/22-training.js` ·
+`js/08-requests.js` · `js/01-core.js` · `js/02-storage.js` (nhánh `courses`) ·
+`js/14-i18n.js` (+~90 khoá EN) · `css/ui.css` · `index.html`.
+
+## Kiểm thử
+
+`_test/course-v78-harness.js` mới — **74 phép thử**: mặc định in, HR hai trạng
+thái, loại sự kiện (kể cả loại tự thêm biến mất khi hết người dùng), lọc bảng theo
+loại/kỳ, khoá & buổi, bảng tích nháp/áp dụng/hoàn tác, đơn OT tạo lại theo danh
+sách mới, số liệu tổng hợp, và dựng HTML ba bảng mới.
+
+Sửa hai harness cũ:
+
+- `_test/render-v58.js` bật thêm cờ **`hrm=true`** — từ v7.7 `evSave()` đi qua
+  `hrGuard()`, mà harness chỉ bật `mgr`/`adm` nên hai bài thử sự kiện trượt *âm
+  thầm từ v7.7*, không phải do bản này.
+- `_test/hr-mark-harness.js` đổi bài "lọc todo" thành bài kiểm **quy đổi todo → no**.
+
+**Toàn bộ 23 harness xanh (≈870 phép thử).** Cache bump **`?v=83`**.
+
+> Bài học: một chip lọc tưởng vô hại (`todo`) có thể là **trạng thái thứ ba** mà
+> dữ liệu không hề có. Bỏ nó đi phải nhớ quy đổi giá trị cũ đang nằm trong phiên
+> — nếu không, bộ lọc lặng lẽ biến thành "không lọc gì".
+
+---
+
+# v7.9 — Section Chief duyệt là xong việc · đơn ngoài bộ lọc · điểm danh khoá
+
+## 1 · Vấn đề thật ngoài hiện trường
+
+Chuỗi duyệt FE › Section Chief › Quản lý người Hàn đúng về sổ sách, nhưng thực tế
+**Quản lý người Hàn gần như không mở app**. Hệ quả dây chuyền:
+
+- Mọi đơn dừng ở nhãn **"TẠM DUYỆT (chờ Quản lý người Hàn chốt)"**. Nhân viên đọc
+  thành *"đơn của tôi chưa xong"* — trong khi lịch thực tế **đã ghi** và họ đã đi
+  làm theo nó từ lâu.
+- Tin Zalo kết quả duyệt bị treo ở kênh `null` (`provapproved`) nên người làm đơn
+  **không nhận được gì cả**; đến khi hỏi lại thì lo thêm.
+- Bản tin 08:00 vẫn nhắc những đơn "đang chờ" — nhắc một việc thực chất đã chạy.
+
+## 2 · Đổi cách NÓI, không đổi cơ chế
+
+Cơ chế nhiều cấp giữ nguyên: cấp cuối vẫn ghi nhận được, `reqIsProvisional()` vẫn
+tồn tại, ô lịch tạm/chốt vẫn như cũ. Chỉ chữ nghĩa và luồng tin đổi:
+
+| Chỗ | Trước | Nay |
+|---|---|---|
+| Nhãn trạng thái | `TẠM DUYỆT` | `ĐÃ DUYỆT` (mọi người) |
+| Dấu phụ | — | `🧾 chờ Quản lý người Hàn ghi nhận` — **chỉ người duyệt thấy** (`reqEndorseNote`) |
+| Tin cho các bên khi Section Chief duyệt | `🕒 TẠM DUYỆT (chờ…)`, Zalo `null` | `✅ đã được DUYỆT · … · Quản lý người Hàn sẽ ghi nhận sau`, đi **chung đường** với `approved` |
+| Tin cho cấp cuối | `📥 APPROVAL REQUIRED`, bắn ngay | `🧾 FOR FINAL ENDORSEMENT`, gom về **bản tin 08:00** |
+| Khi cấp cuối ghi nhận | `✅ DUYỆT chính thức` (tin thứ hai) | `🧾 đã ghi nhận` — **chỉ trong app**, không bắn Zalo lần hai |
+
+Câu tiếng Anh trong Zalo cũng nói đúng sự thật thay vì gây hoang mang:
+
+```
+Approved by Hoang Trung — schedule updated
+Final endorsement by the Korean manager will follow.
+```
+
+và lời kết của gói gửi cấp cuối là *“Already approved and in effect — endorse in
+app at your convenience”*, không phải “Approve in app”.
+
+**Sổ chờ tự dọn**: `digestStale()` bỏ mục `finalNote` ngay khi cấp cuối đã ghi
+nhận hoặc đơn bị rút duyệt, nên bản tin sáng không bao giờ mời ghi nhận một việc
+đã xong. `finalNote` cũng **không** bị lọc theo `DIGEST_REQ_TYPES` — kể cả đơn
+nghỉ phép cũng gom, vì tin này về bản chất không gấp.
+
+### Một cái bẫy đã dính khi viết
+
+`wasProv` phải chụp **trước** khi ghi chữ ký mới vào `r.appr`:
+
+```js
+const wasApproved=r.status==='approved';
+const wasProv=wasApproved&&reqIsProvisional(r);   // ← phải đứng TRƯỚC cascade
+chain.forEach(…); r.appr[lvl]={by:me,at:Date.now()};
+```
+
+Hỏi sau thì chính chữ ký vừa ghi làm câu trả lời ra `false`, và cấp cuối ghi nhận
+lại bắn tin **"ĐÃ DUYỆT" lần thứ hai** cho cả nhà. Harness bắt được ngay (C1–C2).
+
+## 3 · “Huy hiệu 13, danh sách 11”
+
+Huy hiệu đỏ trên tab Duyệt đếm **mọi** đơn còn chờ tay người đang đăng nhập, không
+xét kỳ; danh sách bên dưới thì lọc theo kỳ đang chọn. Hai con số lệch nhau một
+cách hợp lý, nhưng người dùng chỉ thấy app "nuốt đơn" — hay gặp nhất với **đơn
+tăng ca do xếp đào tạo sinh ra**, vì buổi học thường rơi vào kỳ sau.
+
+Nay màn Duyệt hiện một dải nhắc:
+
+> 📌 Còn **2** đơn cần bạn duyệt nằm ngoài bộ lọc đang xem · sớm nhất 01/09 · **[Xem tất cả]**
+
+`apprShowOutside()` mở `ym='__all'` và `status='__all'` — dùng `'pending'` sẽ giấu
+đúng những đơn *đã duyệt, chờ ghi nhận*, tức là giấu mất thứ vừa hứa cho xem. Bộ
+lọc **nhóm vị trí (pg) giữ nguyên**: đó là "tôi đang làm hộ nhóm nào", không phải
+điều kiện nhất thời.
+
+## 4 · Danh sách học viên của khoá dùng để làm gì?
+
+Câu hỏi của người dùng: *“phân trước người vào khoá có vô nghĩa không, vì sang bên
+kia vẫn phải phân người học theo ngày?”*
+
+Không — và bản này làm cho lý do đó hiện ra thành chữ. Danh sách khoá là **bản
+điểm danh gốc**; đối chiếu với bảng tích ra ngay **người chưa được xếp buổi nào**:
+
+> ⚠ **2**/3 học viên của khoá chưa được xếp buổi nào: Văn Nam A, Quốc Hùng B
+
+Không có bản điểm danh này thì sót một người là **sót im lặng** — tới cuối khoá
+mới lộ, lúc đó lớp đã đóng. Ngoài ra danh sách khoá còn được tích sẵn khi thêm
+buổi mới, và là mẫu số của mọi con số tổng hợp theo khoá.
+
+## Tệp đụng tới
+
+`js/08-requests.js` · `js/21-notify.js` · `js/13-portal.js` · `js/23-course.js` ·
+`js/14-i18n.js` · `css/app.css`.
+
+## Kiểm thử
+
+`_test/approve-v79-harness.js` mới — **41 phép thử**: nhãn trạng thái theo vai trò,
+nội dung & `zk` của từng tin ở cả hai lượt duyệt, kênh Zalo, sổ chờ 08:00 tự dọn,
+và bài tái hiện đúng cảnh "huy hiệu 13 / danh sách 11". `course-v78-harness.js`
+thêm mục H (điểm danh khoá) → **79 phép thử**.
+
+**Toàn bộ 22 harness xanh (≈930 phép thử).** Cache bump **`?v=84`**.
+
+> Bài học: khi một cấp duyệt trên thực tế không dùng app, thứ phải sửa không phải
+> là bỏ cấp đó đi, mà là **cách app kể chuyện** — ai cũng cần biết việc của mình
+> đã xong, còn phần nghi thức thì để nó diễn ra lặng lẽ.
+
+---
+
+# v8.0 — Đủ 2 kỹ sư mỗi khung 12 giờ · xác nhận đã tham gia đào tạo
+
+## 1 · Người đi học không phải là người đang trực
+
+Định mức cũ (`minD` / `minN`) đếm **đầu người** của ca D và ca N. Hai chỗ hở:
+
+1. **Người đi đào tạo vẫn được đếm.** Anh ta mang mã ca D nên bảng Nhân lực coi
+   như đang trực, trong khi thực tế đang ngồi lớp — nhà máy hụt người mà không có
+   cảnh báo nào.
+2. **Đủ đầu người ≠ vận hành được.** Ba operator không thay được một kỹ sư.
+
+Yêu cầu vận hành tối thiểu nay được viết thành luật trong app: **lúc nào cũng phải
+có ≥ 2 kỹ sư tại chỗ**, xét trên hai khung 12 giờ — ☀️ `08:00–20:00` và
+🌙 `20:00–08:00` (vắt sang hôm sau).
+
+### Cách đếm
+
+`js/07-manpower.js` đổi mỗi mã ca thành **khoảng phút** trong ngày (mốc 0 = 00:00,
+khung đêm kéo tới 32:00 = 08:00 hôm sau):
+
+| Mã ca | Khoảng | Khung ngày | Khung đêm |
+|---|---|---|---|
+| `D` `SD` `OTD` | 08:00–20:00 | **trọn** | — |
+| `N` `SN` `OTN` | 20:00–08:00 | — | **trọn** |
+| `O` `SO` `OTO` | 08:00–17:00 | *một phần* | — |
+| `O+N` / `D+N` | ghép hai vế | theo vế ca chuẩn | **trọn** |
+| `R`, phép, OT lẻ | — | — | — |
+
+**Ca hành chính không cứu được khung ngày**: từ 17:00 tới 20:00 họ đã về, mà định
+mức là "lúc nào cũng đủ" chứ không phải "trung bình cả ca". Họ hiện riêng thành
+dòng *“chỉ có mặt một phần khung”*.
+
+Sau đó **trừ người đang đi học**: buổi đào tạo cũng là một khoảng phút; giao với
+khung nào thì người đó không được tính cho khung ấy. Cố ý xét khắt khe (giao một
+giờ cũng trừ cả khung) vì đây là kiểm tra **an toàn vận hành** — câu phải trả lời
+là *“có lúc nào tụt xuống dưới 2 kỹ sư không”*.
+
+Hai chi tiết dễ sai đã xử lý:
+
+- **Chỉ trừ người LẼ RA CÓ MẶT.** Kỹ sư trực ca D đi học lớp tối 21–23h không làm
+  khung đêm xấu đi — anh ta vốn không có trong khung đó.
+- **Buổi CHỜ DUYỆT chưa trừ ai.** Nhân viên tự khai mà chưa được duyệt thì chưa
+  chắc diễn ra; trừ trước là báo động giả.
+
+### Hiện ở đâu
+
+- **Nhân lực theo ngày** (`js/15-report.js`): mỗi ngày thêm hai chip `☀️ 2/2 🛠️` ·
+  `🌙 1/2 🛠️`, đỏ khi thiếu, kèm `🎓N` nếu có người đang đi học. Bung chi tiết ra
+  hai dòng đầy đủ: ai đang giữ khung, ai đi đào tạo, ai chỉ có mặt một phần.
+- **`mpLowOfDay()`** thêm `lowEng`, nên **mọi chỗ đang hỏi “ngày này có thiếu người
+  không”** (lịch, sheet ngày, bảng tin) tự động biết luôn — không phải sửa từng nơi.
+- **Màn Duyệt**: dải cảnh báo trước khi duyệt đơn nay nói thêm
+  *“☀️ Khung ngày 08:00–20:00: 1/2 kỹ sư · 1 người đang đi đào tạo”*.
+- **Dữ liệu → Cài đặt**: ô *Tối thiểu kỹ sư mỗi khung 12h*, mặc định **2**.
+
+## 2 · Người lao động xác nhận đã tham gia
+
+Xếp lịch đào tạo mới chỉ là **dự định**. Ai thật sự có mặt là chuyện khác — người
+bận xử lý sự cố, người đổi ca, người quên. Trước đây hồ sơ chỉ trả lời được *“ai
+được xếp”*, không trả lời được câu mà kiểm định hỏi: *“ai ĐÃ HỌC?”*.
+
+`tr.done = {empId: mốc thời gian}` — một khoá nhỏ, và bốn luật:
+
+- **Chính người đó bấm xác nhận** từ dải nhắc đào tạo ở Trang chính. Quản lý cũng
+  tích được (điểm danh hộ là việc thật, nhất là với người không dùng app).
+- **Chỉ xác nhận được khi buổi đã diễn ra** (ngày đầu ≤ hôm nay). Xác nhận trước
+  là lời hứa, không phải điểm danh.
+- **Không sinh thông báo.** Bắn tin cho cả tổ mỗi lần một người điểm danh là tra tấn.
+- **Sửa buổi không làm mất dấu.** `trSave()` dựng lại bản ghi từ đầu nên phải chép
+  `done` sang — nhưng chỉ giữ dấu của người **còn** trong danh sách.
+
+## 3 · Hai cột “Đã tham gia / Chưa tham gia”
+
+Bảng tổng hợp đào tạo (`js/23-course.js`) thêm hai cột **liệt kê tên**, không chỉ
+đếm — người đọc bảng này đang đi tìm *“còn ai chưa học”* để gọi đi học, con số
+không gọi được ai. Quản lý bấm thẳng vào tên để đổi trạng thái.
+
+Ở mức **khoá**, “đã tham gia” định nghĩa là **dự đủ mọi buổi mình được xếp**. Học 1
+trong 3 buổi mà ghi “đã tham gia khoá” thì tờ hồ sơ nói dối. Người chưa được xếp
+buổi nào cũng nằm ở cột **Chưa** — họ đúng là chưa học.
+
+Bảng *theo người* thêm cột `Đã xác nhận tham gia` dạng `2/3`, mẫu số là **số buổi
+đã diễn ra** (buổi còn ở tương lai không tính vào, kẻo thành lời trách oan).
+
+## Tệp đụng tới
+
+`js/07-manpower.js` · `js/15-report.js` · `js/08-requests.js` · `js/22-training.js` ·
+`js/23-course.js` · `js/11-stats-data.js` · `js/02-storage.js` · `js/14-i18n.js` ·
+`css/ui.css` · `index.html`.
+
+## Kiểm thử
+
+`_test/manpower-v80-harness.js` mới — **42 phép thử**: quy đổi mã ca thành khoảng
+có mặt, đếm kỹ sư theo khung, trừ người đi đào tạo (kể cả buổi qua đêm, buổi chờ
+duyệt, buổi ngoài khung), `mpLowOfDay` + câu giải thích, toàn bộ luật điểm danh,
+và hai cột đã/chưa tham gia.
+
+**Toàn bộ 24 harness xanh (≈975 phép thử).** Cache bump **`?v=85`**.
+
+> Bài học: "đủ người" và "vận hành được" là hai câu hỏi khác nhau. Đếm đầu người
+> trả lời câu thứ nhất; câu thứ hai phải hỏi theo **vị trí** và theo **khoảng thời
+> gian**, vì thiếu kỹ sư lúc 18:00 không được bù bằng ba operator lúc 09:00.
+
+---
+
+# v8.1 — Cấp cuối chỉ nhận MỘT bản review mỗi sáng
+
+## Yêu cầu
+
+> "Bỏ luôn dòng *Already approved and in effect*, *already applied to the schedule*.
+> Bỏ luôn thông báo *APPROVAL REQUIRED — Final*. Các đơn cần Quản lý người Hàn phê
+> duyệt gom hết vào bản tin 8h. Zalo chỉ bắn tin *Hoàng Trung đã phê duyệt* để
+> nhân viên biết. Cấp quản lý người Hàn bận, không đọc từng tin nhắn mà cần gom
+> vào tin 08:00 để review tổng — tin 08:00 cần rõ ràng, dễ nắm thông tin tổng quát."
+
+## Đổi gì
+
+| | Trước (v7.9) | Nay (v8.1) |
+|---|---|---|
+| Đơn **đang chờ** cấp cuối duyệt | `📥 APPROVAL REQUIRED — Final`, bắn ngay | gom vào bản tin 08:00 |
+| Đơn **đã** Section Chief duyệt | `🧾 FOR FINAL ENDORSEMENT`, gom 08:00 | cùng gói trên |
+| Dòng cuối tin | *Already approved and in effect — endorse in app at your convenience* | **bỏ hẳn** |
+| Dòng trong thân | *Approved by … — already applied to the schedule* | **bỏ hẳn** |
+| Tin bắn ngay cho nhân viên | `✅ đã được DUYỆT` | **giữ nguyên** — đây là tin duy nhất còn bắn lẻ |
+
+`notifyApprovers()` nay chỉ hỏi một câu: *cấp còn thiếu có phải cấp cuối không?* —
+nếu đúng thì `zk='finalNote'` → kênh `digest`, không xét đơn đã duyệt hay chưa.
+FE và Section Chief giữ nguyên `apprNeed` bắn ngay: họ phải xử lý trong ngày,
+chậm một buổi là lịch trực hỏng.
+
+**Một cái bẫy đi kèm:** `digestStale()` cũ loại mục `finalNote` khi đơn *chưa*
+`approved`. Khi mọi tin gửi cấp cuối chuyển hết sang kênh này thì chính điều kiện
+đó sẽ **nuốt sạch bản tin sáng** — vì phần lớn đơn trong đó đang chờ Section Chief.
+Luật mới: chỉ bỏ khi **cấp cuối đã ký** (`r.appr[kmgr]`) hoặc đơn **bị từ chối**.
+
+## Bản tin 08:00 là một bảng review
+
+Các gói digest khác chỉ nối các dòng đã dựng sẵn — người nhận là nhân viên, mỗi
+dòng là việc của chính họ. Gói của cấp cuối khác hẳn mục đích: **một người bận,
+liếc một tin để nắm cả nhà máy**. Nối 20 khối dòng rời là bắt họ tự cộng nhẩm.
+
+Nên sổ chờ nay giữ thêm `reqId`, và gói `finalNote` được **dựng lại từ chính các
+đơn** (`dgReviewLines()` ở `js/21-notify.js`):
+
+```
+🧾 DAILY REVIEW — KOREAN MANAGER · 6 request(s) · 13/08
+👤 Mr. KIM
+
+SUMMARY
+  OVERTIME    3   32h total
+  LEAVE       2
+  SHIFT SWAP  1
+  ── 6 request(s) · 4 employee(s)
+  5 approved by Section Chief · 1 still waiting for Section Chief
+
+OVERTIME (3)
+     Thu 13/08  Nguyễn Văn A  08:00–17:00  8h
+     Fri 14/08  Trần Văn B    20:00–08:00  12h
+  ⏳ Sat 15/08  Lê Văn C      08:00–20:00  12h
+
+LEAVE (2)
+     Sun 16/08      Phạm Văn D  AL (full day)
+     Mon 17/08 +1d  Trần Văn B  AL (full day)
+
+SHIFT SWAP (1)
+     Wed 19/08  Nguyễn Văn A  D ⇄ Lê Văn C
+```
+
+- **Khối tổng quan trước, chi tiết sau** — đọc 5 dòng đầu là đủ để quyết định có
+  cần mở app hay không.
+- **`⏳` = còn chờ Section Chief**; không dấu = đã duyệt, lịch đã chạy. Một ký tự
+  thay cho cả một câu giải thích.
+- **Đệm cột ngày và cột tên** để mắt dò cột giờ theo hàng dọc (cùng cách làm với
+  `zHoldLines`). Zalo dùng phông tỉ lệ nên không thẳng tuyệt đối, nhưng vẫn hơn
+  hẳn các dòng dài ngắn tuỳ tiện.
+- **Không có dòng "việc phải làm" ở cuối.** Đây là bản review, không phải lời giục.
+- Mục cũ trong sổ chờ (chưa có `reqId`) **rơi về cách nối dòng như trước** — không
+  bao giờ nuốt mất một mục nào.
+
+## Kiểm thử
+
+`_test/approve-v79-harness.js` mở rộng lên **51 phép thử**, thêm mục D6 dựng thật
+một gói review 3 đơn và soi từng phần: khối SUMMARY, số giờ OT cộng đúng, dòng
+"approved / still waiting", mỗi loại một khối, dấu `⏳`, tiêu đề, và nhánh dự
+phòng cho mục cũ. Mục D3 viết lại theo luật `digestStale` mới.
+
+**Toàn bộ 24 harness xanh (≈985 phép thử).** Cache bump **`?v=86`**.
+
+> Bài học: đổi kênh gửi của một loại tin thì phải đọc lại **điều kiện dọn sổ** của
+> loại tin đó. Điều kiện cũ được viết cho một tình huống hẹp hơn, và nó không hề
+> báo lỗi khi trở nên sai — nó chỉ lặng lẽ làm bản tin trống rỗng.
+
+---
+
+# v8.2 — Ngày đào tạo cũng là ngày "khác lịch chuẩn"
+
+## Vấn đề
+
+Ở tab **Lịch**, ô đánh dấu "khác chuẩn" (viền cam) và bộ lọc **Chỉ ô khác chuẩn**
+xưa nay chỉ nhìn đúng một chỗ: `S.over`. Mà buổi đào tạo **không phải một mã ca**
+— nó là lớp màu tím phủ lên ô, mã ca bên dưới giữ nguyên.
+
+Hệ quả: người đi học **trong ca** (mode `shift`) không hề động vào `S.over`, nên
+bật bộ lọc "Chỉ ô khác chuẩn" là họ biến mất khỏi bảng. Người xếp ca nhìn bảng đã
+lọc rồi kết luận "hôm đó tổ đủ quân", trong khi thực tế có người đang ngồi lớp.
+
+Chỉ người học **ngoài ca** mới lộ ra, vì buổi đó sinh đơn OT, đơn duyệt xong mới
+ghi vào `S.over` — tức là app chỉ thấy đúng một nửa số ngày đi học.
+
+## Đổi gì
+
+`cellIsDiff(empId, iso, r)` ở `js/06-calendar.js` là chỗ duy nhất trả lời câu
+"ô này có khác lịch chuẩn không", và nay nó là **HỢP của hai nguồn**:
+
+| Nguồn | Lớp CSS | Ý nghĩa |
+|---|---|---|
+| `r.ovr` — có ghi đè ở `S.over` | `.ovr` + `.diff` | chấm tròn góc ô, viền cam — như cũ |
+| `trOfCell()` — có buổi đào tạo | `.diff` | chỉ viền cam, **không** có chấm tròn |
+
+Tách hai lớp là điều quan trọng nhất của bản này: `.ovr` phải giữ nguyên nghĩa
+hẹp "có bản ghi đè trong `S.over`" vì còn nhiều chỗ khác đọc nó. Cái mở rộng ra
+là `.diff` — nghĩa "ngày này không chạy theo lịch chuẩn".
+
+Buổi **chờ duyệt** cũng tính. Người xếp ca cần biết trước là "có người xin đi học
+ngày này"; ô vẫn vẽ sọc nên vẫn phân biệt được bằng mắt với buổi đã chốt.
+
+Áp dụng ở cả hai bố cục có bộ lọc:
+
+- **Bảng lịch máy tính** (`renderMatrix`) — lọc người, lọc ngày và tô ô.
+- **Thẻ tuần** (`renderCalWeekCards`) — tuần chỉ có lớp học không còn bị ẩn.
+  Thêm dấu 🎓 nhỏ trong ô, vì viền `.wk-cell-diff` vẽ trên chip mã ca mà ngày học
+  có thể không có mã ca nào (đang nghỉ mà đi học) — lúc đó ô trống trơn.
+
+Lịch **chuẩn** không đổi gì: không có gì để so thì `isDiff` trả về `false`.
+
+## Tệp đụng tới
+
+| Tệp | Việc |
+|---|---|
+| `js/06-calendar.js` | `cellHasTrain` / `cellIsDiff` mới; `renderMatrix` + `renderCalWeekCards` dùng nó thay cho `r.ovr`; chú giải nói rõ ngày học tính là khác chuẩn |
+| `css/app.css` | `.wk-row .cellc .trdot` — dấu 🎓 trong thẻ tuần |
+| `index.html` | tooltip cho ô tích "Chỉ ô khác chuẩn"; cache `?v=87` |
+| `js/14-i18n.js` | bản tiếng Anh của tooltip và chú giải mới |
+
+## Kiểm thử
+
+`_test/diff-train-harness.js` (mới, **17 phép thử**) nạp `js/22-training.js` thật
+— không stub `trOfCell` — nên đổi tên hàm hay đổi cách đánh chỉ mục là gãy ngay:
+`cellIsDiff` với 5 tình huống, lớp CSS của từng ô trong bảng (`.diff` có,
+`.ovr` **không**), bộ lọc giữ đúng người/ngày, và thẻ tuần không ẩn tuần chỉ có
+lớp học.
+
+**Toàn bộ 25 harness xanh.** Cache bump **`?v=87`**.
+
+> Bài học: một khái niệm hiển thị ("khác chuẩn") mà cài bằng cách đọc thẳng cấu
+> trúc lưu trữ (`S.over`) thì mỗi lần app có thêm một dạng "khác chuẩn" mới, nó
+> sẽ sai một cách im lặng. Đưa câu hỏi về một hàm có tên đúng như câu hỏi
+> (`cellIsDiff`) là chỗ duy nhất phải sửa cho lần sau.

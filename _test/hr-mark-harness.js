@@ -41,8 +41,17 @@ f.status='__all';f.print='__all';f.type='__all';f.q='';f.ym='__all';f.flag='';
 ok('lọc __all → 4 đơn',cnt('__all')===4,cnt('__all'));
 ok('lọc yes  → 1 đơn (r2)',cnt('yes')===1,cnt('yes'));
 ok('lọc no   → 3 đơn',cnt('no')===3,cnt('no'));
-ok('lọc todo → 1 đơn (chỉ r1: duyệt chốt & chưa nhập; loại r3 chờ duyệt, r4 tạm duyệt)',
-   cnt('todo')===1,cnt('todo'));
+/* ★ v7.8 — HR chỉ còn ĐÚNG HAI trạng thái: chưa lên hệ thống HR / đã lên.
+   Chip '⏰ Cần nhập HR' (mã 'todo') đã bỏ vì nó là trạng thái thứ ba trá hình.
+   Bộ lọc cũ còn lưu trong phiên phải rơi về 'no', KHÔNG được im lặng thành
+   "không lọc gì" — mất bộ lọc mà người dùng không hay là lỗi khó thấy nhất. */
+ok('bỏ chip todo: lọc todo được quy về "chưa nhập" (3 đơn), không phải bỏ lọc',
+   cnt('todo')===3,cnt('todo'));
+ok('…và apprFilter.hr được viết lại thành "no"',f.hr==='no',f.hr);
+ok('chỉ còn 2 trạng thái HR trong danh sách chip',
+   /\['__all','Mọi đơn'\],\['no',[^\]]+\],\['yes',[^\]]+\]\]/.test(
+     require('fs').readFileSync(require('path').join(__dirname,'..','js','08-requests.js'),'utf8')
+       .match(/const hrChips=\[.*\];/)[0]));
 f.hr='__all';
 
 /* Đánh dấu hàng loạt */

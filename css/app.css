@@ -391,6 +391,12 @@ td.num.tr{color:#5B21B6;font-weight:800}
 .wk-cell-diff .cc{box-shadow:inset 0 0 0 2px var(--accent)}
 .wk-cell-ovr{position:relative}
 .wk-cell-ovr::after{content:'';position:absolute;top:1px;right:6px;width:5px;height:5px;border-radius:50%;background:var(--accent)}
+/* ★ v8.2 — thẻ tuần: ngày ĐÀO TẠO cũng tính là ngày khác chuẩn.
+   Viền .wk-cell-diff vẽ trên chip mã ca, mà ngày học có thể KHÔNG có mã ca
+   (đang nghỉ mà đi học) — lúc đó cả ô trống trơn. Dấu 🎓 nhỏ đảm bảo ô nào
+   có lớp học cũng nhìn ra, kể cả khi không còn gì khác để vẽ. */
+.wk-row .cellc .trdot{display:inline-block;margin-left:1px;font-size:9px;line-height:1;
+  vertical-align:middle;text-decoration:none}
 .chevS{transition:transform .15s;font-size:9px;margin-left:auto}
 .wk-grp-head.open .chevS{transform:rotate(180deg)}
 /* day-view manpower (mobile) */
@@ -1060,3 +1066,12 @@ body.hold-on .tabs,body.hold-on .topbar{top:96px}
       margin:2px 0 0 2px;font-size:12px;color:#92400E;cursor:pointer}
 .ds-row.ot .ds-nolunch input{width:16px;height:16px;accent-color:#B45309;cursor:pointer}
 .ds-row.ot .ds-nolunch b{color:#B45309}
+
+/* ★ v7.9 — dải nhắc "còn đơn ngoài bộ lọc" ở màn Duyệt (js/08-requests.js)
+   và dấu phụ "chờ ghi nhận" của cấp cuối. Cả hai cố ý NHẠT hơn cảnh báo
+   thật: việc không bị chặn, chỉ là chỗ đang xem chưa thấy hết. */
+.ab-flag.ab-out{background:#EFF6FF;border-color:#BFDBFE;color:#1E40AF}
+.st.prov{background:#DCFCE7;color:#166534}      /* đã duyệt = xanh, như đơn chốt hẳn */
+.endnote{font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:99px;
+  background:#F1F5F9;color:#475569;white-space:nowrap;margin-left:4px}
+.at-next.soft{color:#64748B;font-style:normal;font-weight:600}

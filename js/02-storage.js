@@ -54,7 +54,9 @@
 /* Nhánh dạng bảng: khoá là mã NV / id đơn → nghe & ghi ở mức con */
 /* 'digest' = SỔ CHỜ BẢN TIN 08:00 (★ v6.8) — tin không gấp nằm đây tới sáng
    hôm sau mới gom thành một tin Zalo. Xem js/21-notify.js. */
-const FB_MAP_BRANCHES=['base','over','requests','accounts','printLog','notifs','events','digest','trainings'];
+/* 'courses' = KHOÁ ĐÀO TẠO (★ v7.8) — một khoá gom nhiều buổi, xem
+   js/23-course.js. Buổi vẫn nằm ở 'trainings', chỉ mang thêm courseId. */
+const FB_MAP_BRANCHES=['base','over','requests','accounts','printLog','notifs','events','digest','trainings','courses'];
 /* Nhánh nghe trọn gói (nhỏ, và luôn cần đủ để render).
    'del' = SỔ BIA MỘ: id nào đã bị xoá thì mọi máy tôn trọng, không hồi sinh —
    xem applyTombstones() và mục "CHỐNG HỒI SINH" bên dưới. */
@@ -140,6 +142,7 @@ function normalizeState(){
   S.events=S.events||{};                 // sự kiện trên lịch — xem js/20-events.js
   S.digest=S.digest||{};                 // sổ chờ bản tin 08:00 — xem js/21-notify.js
   S.trainings=S.trainings||{};           // lịch đào tạo — xem js/22-training.js
+  S.courses=S.courses||{};               // khoá đào tạo (gom nhiều buổi) — xem js/23-course.js
   S.del=S.del||{};                       // sổ bia mộ id đã xoá — xem applyTombstones()
   S.settings=S.settings||{minD:3,minN:3};
   S.settings.hours=S.settings.hours||{};
@@ -148,6 +151,8 @@ function normalizeState(){
   S.settings.approver1=S.settings.approver1||APPROVER1_FALLBACK;
   S.settings.approver2=S.settings.approver2||APPROVER2_FALLBACK;
   if(S.settings.minO===undefined)S.settings.minO=1;
+  /* ★ v8.0 — mỗi khung 12 giờ phải có ≥2 kỹ sư (js/07-manpower.js) */
+  if(S.settings.minEng===undefined)S.settings.minEng=2;
   if(S.settings.maxOffTeam===undefined)S.settings.maxOffTeam=1;
   S.meta=Object.assign({schedFrom:'',schedTo:''},S.meta||{});
 }

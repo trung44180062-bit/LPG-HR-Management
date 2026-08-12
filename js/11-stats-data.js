@@ -269,6 +269,11 @@ function renderData(){
     $('setMinO').value=(S.settings.minO===''||S.settings.minO==null)?1:S.settings.minO;
     $('setMinO').onchange=()=>{S.settings.minO=+$('setMinO').value||0;save();};
   }
+  /* ★ v8.0 — số kỹ sư tối thiểu mỗi khung 12 giờ (xem js/07-manpower.js) */
+  if($('setMinEng')){
+    $('setMinEng').value=(S.settings.minEng===''||S.settings.minEng==null)?2:S.settings.minEng;
+    $('setMinEng').onchange=()=>{S.settings.minEng=+$('setMinEng').value||0;save();};
+  }
   if($('setMaxOffTeam')){
     $('setMaxOffTeam').value=(S.settings.maxOffTeam===''||S.settings.maxOffTeam==null)?1:S.settings.maxOffTeam;
     $('setMaxOffTeam').onchange=()=>{S.settings.maxOffTeam=+$('setMaxOffTeam').value||0;save();};

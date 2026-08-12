@@ -83,7 +83,11 @@ S.notifs={};S.events={ev1:{id:'ev1',title:'Nhập tàu LPG',from:'2026-08-07',to
   scope:'all',teams:[],notify:true,note:'Tàu cập cầu 06:00'}};
 S.meta={schedFrom:'2026-07-21',schedTo:'2026-08-20'};
 S.rev=2;evResetCache();
-mgr=true;adm=true;noSelf=false;calMode='real';
+/* hrm PHẢI bật: từ v7.7 mọi việc nhân lực (trong đó có ghi nhận SỰ KIỆN) đi
+   qua hrGuard(), mà hrGuard chỉ nhìn cờ hrm — bật mỗi mgr/adm thì evSave()
+   lặng lẽ bỏ qua và bài thử "lưu sự kiện" trượt mà không rõ vì sao.
+   (Khối này nằm TRONG một template literal — tuyệt đối không dùng dấu huyền.) */
+mgr=true;adm=true;hrm=true;noSelf=false;calMode='real';
 `,ctx);
 
 let pass=0,fail=0;

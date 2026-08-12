@@ -23,6 +23,55 @@
    requests/notifs) — xem FB_MAP_BRANCHES ở js/02-storage.js.
    ============================================================ */
 
+/* ============================================================
+   ★ v7.8 — PHÂN LOẠI SỰ KIỆN
+   ------------------------------------------------------------
+   Một năm nhà máy có hàng trăm ngày đặc biệt. Khi tất cả chỉ mang một
+   nhãn "Sự kiện", bảng tổng hợp cuối kỳ là một danh sách phẳng không
+   trả lời được câu hỏi thường gặp nhất: "kỳ này bao nhiêu chuyến VLGC?
+   bao nhiêu đợt bảo dưỡng?".
+
+   Nên mỗi sự kiện mang thêm `ev.cat`:
+     · Loại DỰNG SẴN — khoá ngắn trong EV_CATS dưới đây.
+     · Loại TỰ THÊM  — chính là chuỗi người dùng gõ vào (VD 'Thay van an
+       toàn'). Không có bảng danh mục riêng, không thêm nhánh Firebase:
+       loại tự thêm SỐNG NHỜ chính các sự kiện đang dùng nó, evCatAll()
+       quét ra. Loại không còn sự kiện nào dùng thì tự biến mất — đúng
+       thứ người dùng mong đợi, và không đẻ rác phải đi dọn.
+
+   Không tô màu riêng cho từng loại (theo yêu cầu): lịch vẫn MỘT màu sự
+   kiện, phân loại chỉ để lọc và tổng hợp. Icon thì có, vì nó nằm trong
+   chính chuỗi tiêu đề nên không tốn thêm gì.
+   ============================================================ */
+const EV_CATS=[
+  {v:'vlgc',  ic:'🚢', l:'VLGC unloading'},
+  {v:'itrain',ic:'🎓', l:'Internal training'},
+  {v:'etrain',ic:'🏫', l:'External training'},
+  {v:'maint', ic:'🛠', l:'Maintenance'},
+  {v:'audit', ic:'📋', l:'Audit'},
+  {v:'insp',  ic:'🔎', l:'Inspection'},
+  {v:'drill', ic:'🚨', l:'Emergency drill'},
+  {v:'visit', ic:'👔', l:'Visitor / khách tham quan'},
+  {v:'other', ic:'📌', l:'Khác'}
+];
+function evCatInfo(v){
+  const k=String(v||'').trim();
+  const f=EV_CATS.find(x=>x.v===k);
+  if(f)return f;
+  if(!k)return EV_CATS[EV_CATS.length-1];             // chưa phân loại → Khác
+  return {v:k,ic:'📌',l:k,custom:true};               // loại tự thêm
+}
+function evCatLabel(v){const c=evCatInfo(v);return c.ic+' '+t(c.l);}
+/* Danh sách loại để hiện chip: dựng sẵn + mọi loại tự thêm đang được dùng */
+function evCatAll(){
+  const out=EV_CATS.slice();
+  Object.values(S.events||{}).forEach(ev=>{
+    const k=String((ev&&ev.cat)||'').trim();
+    if(k&&!out.some(x=>x.v===k))out.push(evCatInfo(k));
+  });
+  return out;
+}
+
 /* Phạm vi gửi thông báo */
 const EV_SCOPE=[
   {v:'all',     l:'Tất cả mọi người',            hint:'Ai cũng nhận thông báo'},
@@ -60,9 +109,10 @@ function evIndex(){
   return idx;
 }
 function eventsOfDay(iso){return evIndex()[iso]||[];}
-/* Nhãn gộp cho ô lịch (nhiều sự kiện cùng ngày thì nối bằng " · ") */
+/* Nhãn gộp cho ô lịch (nhiều sự kiện cùng ngày thì nối bằng " · ").
+   Kèm icon loại — nhìn tooltip là biết ngày đó tàu về hay đi kiểm định. */
 function evTitleOfDay(iso){
-  return eventsOfDay(iso).map(e=>e.title||t('Sự kiện')).join(' · ');
+  return eventsOfDay(iso).map(e=>evCatInfo(e.cat).ic+' '+(e.title||t('Sự kiện'))).join(' · ');
 }
 /* Thuộc tính gắn vào một ô / một tiêu đề ngày trên lịch */
 function evAttrOfDay(iso){
@@ -145,7 +195,11 @@ function evSendNotifs(ev){
   if(!ev.notify)return 0;
   const by=meId()||'admin';
   const ids=evRecipients(ev);
-  const txt=(ev.title||t2('Sự kiện'))+' — '+evDateLabel(ev)+(ev.note?' · '+ev.note:'');
+  /* Nhãn loại đứng TRƯỚC tên sự kiện: đọc tin Zalo là biết ngay việc gì —
+     tên loại dựng sẵn vốn đã là tiếng Anh nên không phải dịch thêm. */
+  const cat=evCatInfo(ev.cat);
+  const txt=cat.ic+' '+cat.l+': '+(ev.title||t2('Sự kiện'))
+           +' — '+evDateLabel(ev)+(ev.note?' · '+ev.note:'');
   /* Nhãn nhóm người nhận — giống nhau cho mọi người nên các tin gộp vân tay
      thành ĐÚNG 1 tin, và tin đó ghi "👥 All staff / Team A · B" thay vì tên
      một cá nhân. */
@@ -168,13 +222,24 @@ let evYm='';               // kỳ đang xem trong màn sự kiện
 let evSel={};              // {iso:true} các ngày đang chọn
 let evEditId='';           // đang sửa sự kiện nào ('' = tạo mới)
 let evTitle='', evNote='', evScope='all', evTeams=[], evNotify=true;
+let evCat='vlgc';          // loại sự kiện đang khai — xem EV_CATS
+/* ★ v7.8 — hai chế độ xem trong CÙNG một hộp thoại:
+     'form'  — khai / sửa sự kiện (như cũ)
+     'table' — bảng tổng hợp, lọc theo loại và theo kỳ
+   Dùng chung hộp thoại thay vì mở modal thứ hai: người dùng bấm từ bảng
+   sang sửa rồi quay lại bảng liên tục, hai lớp mask chồng nhau là rối. */
+let evView='form';
+let evTblCat='__all';      // lọc loại ở bảng
+let evTblYm='__all';       // lọc kỳ ở bảng ('__all' = mọi kỳ)
 
 function evPeriod(){return evYm||curSchedMonth();}
 function evShiftYm(d){evYm=schedYmShift(evPeriod(),d);renderEventMgr();}
 
-function openEventMgr(iso){
+/* `view`='table' để mở thẳng bảng tổng hợp (nút riêng trên thanh công cụ) */
+function openEventMgr(iso,view){
   if(!hrGuard())return;
-  evEditId='';evSel={};evTitle='';evNote='';evScope='all';evTeams=[];evNotify=true;
+  evEditId='';evSel={};evTitle='';evNote='';evScope='all';evTeams=[];evNotify=true;evCat='vlgc';
+  evView=(view==='table')?'table':'form';
   if(iso){evSel[iso]=true;evYm=schedMonthOf(iso);}
   else if(!evYm)evYm=curSchedMonth();
   const m=$('evMask');if(!m)return;
@@ -203,13 +268,34 @@ function evToggleTeam(tm){
   renderEventMgr();
 }
 function evSetNotify(on){evNotify=!!on;renderEventMgr();}
+function evSetCat(v){evCat=String(v||'other');renderEventMgr();}
+/* Thêm một loại tự đặt. Loại chỉ tồn tại khi có sự kiện dùng nó (xem khối
+   ★ v7.8 ở đầu file) nên ở đây chỉ cần gán vào evCat, không lưu ở đâu cả. */
+function evAddCat(){
+  const s=prompt(t('Tên loại sự kiện mới (VD: Thay van an toàn)'),'');
+  const k=String(s||'').trim();
+  if(!k)return;
+  if(k.length>40){toast(t('Tên loại quá dài'));return;}
+  evCat=k;renderEventMgr();
+}
+/* ---- chuyển giữa form và bảng ---- */
+function evSetView(v){
+  evView=(v==='table')?'table':'form';
+  renderEventMgr();
+}
+function evTblSet(k,v){
+  if(k==='cat')evTblCat=v;else evTblYm=v;
+  renderEventMgr();
+}
 
 /* Mở một sự kiện có sẵn để sửa */
 function evEdit(id){
   const ev=(S.events||{})[id];if(!ev){toast(t('Không tìm thấy sự kiện'));return;}
   evEditId=id;
+  evView='form';                       // bấm Sửa từ bảng thì phải thấy form
   evSel={};evDays(ev).forEach(iso=>{evSel[iso]=true;});
   evTitle=ev.title||'';evNote=ev.note||'';
+  evCat=ev.cat||'other';
   evScope=ev.scope||'all';evTeams=(ev.teams||[]).slice();
   evNotify=ev.notify!==false;
   const first=evDays(ev)[0];if(first)evYm=schedMonthOf(first);
@@ -230,6 +316,7 @@ function evSave(){
   S.events=S.events||{};
   S.events[id]={
     id,title,note:String(evNote||'').trim(),
+    cat:String(evCat||'other').trim()||'other',
     from:days[0],to:days[days.length-1],
     days:cont?null:days,           // liên tục thì chỉ cần from/to cho gọn dữ liệu
     scope:evScope,teams:evScope==='teams'?evTeams.slice():[],
@@ -291,9 +378,25 @@ function renderEventMgr(){
                  scope:evScope,teams:evTeams};
   const nRecv=days.length?evRecipients(preview).length:0;
   const wTeams=days.length?evWorkingTeams(preview):[];
-
-  box.innerHTML=`
+  const head=`
   <h3>📌 ${t('Sự kiện trên lịch')}</h3>
+  <div class="ev-tabs">
+    <button class="evtab${evView==='form'?' on':''}" onclick="evSetView('form')">✏️ ${t('Khai sự kiện')}</button>
+    <button class="evtab${evView==='table'?' on':''}" onclick="evSetView('table')">📋 ${t('Bảng sự kiện')}</button>
+  </div>`;
+
+  /* Bảng tổng hợp — xem js/20-events.js khối ★ v7.8 */
+  if(evView==='table'){
+    box.innerHTML=head+evTableHtml()+`
+    <div class="row" style="gap:8px;margin-top:10px">
+      <button class="btn sec" style="flex:1" onclick="evSetView('form')">➕ ${t('Khai sự kiện mới')}</button>
+      <button class="btn sec" onclick="closeEventMgr()">${t('Đóng')}</button>
+    </div>`;
+    if(typeof uiRestore==='function')uiRestore(snap);
+    return;
+  }
+
+  box.innerHTML=head+`
   <p class="muted sm2">${t('Đánh dấu những ngày đặc biệt (nhập tàu, bảo dưỡng, kiểm định…) để cả tổ nhìn lịch là thấy, kèm thông báo tới đúng người.')}</p>
 
   <div class="ev-per">
@@ -308,6 +411,14 @@ function renderEventMgr(){
     <span class="ev-cnt">${days.length?('<b>'+days.length+'</b> '+t('ngày')+': '+esc(evDateLabel(preview))):('<i class="muted">'+t('chưa chọn ngày nào')+'</i>')}</span>
     <button class="btn sec sm" onclick="evSelRange()">${t('Chọn cả dải')}</button>
     <button class="btn sec sm" onclick="evClearSel()">${t('Bỏ chọn hết')}</button>
+  </div>
+
+  <div class="fg"><label class="fl">${t('Loại sự kiện')}</label>
+    <div class="ev-cats">
+      ${evCatAll().map(c=>`<button type="button" class="evcat${evCat===c.v?' on':''}"
+        onclick="evSetCat('${esc(c.v).replace(/'/g,"\\'")}')">${c.ic} ${esc(t(c.l))}</button>`).join('')}
+      <button type="button" class="evcat add" onclick="evAddCat()">➕ ${t('Loại khác…')}</button>
+    </div>
   </div>
 
   <div class="fg"><label class="fl">${t('Tên sự kiện')}</label>
@@ -355,7 +466,8 @@ function evListHtml(){
     const d=evDays(ev), past=d.length&&d[d.length-1]<tIso;
     const live=d.includes(tIso);
     return `<div class="ev-it${past?' past':''}${live?' live':''}${ev.id===evEditId?' on':''}">
-      <span class="tx"><b>${esc(ev.title||t('Sự kiện'))}</b>
+      <span class="tx"><b>${evCatInfo(ev.cat).ic} ${esc(ev.title||t('Sự kiện'))}
+        <span class="evtag">${esc(t(evCatInfo(ev.cat).l))}</span></b>
         <i>${esc(evDateLabel(ev))} · ${t(evScopeInfo(ev.scope).l)}${
           ev.scope==='teams'&&(ev.teams||[]).length?' ('+esc(ev.teams.join(', '))+')':''}${
           ev.notify===false?' · '+t('không gửi thông báo'):''}</i>
@@ -367,6 +479,81 @@ function evListHtml(){
   }).join('');
 }
 
+/* ============================================================
+   BẢNG TỔNG HỢP SỰ KIỆN   ★ v7.8
+   ------------------------------------------------------------
+   Danh sách thẻ ở dưới form trả lời tốt câu "sắp tới có gì", nhưng
+   không trả lời được "cả năm bao nhiêu chuyến VLGC", "đợt bảo dưỡng
+   nào rơi vào ca đêm". Bảng thì có: một dòng một sự kiện, lọc theo
+   LOẠI và theo KỲ, kèm hàng đếm ở đầu bảng.
+   Bảng dùng chung dữ liệu và chung hàm với lịch — không có bản sao
+   nào của "sự kiện là gì" ở đây.
+   ============================================================ */
+/* Sự kiện có chạm vào kỳ nào không (một sự kiện có thể vắt qua 2 kỳ) */
+function evInPeriod(ev,ym){
+  if(!ym||ym==='__all')return true;
+  const p=periodFor(ym);
+  return evDays(ev).some(iso=>iso>=p.from&&iso<=p.to);
+}
+function evTableRows(){
+  return evAll().filter(ev=>
+    (evTblCat==='__all'||String(ev.cat||'other')===evTblCat)&&evInPeriod(ev,evTblYm));
+}
+function evTableHtml(){
+  const rows=evTableRows();
+  const tIso=todayIso();
+  const cats=evCatAll();
+  const ms=(typeof monthsAvailable==='function')?monthsAvailable():[];
+  /* Đếm theo loại để hiện ngay trên chip — người xem biết bấm vào đâu có gì */
+  const cnt=k=>evAll().filter(ev=>(k==='__all'||String(ev.cat||'other')===k)&&evInPeriod(ev,evTblYm)).length;
+  const nDays=rows.reduce((s,ev)=>s+evDays(ev).length,0);
+
+  const filt=`
+  <div class="ev-tblbar">
+    <select class="inp sm" onchange="evTblSet('ym',this.value)">
+      <option value="__all"${evTblYm==='__all'?' selected':''}>${t('Tất cả các kỳ')}</option>
+      ${ms.map(m=>`<option value="${m}"${evTblYm===m?' selected':''}>${esc(periodFor(m).slim)}</option>`).join('')}
+    </select>
+    <span class="muted sm2"><b>${rows.length}</b> ${t('sự kiện')} · <b>${nDays}</b> ${t('ngày')}</span>
+  </div>
+  <div class="ab-chips">
+    <button class="abc sm${evTblCat==='__all'?' on':''}" onclick="evTblSet('cat','__all')">${t('Mọi loại')}<i>${cnt('__all')}</i></button>
+    ${cats.map(c=>`<button class="abc sm${evTblCat===c.v?' on':''}"
+      onclick="evTblSet('cat','${esc(c.v).replace(/'/g,"\\'")}')">${c.ic} ${esc(t(c.l))}<i>${cnt(c.v)}</i></button>`).join('')}
+  </div>`;
+
+  if(!rows.length)return filt+`<p class="muted sm2" style="margin-top:10px">${t('Không có sự kiện nào khớp bộ lọc.')}</p>`;
+
+  return filt+`
+  <div class="ev-tblwrap"><table class="ev-tbl">
+    <thead><tr>
+      <th>${t('Ngày')}</th><th>${t('Loại')}</th><th>${t('Tên sự kiện')}</th>
+      <th>${t('Số ngày')}</th><th>${t('Gửi cho')}</th><th>${t('Tình trạng')}</th><th></th>
+    </tr></thead>
+    <tbody>${rows.map(ev=>{
+      const d=evDays(ev);
+      const past=d.length&&d[d.length-1]<tIso, live=d.includes(tIso);
+      const st=live?`<span class="evst live">${t('đang diễn ra')}</span>`
+              :past?`<span class="evst past">${t('đã qua')}</span>`
+                   :`<span class="evst next">${t('sắp tới')}</span>`;
+      const c=evCatInfo(ev.cat);
+      return `<tr class="${past?'past':''}${live?' live':''}">
+        <td class="nw">${esc(evDateLabel(ev))}</td>
+        <td class="nw">${c.ic} ${esc(t(c.l))}</td>
+        <td><b>${esc(ev.title||t('Sự kiện'))}</b>${ev.note?`<i class="nt">${esc(ev.note)}</i>`:''}</td>
+        <td class="ct">${d.length}</td>
+        <td>${t(evScopeInfo(ev.scope).l)}${
+          ev.scope==='teams'&&(ev.teams||[]).length?' ('+esc(ev.teams.join(', '))+')':''}${
+          ev.notify===false?`<i class="nt">${t('không gửi thông báo')}</i>`:''}</td>
+        <td class="nw">${st}</td>
+        <td class="nw">
+          <button class="btn sec sm ico" onclick="evEdit('${ev.id}')" title="${t('Sửa')}">✏️</button>
+          <button class="btn warn sm ico" onclick="evDelete('${ev.id}')" title="${t('Xoá')}">✕</button>
+        </td></tr>`;
+    }).join('')}</tbody>
+  </table></div>`;
+}
+
 /* Dải sự kiện hiện trên trang chính nhân viên & trong sheet ngày */
 function evBannerHtml(isoList){
   const seen={},out=[];
@@ -376,8 +563,8 @@ function evBannerHtml(isoList){
   if(!out.length)return '';
   out.sort((a,b)=>String(evDays(a)[0]||'').localeCompare(String(evDays(b)[0]||'')));
   return `<div class="ev-banner">${out.map(ev=>`<div class="ev-b">
-    <span class="ic">📌</span>
-    <span class="tx"><b>${esc(ev.title||t('Sự kiện'))}</b>
+    <span class="ic">${evCatInfo(ev.cat).ic}</span>
+    <span class="tx"><b>${esc(ev.title||t('Sự kiện'))} <span class="evtag">${esc(t(evCatInfo(ev.cat).l))}</span></b>
       <i>${esc(evDateLabel(ev))}${ev.note?' · '+esc(ev.note):''}</i></span>
     ${(typeof nsWhen==='function')?`<span class="when">${esc(nsWhen(evDays(ev).find(x=>x>=todayIso())||evDays(ev)[0]))}</span>`:''}
   </div>`).join('')}</div>`;

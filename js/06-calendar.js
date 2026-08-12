@@ -117,6 +117,32 @@ function renderCal(opts){
 }
 function setCalMode(m){calMode=m;renderCal();}
 function toggleCalMobileView(){calMobileView=calMobileView==='week'?'day':'week';renderCal();}
+/* ============================================================
+   ★ v8.2 — NGÀY ĐÀO TẠO CŨNG LÀ NGÀY "KHÁC CHUẨN"
+   ------------------------------------------------------------
+   "Khác chuẩn" trước nay chỉ có một nghĩa hẹp: ô lịch có ghi đè ở
+   S.over (đổi ca, nghỉ phép đã duyệt, tăng ca…). Buổi đào tạo nằm
+   ngoài hệ mã ca — nó là lớp phủ lên ô — nên người đi học TRONG ca
+   vẫn giữ nguyên mã ca cũ và bị bộ lọc "Chỉ ô khác chuẩn" bỏ sót.
+
+   Thực tế thì hôm đó người ấy KHÔNG làm việc như lịch chuẩn: họ ngồi
+   lớp. Người xếp ca, người tính nhân lực và người duyệt đơn đều cần
+   thấy ngày đó nổi lên cùng với các ngày đổi ca khác.
+
+   Nên "khác chuẩn" từ nay là HỢP của hai nguồn:
+     · ô có ghi đè  (r.ovr)      → vẫn giữ chấm tròn + lớp .ovr như cũ
+     · ô có đào tạo (trOfCell)   → thêm lớp .diff (viền), không thêm .ovr
+   Buổi CHỜ DUYỆT cũng tính: người xếp ca cần biết trước là "có người
+   xin đi học ngày này" — ô vẫn vẽ sọc nên phân biệt được bằng mắt.
+   ============================================================ */
+function cellHasTrain(empId,iso){
+  return typeof trOfCell==='function' && trOfCell(empId,iso).length>0;
+}
+/* r truyền vào để khỏi gọi eff() hai lần trong vòng lặp bảng lịch */
+function cellIsDiff(empId,iso,r){
+  const rr=r||(typeof eff==='function'?eff(empId,iso):{ovr:false});
+  return !!(rr&&rr.ovr)||cellHasTrain(empId,iso);
+}
 function renderMatrix(C){
   fillGroupFilter(C.grp);
   const ym=$(C.month).value;
@@ -134,12 +160,16 @@ function renderMatrix(C){
   // Lấy mã: chuẩn = base; thực tế = eff (base+over) kèm cờ ovr (khác chuẩn)
   const getCode=C.real ? (id,iso)=>eff(id,iso) : (id,iso)=>({code:(S.base[id]&&S.base[id][iso])||'',ovr:false});
 
+  /* Ô khác chuẩn = có ghi đè HOẶC có lịch đào tạo (xem chú thích cellIsDiff).
+     Chỉ xét ở lịch THỰC TẾ — lịch chuẩn thì không có gì để so. */
+  const isDiff=C.real?((id,iso,r)=>cellIsDiff(id,iso,r)):(()=>false);
+
   /* "Chỉ ô khác chuẩn": thu gọn bảng — chỉ giữ NGƯỜI và NGÀY có ít nhất
      một ô khác lịch chuẩn, nhìn phát biết ngay ai đổi gì hôm nào. */
   if(diffOnly){
-    const empHasDiff=e=>days.some(iso=>getCode(e.id,iso).ovr);
+    const empHasDiff=e=>days.some(iso=>isDiff(e.id,iso,getCode(e.id,iso)));
     const empsDiff=emps.filter(empHasDiff);
-    const daysDiff=days.filter(iso=>empsDiff.some(e=>getCode(e.id,iso).ovr));
+    const daysDiff=days.filter(iso=>empsDiff.some(e=>isDiff(e.id,iso,getCode(e.id,iso))));
     if(!empsDiff.length){
       $(C.box).innerHTML='<p style="padding:20px" class="muted">Kỳ này chưa có ô nào khác lịch chuẩn.</p>';
       return;
@@ -193,13 +223,16 @@ function renderMatrix(C){
       days.forEach(iso=>{
         const r=getCode(e.id,iso);
         const editable=C.real&&canEditSched();
-        const style=(diffOnly&&!r.ovr)?'':cellStyle(r.code);
+        const dif=isDiff(e.id,iso,r);
+        const style=(diffOnly&&!dif)?'':cellStyle(r.code);
         /* Ô có lịch đào tạo tô NỀN RIÊNG đè lên màu mã ca (js/22-training.js).
            Lớp .trday ghi đè bằng !important nên style inline của mã ca vẫn để
            nguyên — bỏ lớp đi là ô trả lại màu ca, không mất gì. */
         const trC=trOn?trCellCls(e.id,iso):'';
         const trT=trC?` title="${esc(trCellTitle(e.id,iso))}"`:'';
-        h+=`<td class="cell${editable?' editable':''}${r.ovr?' ovr diff':''}${r.o&&r.o.prov?' prov':''}${iso===tIso?' today':''}${trC}" style="${style}"${trT} ${editable?`onclick="openCell('${e.id}','${iso}')"`:''}>${r.code||''}</td>`;
+        /* .ovr = CÓ GHI ĐÈ (chấm tròn góc ô) — chỉ khi thật sự có S.over.
+           .diff = KHÁC CHUẨN (viền) — gồm cả ô chỉ có đào tạo. */
+        h+=`<td class="cell${editable?' editable':''}${r.ovr?' ovr':''}${dif?' diff':''}${r.o&&r.o.prov?' prov':''}${iso===tIso?' today':''}${trC}" style="${style}"${trT} ${editable?`onclick="openCell('${e.id}','${iso}')"`:''}>${r.code||''}</td>`;
       });
       h+='</tr>';
     });
@@ -228,7 +261,7 @@ function renderLegend(elId){
      phải nói rõ điều đó, không xếp lẫn vào danh sách mã (js/22-training.js). */
   if(typeof trCellCls==='function')
     s+=`<span class="lg"><span class="box" style="background:var(--trc);color:#fff">🎓</span>${
-      t('Ô nền tím = có lịch đào tạo (sọc = chờ duyệt · vạch xanh mép phải = tính tăng ca)')}</span>`;
+      t('Ô nền tím = có lịch đào tạo (sọc = chờ duyệt · vạch xanh mép phải = tính tăng ca) — ngày học tính là ngày khác lịch chuẩn')}</span>`;
   $(elId||'legend').innerHTML=s;
 }
 function fillGroupFilter(selId){
@@ -536,6 +569,7 @@ function renderCalWeekCards(){
   const real=calMode==='real';
   const diffOnly=real&&$('realDiffOnly').checked;
   const getCode=real?(id,iso)=>eff(id,iso):(id,iso)=>({code:(S.base[id]&&S.base[id][iso])||'',ovr:false});
+  const isDiff=real?((id,iso,r)=>cellIsDiff(id,iso,r)):(()=>false);
   const weeks=weeksFromDays(days);
   const tIso=todayIso();
   let firstOpenIdx=-1;
@@ -543,7 +577,7 @@ function renderCalWeekCards(){
   let nWkSkipped=0;
   weeks.forEach((wk,wi)=>{
     /* "Chỉ ô khác chuẩn": tuần không có ô nào khác lịch chuẩn thì bỏ hẳn */
-    const wkDiffOf=e=>wk.some(w=>w.inRange&&getCode(e.id,w.iso).ovr);
+    const wkDiffOf=e=>wk.some(w=>w.inRange&&isDiff(e.id,w.iso,getCode(e.id,w.iso)));
     if(diffOnly&&!emps.some(wkDiffOf)){nWkSkipped++;return;}
     if(wk.some(w=>w.iso===tIso))firstOpenIdx=wi;
     const wkKey=wk[0].iso;
@@ -584,10 +618,15 @@ function renderCalWeekCards(){
             const r=getCode(e.id,w.iso);
             const editable=real&&canEditSched();
             const cls=['cellc'];
+            const dif=isDiff(e.id,w.iso,r);
+            const trC=(typeof trCellCls==='function')?trCellCls(e.id,w.iso):'';
             if(w.iso===tIso)cls.push('wk-cell-today');
-            if(r.ovr)cls.push('wk-cell-diff wk-cell-ovr');
-            if(diffOnly&&!r.ovr){h+=`<div class="${cls.join(' ')} dim">${r.code?`<span class="mini">${r.code}</span>`:''}</div>`;return;}
-            h+=`<div class="${cls.join(' ')}" ${editable?`onclick="openCell('${e.id}','${w.iso}')"`:''}>${r.code?chip(r.code):''}</div>`;
+            /* Viền cam theo "khác chuẩn" (kể cả ngày học); lớp .wk-cell-ovr
+               vẫn chỉ dành cho ô có ghi đè thật. */
+            if(dif)cls.push('wk-cell-diff');
+            if(r.ovr)cls.push('wk-cell-ovr');
+            if(diffOnly&&!dif){h+=`<div class="${cls.join(' ')} dim">${r.code?`<span class="mini">${r.code}</span>`:''}</div>`;return;}
+            h+=`<div class="${cls.join(' ')}"${trC?` title="${esc(trCellTitle(e.id,w.iso))}"`:''} ${editable?`onclick="openCell('${e.id}','${w.iso}')"`:''}>${r.code?chip(r.code):''}${trC?'<u class="trdot">🎓</u>':''}</div>`;
           });
           h+='</div>';
         });

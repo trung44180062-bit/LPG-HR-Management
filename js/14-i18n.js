@@ -883,6 +883,8 @@ const I18N_EN={
 'Kỳ trước':'Previous period',
 'Kỳ sau':'Next period',
 'Chỉ ô khác chuẩn':'Only cells differing from standard',
+/* ★ v8.2 — ngày đào tạo cũng tính là ngày khác lịch chuẩn */
+'Ô có ghi đè lịch hoặc có buổi đào tạo':'Cells with a schedule override or a training session',
 '❔ Chú giải':'❔ Legend',
 'Thu/Mở':'Collapse / expand',
 
@@ -1571,6 +1573,10 @@ const I18N_EN={
 'Đơn {type} của {who} đang chờ {lvl} duyệt':'{type} request from {who} — waiting for {lvl}',
 'Đơn {type} đã được DUYỆT chính thức':'{type} request APPROVED',
 'Đơn {type} đã được {lvl} TẠM DUYỆT (chờ Quản lý người Hàn chốt)':'{type} request PROVISIONALLY approved by {lvl} (awaiting the Korean manager)',
+/* ★ v7.9 — Section Chief duyệt là xong việc; cấp cuối GHI NHẬN sau */
+'Đơn {type} đã được DUYỆT · {lvl} · Quản lý người Hàn sẽ ghi nhận sau':
+  '{type} request APPROVED · {lvl} · the Korean manager will endorse it later',
+'Quản lý người Hàn đã ghi nhận đơn {type}':'The Korean manager has endorsed the {type} request',
 'Đơn {type} đã được Field Engineer duyệt (chờ cấp trên)':'{type} request approved by the Field Engineer (awaiting the next level)',
 'Đơn {type} bị TỪ CHỐI':'{type} request REJECTED',
 'Đơn {type} đã bị HUỶ DUYỆT':'{type} request approval WITHDRAWN',
@@ -1655,6 +1661,7 @@ const I18N_EN={
 'Tăng ca hành chính 08–17h':'Overtime, office hours 08:00–17:00',
 'Ca hành chính 08:00–17:00':'Office hours 08:00–17:00',
 'Ô nền tím = có lịch đào tạo (sọc = chờ duyệt · vạch xanh mép phải = tính tăng ca)':'Purple cell = training (striped = pending approval · green right edge = counts as overtime)',
+'Ô nền tím = có lịch đào tạo (sọc = chờ duyệt · vạch xanh mép phải = tính tăng ca) — ngày học tính là ngày khác lịch chuẩn':'Purple cell = training (striped = pending approval · green right edge = counts as overtime) — training days count as differing from the standard schedule',
 
 /* 'chờ duyệt' · 'CHỜ DUYỆT' · 'tăng ca' đã có ở trên — KHÔNG khai lại.
    Khoá trùng trong object literal thì bản SAU đè bản trước, tức là sẽ đổi
@@ -1790,7 +1797,153 @@ const I18N_EN={
 'đơn đã bị từ chối':'the request was rejected',
 'đã đổi người OT cover':'the overtime cover was reassigned',
 'đã đổi người đổi ca':'the shift-swap partner was changed',
-'Xoá ô (về ca chuẩn)':'Clear cell (back to standard shift)'
+'Xoá ô (về ca chuẩn)':'Clear cell (back to standard shift)',
+
+/* ============================================================
+   ★ v7.8 — LOẠI SỰ KIỆN · BẢNG TỔNG HỢP · KHOÁ ĐÀO TẠO
+   (js/20-events.js · js/22-training.js · js/23-course.js)
+   Tên loại dựng sẵn (VLGC unloading, Internal training…) vốn đã là
+   tiếng Anh nên không có mặt ở đây — trừ 'Khác'.
+   ============================================================ */
+/* HR — hai trạng thái */
+'Chưa lên hệ thống HR':'Not in HR system',
+'Đã lên hệ thống HR':'In HR system',
+'○ Chưa lên hệ thống HR':'○ Not in HR system',
+'✅ Đã lên hệ thống HR':'✅ In HR system',
+
+/* Sự kiện */
+'Loại sự kiện':'Event type',
+'Loại khác…':'Other type…',
+'Tên loại sự kiện mới (VD: Thay van an toàn)':'New event type (e.g. Safety valve replacement)',
+'Tên loại quá dài':'That type name is too long',
+'Khai sự kiện':'New / edit event',
+'Khai sự kiện mới':'New event',
+'Bảng sự kiện':'Event table',
+'Mọi loại':'All types',
+'Gửi cho':'Sent to',
+'Tình trạng':'Status',
+'sự kiện':'event(s)',
+'đang diễn ra':'ongoing',
+'đã qua':'past',
+'Không có sự kiện nào khớp bộ lọc.':'No event matches the filter.',
+
+/* Khoá đào tạo */
+'Khoá đào tạo':'Training course',
+'Khoá / Buổi':'Course / Session',
+'Xếp buổi':'Schedule a session',
+'Bảng tổng hợp':'Summary table',
+'Thuộc khoá đào tạo':'Part of a course',
+'— Buổi lẻ (không thuộc khoá nào) —':'— Standalone session (no course) —',
+'Quản lý khoá':'Manage courses',
+'Một khoá gồm nhiều buổi. Khai khoá một lần rồi thêm từng buổi vào đó — sau này chuyển người qua lại giữa các buổi ngay trong màn Khoá đào tạo.':
+  'One course holds several sessions. Declare the course once, then add sessions to it — you can move people between sessions later on the Training course screen.',
+'Một khoá đào tạo thường chia làm nhiều buổi vì không thể rút hết người khỏi ca cùng lúc. Khai khoá một lần, thêm từng buổi vào khoá, rồi chuyển người qua lại giữa các buổi ngay trên bảng tích bên dưới.':
+  'A training course is usually split into several sessions because you cannot pull everyone off shift at once. Declare the course once, add each session to it, then move people between sessions on the tick table below.',
+'Tên khoá đào tạo':'Course name',
+'VD: Huấn luyện an toàn hoá chất 2026':'e.g. Chemical safety training 2026',
+'Đơn vị đào tạo (không bắt buộc)':'Training provider (optional)',
+'VD: Trung tâm Kiểm định 3':'e.g. Inspection Centre 3',
+'Học viên của khoá':'Course attendees',
+'Đây là danh sách của cả khoá. Ai học buổi nào thì tích ở bảng phân bổ của khoá.':
+  'This is the whole-course list. Who attends which session is ticked on the course allocation table.',
+'VD: Cuối khoá có kiểm tra, mang theo thẻ':'e.g. Test at the end of the course, bring your badge',
+'Tạo khoá đào tạo':'Create course',
+'Lưu khoá':'Save course',
+'Khoá mới':'New course',
+'Khoá đã khai':'Courses',
+'Chưa có khoá đào tạo nào.':'No course yet.',
+'Đã lưu khoá đào tạo':'Course saved',
+'Đã xoá khoá đào tạo':'Course deleted',
+'Chưa đặt tên khoá đào tạo':'The course has no name yet',
+'Không tìm thấy khoá đào tạo':'Course not found',
+'Bạn không có quyền quản lý khoá đào tạo':'You are not allowed to manage training courses',
+'Bạn không có quyền quản lý khoá đào tạo.':'You are not allowed to manage training courses.',
+'Xoá khoá':'Delete course',
+'buổi của khoá sẽ trở thành buổi lẻ (không bị xoá).':'session(s) of this course will become standalone sessions (they are NOT deleted).',
+'Khoá này chưa có buổi nào.':'This course has no session yet.',
+'buổi trở thành buổi lẻ':'session(s) became standalone',
+'chưa xếp buổi nào':'no session scheduled yet',
+
+/* Phân bổ người */
+'Phân bổ người':'Allocate people',
+'Học viên':'Attendee',
+'Buổi':'Session',
+'buổi':'session(s)',
+'học viên':'attendee(s)',
+'Số buổi':'Sessions',
+'chuyển →':'move →',
+'chỉ buổi':'only session',
+'(bỏ khỏi mọi buổi)':'(remove from all sessions)',
+'Lưu phân bổ':'Save allocation',
+'Bỏ thay đổi':'Discard changes',
+'Thêm buổi vào khoá':'Add a session',
+'Khoá này chưa có buổi nào — bấm “Thêm buổi vào khoá” để xếp buổi đầu tiên.':
+  'This course has no session yet — use “Add a session” to schedule the first one.',
+'Khoá này chưa có học viên nào — sửa khoá và chọn người.':
+  'This course has no attendee yet — edit the course and pick people.',
+'Đang sửa nháp':'Draft in progress',
+'buổi có thay đổi. Bấm “Lưu phân bổ” mới ghi thật; lúc đó đơn tăng ca và thông báo của những buổi này mới được tạo lại.':
+  'session(s) changed. Nothing is written until you press “Save allocation” — the overtime requests and notifications of those sessions are rebuilt then.',
+'Bảng đang khớp với dữ liệu đã lưu.':'The table matches the saved data.',
+'Không có thay đổi nào để lưu':'Nothing to save',
+'buổi sẽ không còn học viên nào. Vẫn lưu?':'session(s) will have no attendee left. Save anyway?',
+'không còn học viên — hãy xoá buổi này nếu không dùng nữa':
+  'has no attendee left — delete the session if you no longer need it',
+'Đã cập nhật':'Updated',
+
+/* Bảng tổng hợp đào tạo */
+'Theo khoá / buổi':'By course / session',
+'Theo người':'By person',
+'Giờ học':'Hours',
+'Giờ/người':'Hrs/person',
+'Đơn OT':'OT requests',
+'Trong đó tăng ca':'of which overtime',
+'Cộng khoá':'Course total',
+'tổng giờ học của cả lớp':'total attendee-hours of the class',
+'Buổi lẻ (không thuộc khoá nào)':'Standalone sessions (no course)',
+'Kỳ này chưa có buổi đào tạo nào.':'No training session in this period.',
+
+/* ============================================================
+   ★ v8.0 — HAI KHUNG 12 GIỜ ≥2 KỸ SƯ · XÁC NHẬN THAM GIA ĐÀO TẠO
+   ============================================================ */
+'Khung ngày 08:00–20:00':'Day window 08:00–20:00',
+'Khung đêm 20:00–08:00':'Night window 20:00–08:00',
+'người đang đi đào tạo':'person(s) away at training',
+'đang đi đào tạo':'away at training',
+'chỉ có mặt một phần khung':'on site for part of the window only',
+'người đi đào tạo không được tính':'people away at training are not counted',
+'cần':'needs',
+'Tối thiểu kỹ sư mỗi khung 12h (08–20 · 20–08)':'Minimum engineers per 12h window (08–20 · 20–08)',
+'Xác nhận đã tham gia':'Confirm attendance',
+'đã tham gia':'attended',
+'đã xác nhận tham gia':'confirmed attendance',
+'chưa':'not yet',
+'chưa diễn ra':'not held yet',
+'Đã tham gia':'Attended',
+'Chưa tham gia':'Not attended',
+'Đã xác nhận tham gia':'Attendance confirmed',
+'Bấm để đổi trạng thái tham gia':'Click to toggle attendance',
+'Đã ghi nhận bạn tham gia buổi đào tạo':'Your attendance has been recorded',
+'Đã bỏ xác nhận tham gia':'Attendance mark removed',
+'Bạn chỉ xác nhận được cho chính mình':'You can only confirm your own attendance',
+'Buổi này chưa diễn ra':'This session has not been held yet',
+
+/* ============================================================
+   ★ v7.9 — DUYỆT XONG LÀ XONG · ĐƠN NGOÀI BỘ LỌC · ĐIỂM DANH KHOÁ
+   ============================================================ */
+'chờ Quản lý người Hàn ghi nhận':'awaiting the Korean manager’s endorsement',
+'Đơn đã duyệt và đã ghi vào lịch. Quản lý người Hàn ghi nhận sau — không chặn việc gì.':
+  'Approved and already applied to the schedule. The Korean manager endorses it later — nothing is blocked.',
+'Đã duyệt — lịch thực tế đã ghi':'Approved — the actual schedule is updated',
+'Đã ghi nhận':'Endorsed',
+'đơn cần bạn duyệt nằm ngoài bộ lọc đang xem':'request(s) waiting for you outside the current filter',
+'sớm nhất':'earliest',
+'Đang xem tất cả các kỳ':'Showing every period',
+'học viên của khoá chưa được xếp buổi nào':'course attendee(s) are not scheduled into any session',
+'Cả':'All',
+'học viên đều đã có buổi.':'attendees have a session.',
+'Danh sách này là BẢN ĐIỂM DANH GỐC của khoá — dùng để biết còn ai chưa học. Bảng phân bổ sẽ báo ngay nếu có người trong danh sách chưa được xếp buổi nào, và người chọn ở đây được tích sẵn khi bạn thêm buổi mới.':
+  'This is the course roll — it tells you who still has not attended. The allocation table flags anyone on the roll with no session yet, and the people picked here are pre-ticked when you add a new session.'
 };
 
 /* ============================================================

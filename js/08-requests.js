@@ -17,8 +17,15 @@ const SHIFT_HOURS={D:['08:00','20:00'],N:['20:00','08:00'],O:['08:00','17:00']};
    in biểu mẫu nộp nhân sự nên mặc định vào hàng CHỜ IN; các loại còn lại
    mặc định "không cần in" (vẫn duyệt & ghi lịch bình thường).
    Người khai luôn đổi lại được ngay trong form, quản lý đổi được ở màn Duyệt.
+
+   ★ v7.8 — hai loại BẮT BUỘC IN là:
+       'multi' — làm liên tục nhiều ngày (nhân sự đòi tờ đơn có chữ ký để
+                 đối chiếu chuỗi ngày làm liên tục)
+       'swap'  — đổi ca (đụng tới hai người nên phải có giấy)
+   Đơn bổ sung công ('wt') trước đây nằm trong danh sách này, nay bỏ ra:
+   thực tế nhân sự nhận qua hệ thống HR, không cần tờ in.
    ------------------------------------------------------------ */
-const REQ_MUST_PRINT=['wt','swap'];
+const REQ_MUST_PRINT=['multi','swap'];
 function defaultNoPrint(type){return !REQ_MUST_PRINT.includes(type);}
 function baseShiftOf(code){
   /* Ca kép lấy theo nửa CA CHUẨN — người trực O rồi tăng ca đêm thì
@@ -388,16 +395,38 @@ function markPickedHr(on){
    ============================================================ */
 const REQ_ST_LABEL={pending:'CHỜ DUYỆT',approved:'ĐÃ DUYỆT',rejected:'TỪ CHỐI'};
 const REQ_DEAD=st=>st==='rejected';
-/* Nhãn trạng thái có xét duyệt nhiều cấp: TẠM DUYỆT (chờ QL Hàn chốt),
-   CHỜ <cấp kế> khi mới qua Field Engineer. */
+/* ============================================================
+   ★ v7.9 — SECTION CHIEF DUYỆT LÀ XONG VIỆC
+   ------------------------------------------------------------
+   Chuỗi duyệt vẫn là FE › Section Chief › Quản lý người Hàn, và cấp cuối
+   vẫn ghi nhận được. Nhưng thực tế vận hành: Quản lý người Hàn gần như
+   không mở app, nên mọi đơn dừng ở nhãn "TẠM DUYỆT (chờ Quản lý người Hàn
+   chốt)" — nhân viên đọc thành "đơn của tôi CHƯA xong", rồi hỏi lại, rồi
+   lo. Trong khi lịch thực tế ĐÃ được ghi và người ta đã đi làm theo nó.
+
+   Nên đổi cách NÓI, không đổi cơ chế:
+     · Với mọi người, đơn qua Section Chief là ĐÃ DUYỆT — hết việc.
+     · Phần ghi nhận của Quản lý người Hàn thành một dấu phụ, chỉ người
+       duyệt nhìn thấy (reqEndorseNote), và nói theo hướng trân trọng
+       "chờ ghi nhận" chứ không phải "chưa được duyệt".
+   Xem thêm khối notifyReqParties() và js/21-notify.js (kênh 'finalNote').
+   ============================================================ */
 function reqStatusLabel(r){
   if(!r)return '';
   if(r.status==='rejected')return t('TỪ CHỐI');
-  if(r.status==='approved')return reqIsProvisional(r)?t('TẠM DUYỆT'):t('ĐÃ DUYỆT');
+  /* Không còn nhãn "TẠM DUYỆT": qua cấp Section Chief là ĐÃ DUYỆT */
+  if(r.status==='approved')return t('ĐÃ DUYỆT');
   const nx=typeof reqNextLevel==='function'?reqNextLevel(r):null;
   const someDone=r.appr&&Object.keys(r.appr).some(k=>r.appr[k]&&!r.appr[k].reject);
   if(nx&&someDone)return t('CHỜ')+' '+lvlLabel(nx);
   return t('CHỜ DUYỆT');
+}
+/* Dấu phụ "còn chờ Quản lý người Hàn ghi nhận" — CHỈ hiện cho người có
+   quyền duyệt. Nhân viên không cần biết chi tiết nội bộ của chuỗi duyệt. */
+function reqEndorseNote(r){
+  if(!r||r.status!=='approved'||!reqIsProvisional(r))return '';
+  if(!apprCanAct())return '';
+  return t('chờ Quản lý người Hàn ghi nhận');
 }
 function reqStatusClass(r){
   if(!r)return '';
@@ -556,12 +585,17 @@ function apprWarnLine(r){
     const wid=(r.type==='swap')?(reqDayWith(r,iso).id||r.withId||''):'';
     if(wid){const curB=eff(wid,iso).code;applyDelta(curA,curB);applyDelta(curB,curA);}
     else applyDelta(curA,d.code);
-    if(cD<S.settings.minD||cN<S.settings.minN)warnings.push({iso,cD,cN});
+    /* ★ v8.0 — thiếu KỸ SƯ ở một trong hai khung 12 giờ cũng phải cảnh báo,
+       kể cả khi đầu người ca D/N vẫn đủ: ba operator không thay được một kỹ
+       sư. Người đang đi đào tạo đã bị trừ sẵn trong mpEngWhy(). */
+    const engWhy=(typeof mpEngWhy==='function')?mpEngWhy(iso,pool):'';
+    if(cD<S.settings.minD||cN<S.settings.minN||engWhy)warnings.push({iso,cD,cN,engWhy});
   }
   if(!warnings.length)return '';
   const w=warnings[0],parts=[];
   if(w.cD<S.settings.minD)parts.push(`${t('ca D còn')} ${w.cD}/${S.settings.minD}`);
   if(w.cN<S.settings.minN)parts.push(`${t('ca N còn')} ${w.cN}/${S.settings.minN}`);
+  if(w.engWhy)parts.push(w.engWhy);
   return `<div class="hint" style="background:#FEF2F2;color:#991B1B;margin-top:6px">${t('⚠️ Nếu duyệt: ngày')} ${fmtVN(w.iso)} — ${t('khối')} ${t(POOL_LABEL[pool])} ${parts.join(', ')}${warnings.length>1?` (+${warnings.length-1} ${t('ngày khác)')}`:''}</div>`;
 }
 /* Nhãn khuyến nghị gọn hiện ngay trên dòng đơn (chưa cần bung chi tiết).
@@ -654,6 +688,19 @@ function apprSetFilter(k,v){
   renderAppr();
 }
 function apprToggleRow(id){apprOpen[id]=!apprOpen[id];renderAppr();}
+/* ★ v7.9 — mở đủ rộng để thấy MỌI đơn còn chờ tay mình: bỏ giới hạn kỳ và
+   đưa trạng thái về "chờ duyệt". Giữ nguyên nhóm vị trí (pg) vì đó là "tôi
+   đang làm hộ nhóm nào", không phải bộ lọc nhất thời. */
+function apprShowOutside(){
+  apprFilter.ym='__all';apprFilter.from='';apprFilter.to='';
+  /* '__all' chứ không phải 'pending': đơn chờ Quản lý người Hàn GHI NHẬN có
+     status 'approved' nhưng vẫn nằm trong danh sách cần tay người duyệt
+     (reqNeedsMyAction). Lọc 'pending' sẽ giấu đúng những đơn vừa hứa cho xem. */
+  apprFilter.status='__all';apprFilter.q='';apprFilter.flag='';
+  apprFilter.type='__all';apprFilter.print='__all';apprFilter.hr='__all';
+  renderAppr();
+  toast(t('Đang xem tất cả các kỳ'));
+}
 function apprResetFilter(){
   /* Nhóm vị trí KHÔNG bị reset: đó là "tôi đang làm hộ nhóm nào", không phải
      một điều kiện lọc nhất thời như trạng thái hay từ khoá. */
@@ -699,11 +746,14 @@ function apprMatch(r){
   if(apprFilter.print==='yes'&&!r.printedAt)return false;
   if(apprFilter.print==='no'&&(r.printedAt||r.noPrint))return false;   // chưa in = chưa in & vẫn cần in
   if(apprFilter.print==='none'&&!r.noPrint)return false;               // không cần in
-  // Đã nhập hệ thống HR công ty hay chưa
+  /* Đã nhập hệ thống HR công ty hay chưa — ★ v7.8 chỉ còn ĐÚNG HAI trạng thái.
+     Chip '⏰ Cần nhập HR' cũ (đã duyệt xong mà chưa gõ HR) đã bỏ: nó là trạng
+     thái thứ ba trá hình, người dùng phải nhớ nó khác 'chưa nhập' ở chỗ nào.
+     Giá trị 'todo' còn được nhận ở đây để bộ lọc cũ đang lưu trong phiên
+     không rơi vào nhánh "không lọc gì" một cách âm thầm. */
+  if(apprFilter.hr==='todo')apprFilter.hr='no';
   if(apprFilter.hr==='yes'&&!reqHrDone(r))return false;
   if(apprFilter.hr==='no'&&reqHrDone(r))return false;
-  // Việc cần làm: đơn đã DUYỆT XONG mà chưa ai gõ vào HR
-  if(apprFilter.hr==='todo'&&(reqHrDone(r)||r.status!=='approved'||reqIsProvisional(r)))return false;
   if(apprFilter.type!=='__all'&&r.type!==apprFilter.type)return false;
   // Nhóm vị trí của NGƯỜI ĐỨNG ĐƠN — để người nhập HR làm hộ theo từng nhóm
   if(!pgMatch(r,apprFilter.pg))return false;
@@ -816,7 +866,8 @@ function apprRow(r){
       <button type="button" class="ar-txt" onclick="apprToggleRow('${r.id}')">
         <span class="l1"><b>${esc(e?e.name:r.empId)}</b>
           <i class="typ">${esc(REQ_LABEL[r.type]||r.type)}</i>
-          <span class="st ${reqStatusClass(r)}">${reqStatusLabel(r)}</span>
+          <span class="st ${reqStatusClass(r)}">${reqStatusLabel(r)}</span>${
+            reqEndorseNote(r)?`<span class="endnote" title="${t('Đơn đã duyệt và đã ghi vào lịch. Quản lý người Hàn ghi nhận sau — không chặn việc gì.')}">🧾 ${reqEndorseNote(r)}</span>`:''}
           <span class="prt ${r.printedAt?'yes':(r.noPrint?'none':'no')}">${r.printedAt?'🖨️ '+t('đã in'):(r.noPrint?'🚫 '+t('không in'):'○ '+t('chưa in'))}</span>${
             reqHrDone(r)?`<span class="hrs yes">✅ ${t('đã nhập HR')}</span>`:''}${cfBadge}${
             reqCoverGroups(r).length?`<span class="cvw ${(COVER_ST[reqPartySt(r,'cover')||'pending']||COVER_ST.pending).cls} mob-only">🤝</span>`:''}${apprAdviceBadge(r)}</span>
@@ -925,7 +976,12 @@ function apprTr(r){
     <td class="at-par">${atPartner(r)}</td>
     <td class="at-st">
       <span class="st ${reqStatusClass(r)}">${reqStatusLabel(r)}</span>
-      ${nx?`<em class="at-next">${t('chờ')} ${esc(lvlLabel(nx))}</em>`:''}
+      ${/* ★ v7.9 — đơn đã duyệt mà còn cấp cuối: KHÔNG viết "chờ <cấp>" như
+           đơn chưa duyệt, vì việc đã chạy. Viết "chờ ghi nhận", và chỉ người
+           duyệt mới thấy dòng này. */''
+       }${(r.status==='approved'&&reqEndorseNote(r))
+          ?`<em class="at-next soft">🧾 ${esc(reqEndorseNote(r))}</em>`
+          :(nx&&r.status!=='approved'?`<em class="at-next">${t('chờ')} ${esc(lvlLabel(nx))}</em>`:'')}
       ${apprAdviceBadge(r)}</td>
     <td class="at-prt">
       <button type="button" class="prt ${r.printedAt?'yes':(r.noPrint?'none':'no')}"
@@ -1142,8 +1198,10 @@ function renderAppr(){
   const stChips=[['pending','⏳ Chờ duyệt'],['approved','✅ Đã duyệt'],['rejected','❌ Từ chối'],['__all','Tất cả']];
   const prChips=[['__all','Mọi đơn'],['no','○ Chờ in'],['none','🚫 Không in'],['yes','🖨️ Đã in']];
   /* Hàng chip thứ 3: đã gõ vào hệ thống HR của công ty hay chưa.
-     'todo' = đơn đã duyệt chốt mà chưa nhập — đúng việc cần làm mỗi kỳ. */
-  const hrChips=[['__all','Mọi đơn'],['todo','⏰ Cần nhập HR'],['no','○ Chưa nhập HR'],['yes','✅ Đã nhập HR']];
+     ★ v7.8 — HR chỉ có HAI trạng thái: chưa lên hệ thống HR / đã lên. Chip
+     '⏰ Cần nhập HR' đã bỏ vì nó đẻ ra trạng thái thứ ba trong đầu người dùng
+     ("cần nhập" khác "chưa nhập" chỗ nào?) trong khi dữ liệu chỉ có r.hrAt. */
+  const hrChips=[['__all','Mọi đơn'],['no','○ Chưa lên hệ thống HR'],['yes','✅ Đã lên hệ thống HR']];
   const ms=monthsAvailable();
   const isRange=apprFilter.ym==='__range';
   const curYm=curSchedMonth();
@@ -1155,11 +1213,33 @@ function renderAppr(){
   // Đang uỷ quyền phê duyệt cấp cuối → nói rõ ở đầu màn Duyệt cho mọi người biết
   const kd=(typeof kmgrDelegate==='function')?kmgrDelegate():null;
 
+  /* ============================================================
+     ★ v7.9 — ĐƠN CẦN BẠN DUYỆT NHƯNG NẰM NGOÀI BỘ LỌC ĐANG XEM
+     ------------------------------------------------------------
+     Huy hiệu đỏ trên tab Duyệt đếm TOÀN BỘ đơn còn chờ tay người đang đăng
+     nhập, không xét kỳ. Danh sách bên dưới thì lọc theo kỳ đang chọn. Hai
+     con số vì thế lệch nhau một cách hợp lý — nhưng người dùng chỉ thấy
+     "huy hiệu bảo có 13, danh sách có 11", và kết luận là app đếm sai hoặc
+     nuốt đơn. Hay gặp nhất với đơn tăng ca do XẾP ĐÀO TẠO sinh ra: buổi học
+     thường rơi vào kỳ sau, nên đơn nằm ở kỳ mà màn Duyệt chưa mở tới.
+
+     Chữa bằng cách nói thẳng: còn N đơn ở ngoài chỗ đang xem, kèm nút mở
+     rộng bộ lọc. Không tự đổi bộ lọc giúp người dùng — họ đang xem kỳ đó có
+     lý do của họ.
+     ============================================================ */
+  const outside=(typeof reqNeedsMyAction==='function'&&apprCanAct())
+    ? all.filter(r=>reqNeedsMyAction(r)&&!apprMatch(r)) : [];
+  const outNext=outside.map(r=>r.from).filter(Boolean).sort()[0]||'';
+
   $('apprBar').innerHTML=`
     ${kd?`<div class="ab-flag kd-flag">🔑 ${t('Đang uỷ quyền phê duyệt cấp cuối cho')}
         <b>${esc(kmgrDelegateLabel())}</b>${kd.note?` · ${esc(kd.note)}`:''}
         ${adm?`<button class="btn sec sm" onclick="go('data');setTimeout(()=>{const c=$('kdCard');c&&c.scrollIntoView({behavior:'smooth'});},120)">⚙ ${t('Chỉnh')}</button>`:''}
       </div>`:''}
+    ${outside.length?`<div class="ab-flag ab-out">📌 ${t('Còn')} <b>${outside.length}</b>
+        ${t('đơn cần bạn duyệt nằm ngoài bộ lọc đang xem')}${
+          outNext?` · ${t('sớm nhất')} ${fmtVN(outNext)}`:''}
+        <button class="btn sec sm" onclick="apprShowOutside()">${t('Xem tất cả')}</button></div>`:''}
     ${fl?`<div class="ab-flag">🔎 ${t('Đang xem riêng nhóm')}: <b>${fl[1]} ${t(fl[2])}</b>
         <button class="btn sec sm" onclick="apprSetFilter('flag','')">✕ ${t('Bỏ lọc này')}</button></div>`:''}
     <div class="ab-period">
@@ -1524,6 +1604,10 @@ function apprNeedText(r,lvl){
   const e=empById(r.empId);
   const label=REQ_LABEL[r.type]||r.type;
   const who=(e&&e.name)||r.empId;
+  /* ★ v7.9 — lời mời gửi CẤP CUỐI khi đơn đã được Section Chief duyệt:
+     không phải "đang chờ duyệt" (việc đã chạy rồi), mà là mời ghi nhận. */
+  if(lvl===LVL_FINAL&&r.status==='approved')
+    return '🧾 Đơn '+label+' của '+who+' — mời '+lvlLabel(lvl)+' ghi nhận · '+fmtVN(r.from);
   return '📥 Đơn '+label+' của '+who+' đang chờ '+lvlLabel(lvl)+' duyệt · '+fmtVN(r.from);
 }
 function notifyApprovers(r,byId){
@@ -1541,9 +1625,17 @@ function notifyApprovers(r,byId){
      thông báo dẫn đầu ấy bị gỡ (đơn huỷ, đổi cấp duyệt) thì cả nhóm mất tin.
      Nay hộp gửi ở js/21-notify.js tự gộp mọi tin trùng nội dung thành MỘT
      và liệt kê đủ người nhận, nên cứ báo đầy đủ cho từng người. */
+  /* ★ v8.1 — MỌI VIỆC CỦA CẤP CUỐI ĐỀU GOM VỀ BẢN TIN 08:00.
+     Quản lý người Hàn bận, không đọc từng tin nhắn; cái họ cần là MỘT bản
+     review tổng mỗi sáng. Nên mọi tin gửi cấp cuối — dù đơn đang chờ họ
+     duyệt hay đã được Section Chief duyệt — đều mang zk 'finalNote' và đi
+     kênh 'digest'. Không còn tin "APPROVAL REQUIRED — Final" bắn lẻ.
+     Các cấp khác (FE, Section Chief) giữ nguyên 'apprNeed' bắn ngay: họ
+     phải xử lý trong ngày, chậm một buổi là lịch trực hỏng. */
+  const zk=(lvl===LVL_FINAL)?'finalNote':'apprNeed';
   [...to].forEach(pid=>{
     if(!pid||pid===byId)return;                      // người vừa bấm khỏi tự báo mình
-    newNotif({kind:'info',zk:'apprNeed',to:pid,from:byId||'',reqId:r.id,lvl:lvl,
+    newNotif({kind:'info',zk:zk,to:pid,from:byId||'',reqId:r.id,lvl:lvl,
               text:apprNeedText(r,lvl)});
     n++;
   });
@@ -1556,19 +1648,29 @@ function notifyReqParties(r,kind,byId,lvl,extra){
                wt:'bổ sung công',late:'đi trễ/về sớm',multi:'làm liên tục'}[r.type]||r.type;
   const head={
     approved:'✅ Đơn '+label+' đã được DUYỆT chính thức',
-    provapproved:'🕒 Đơn '+label+' đã được '+lvlLabel('trung')+' TẠM DUYỆT (chờ Quản lý người Hàn chốt)',
+    /* ★ v7.9 — Section Chief duyệt = ĐÃ DUYỆT, hết việc. Phần Quản lý người
+       Hàn ghi nhận nói ở vế sau, bằng giọng trân trọng chứ không phải một
+       điều kiện còn treo. Trước đây câu này mở đầu bằng "🕒 TẠM DUYỆT (chờ
+       Quản lý người Hàn chốt)" khiến người nhận tưởng đơn chưa xong. */
+    provapproved:'✅ Đơn '+label+' đã được DUYỆT · '+lvlLabel('trung')
+                +' · Quản lý người Hàn sẽ ghi nhận sau',
+    /* Cấp cuối ghi nhận một đơn vốn đã duyệt — tin nhẹ, chỉ trong app */
+    final:'🧾 Quản lý người Hàn đã ghi nhận đơn '+label,
     fe:'☑️ Đơn '+label+' đã được Field Engineer duyệt (chờ cấp trên)',
     rejected:'❌ Đơn '+label+' bị TỪ CHỐI',
     revoked:'↩️ Đơn '+label+' đã bị HUỶ DUYỆT',
     cancelled:'🗑️ Đơn '+label+' đã bị HUỶ'
   }[kind]||('Cập nhật đơn '+label);
   const txt=head+' · '+fmtVN(r.from)+(extra?(' · '+extra):'');
+  /* zk = khoá cho ma trận Zalo (js/21-notify.js). 'provapproved' đi CHUNG
+     đường với 'approved': với người nhận thì đây LÀ tin duyệt xong, và nhờ
+     vậy nó cũng được gom vào bản tin 08:00 như mọi kết quả duyệt khác.
+     Khi cấp cuối ghi nhận sau đó ('final') thì KHÔNG bắn Zalo nữa — cùng
+     một đơn không báo "đã duyệt" hai lần. */
+  const zk=(kind==='provapproved')?'approved':kind;
   apprPartyIds(r).forEach(pid=>{
     if(pid===byId)return;
-    /* zk = khoá cho ma trận Zalo (js/21-notify.js). Trong app không dùng tới,
-       chỉ để 21-notify.js phân biệt được approved/rejected/fe/… vì mọi tin
-       nhóm B đều mang chung kind:'info'. */
-    newNotif({kind:'info',to:pid,from:byId||'',reqId:r.id,text:txt,zk:kind});
+    newNotif({kind:'info',to:pid,from:byId||'',reqId:r.id,text:txt,zk:zk});
   });
 }
 
@@ -1607,6 +1709,14 @@ function decide(id,ok,bulk,reasonArg){
     return;
   }
 
+  /* ★ v7.9 — CHỤP TRẠNG THÁI TRƯỚC KHI ĐỘNG VÀO r.appr.
+     "Đơn này trước lúc bấm đã được Section Chief duyệt chưa?" phải hỏi TRƯỚC
+     khi ghi chữ ký mới, vì reqIsProvisional() đọc chính r.appr — hỏi sau thì
+     chữ ký vừa ghi làm câu trả lời luôn ra 'không', và cấp cuối ghi nhận lại
+     bắn tin "ĐÃ DUYỆT" lần thứ hai cho cả nhà. */
+  const wasApproved=r.status==='approved';
+  const wasProv=wasApproved&&reqIsProvisional(r);
+
   // DUYỆT ở cấp lvl — cascade các cấp thấp hơn thành "duyệt theo"
   const ord=LVL_ORD[lvl];
   chain.forEach(k=>{if(LVL_ORD[k]<ord&&(!r.appr[k]||r.appr[k].reject))r.appr[k]={by:me,at:Date.now(),cascade:true};});
@@ -1614,7 +1724,6 @@ function decide(id,ok,bulk,reasonArg){
 
   const hasFinal=!!r.appr[LVL_FINAL]&&!r.appr[LVL_FINAL].reject;
   const hasProv =!!r.appr[LVL_PROV]&&!r.appr[LVL_PROV].reject;
-  const wasApproved=r.status==='approved';
 
   let kind='fe';
   if(hasFinal||hasProv){
@@ -1622,7 +1731,7 @@ function decide(id,ok,bulk,reasonArg){
     else if(hasFinal)markReqScheduleFinal(id);
     r.status='approved';r.decidedAt=Date.now();r.decidedBy=me||'manager';
     r.provisional=!hasFinal;
-    kind=hasFinal?'approved':'provapproved';
+    kind=hasFinal?(wasProv?'final':'approved'):'provapproved';
   }else{
     r.status='pending';r.provisional=false;kind='fe';
   }
@@ -1636,8 +1745,8 @@ function decide(id,ok,bulk,reasonArg){
   if(typeof renderReal==='function')renderReal();
   if(typeof renderMe==='function')renderMe(true);
   if(typeof refreshBadge==='function')refreshBadge();
-  toast(hasFinal?t('Đã duyệt & chốt lịch thực tế')
-       :hasProv?t('Đã tạm duyệt — chờ Quản lý người Hàn chốt')
+  toast(hasFinal?(wasProv?t('Đã ghi nhận'):t('Đã duyệt & chốt lịch thực tế'))
+       :hasProv?t('Đã duyệt — lịch thực tế đã ghi')
                :t('Đã duyệt cấp Field Engineer — chờ cấp trên'));
 }
 /* Huỷ DUYỆT một đơn đã duyệt (đưa về chờ duyệt), gỡ ô lịch, báo các bên.

@@ -84,6 +84,21 @@ function trAll(){
     .sort((a,b)=>String(trDays(a)[0]||'').localeCompare(String(trDays(b)[0]||'')));
 }
 function trById(id){return (S.trainings||{})[id]||null;}
+/* ★ v7.8 — buổi có thể thuộc một KHOÁ (js/23-course.js). Tên đầy đủ dùng cho
+   thông báo, ghi chú đơn OT và bảng tổng hợp: "<tên khoá> · <tên buổi>".
+   Buổi lẻ (không khoá) trả về đúng tên buổi như trước — không đổi gì cho
+   dữ liệu cũ, và các phép so chuỗi trong harness vẫn đúng. */
+function trCourseOf(tr){
+  const cid=tr&&tr.courseId;
+  return cid?((S.courses||{})[cid]||null):null;
+}
+function trFullTitle(tr){
+  const c=trCourseOf(tr), s=String((tr&&tr.title)||'').trim();
+  if(!c)return s;
+  const ct=String(c.title||'').trim();
+  if(!ct)return s;
+  return (!s||s===ct)?ct:(ct+' · '+s);
+}
 function trDays(tr){
   if(!tr)return [];
   if(Array.isArray(tr.days))return tr.days.filter(Boolean).slice().sort();
@@ -94,6 +109,62 @@ function trEmps(tr){
   return (Array.isArray(tr.emps)?tr.emps:[]).filter(Boolean).map(String);
 }
 function trIsActive(tr){return !!tr&&tr.status!=='pending';}
+
+/* ============================================================
+   ★ v8.0 — NGƯỜI LAO ĐỘNG XÁC NHẬN ĐÃ THAM GIA
+   ------------------------------------------------------------
+   Xếp lịch đào tạo mới chỉ là DỰ ĐỊNH. Ai thật sự có mặt là chuyện khác:
+   người bận xử lý sự cố, người đổi ca, người quên. Trước đây app không có
+   chỗ nào ghi việc đó, nên hồ sơ đào tạo chỉ trả lời được "ai được xếp",
+   không trả lời được câu kiểm định hay hỏi: "ai ĐÃ HỌC?".
+
+   Một khoá `tr.done = {empId: mốc thời gian}` là đủ:
+     · chính người đó bấm xác nhận (tự khai, không ai khai hộ được cảm giác
+       mình có mặt hay không),
+     · quản lý cũng tích được — điểm danh hộ là việc thật, nhất là với
+       người không dùng app,
+     · CHỈ xác nhận được khi buổi đã diễn ra (ngày đầu ≤ hôm nay) — xác
+       nhận trước là hứa, không phải điểm danh,
+     · KHÔNG sinh thông báo: đây là dấu tích theo dõi, bắn tin cho cả tổ
+       mỗi lần một người điểm danh là tra tấn.
+   ============================================================ */
+function trAttended(tr,empId){
+  return !!(tr&&tr.done&&tr.done[String(empId)]);
+}
+/* Buổi đã diễn ra chưa — mốc là NGÀY ĐẦU của buổi, để buổi nhiều ngày vẫn
+   xác nhận dần từng người sau buổi đầu tiên. */
+function trHappened(tr){
+  const d=trDays(tr);
+  return !!d.length&&d[0]<=todayIso();
+}
+function trCanAttend(tr,empId){
+  if(!tr||!trIsActive(tr)||!trHappened(tr))return false;
+  if(!trEmps(tr).includes(String(empId)))return false;
+  const me=(typeof meId==='function')?meId():'';
+  return trCanManage()||String(me)===String(empId);
+}
+/* Bật / tắt dấu đã tham gia. Trả về {ok, on, err}. */
+function trSetAttend(trId,empId,on){
+  const tr=trById(trId);
+  if(!tr)return {ok:false,err:t('Không tìm thấy buổi đào tạo')};
+  if(!trCanAttend(tr,empId))
+    return {ok:false,err:trHappened(tr)?t('Bạn chỉ xác nhận được cho chính mình')
+                                       :t('Buổi này chưa diễn ra')};
+  tr.done=tr.done||{};
+  if(on===undefined)on=!trAttended(tr,empId);
+  if(on)tr.done[String(empId)]=Date.now();
+  else delete tr.done[String(empId)];
+  /* Object rỗng để lại trên Firebase sẽ bị coi là null — dọn cho gọn */
+  if(!Object.keys(tr.done).length)delete tr.done;
+  save();
+  return {ok:true,on:!!on};
+}
+/* Chia danh sách người của buổi thành đã / chưa tham gia */
+function trAttendSplit(tr){
+  const done=[],todo=[];
+  trEmps(tr).forEach(id=>{(trAttended(tr,id)?done:todo).push(id);});
+  return {done,todo};
+}
 
 /* ============================================================
    ★ v7.1 — TRONG CA hay TĂNG CA: quyết theo TỪNG CẶP (người, ngày)
@@ -440,7 +511,7 @@ function trMakeReqs(tr){
     const r={
       id:uid(),empId:String(empId),type:'ot',byId:me,
       trId:tr.id,                                   // ← sợi dây nối về buổi đào tạo
-      note:t2('Đào tạo')+': '+(tr.title||t2('Đào tạo'))+(tr.place?' · '+tr.place:''),
+      note:t2('Đào tạo')+': '+(trFullTitle(tr)||t2('Đào tạo'))+(tr.place?' · '+tr.place:''),
       status:'pending',source:'training',createdAt:Date.now(),
       noPrint:(typeof defaultNoPrint==='function')?defaultNoPrint('ot'):true,
       days:rows,from:rows[0].iso,to:rows[rows.length-1].iso,
@@ -498,7 +569,9 @@ function trSummaryText(tr,forId){
     how=days.map(iso=>fmtVN(iso)+' '+(trTimeLabelOf(tr,iso)||'')).join(' · ')
         +' · '+trModeLabel(tr).toLowerCase();
   }
-  return (tr.title||t2('Đào tạo'))+' — '+how
+  /* Tên khoá đứng trước tên buổi (★ v7.8) — người nhận tin biết ngay đây là
+     buổi thứ mấy của khoá nào, khỏi phải mở app tra. */
+  return (trFullTitle(tr)||t2('Đào tạo'))+' — '+how
     +(tr.place?' · '+tr.place:'')
     +(who?(' · '+who):'');
 }
@@ -626,8 +699,12 @@ function trSave(o){
   if(editing)dropped=trDropReqs(id);
 
   S.trainings=S.trainings||{};
+  /* Khoá đã bị xoá trong lúc form còn mở thì bỏ liên kết, đừng lưu một
+     courseId trỏ vào hư vô (bảng tổng hợp sẽ đọc ra khoá rỗng). */
+  const cid=String(o.courseId||'').trim();
   S.trainings[id]={
     id,
+    courseId:(cid&&(S.courses||{})[cid])?cid:'',
     title:String(o.title||'').trim(),
     place:String(o.place||'').trim(),
     note :String(o.note ||'').trim(),
@@ -651,6 +728,15 @@ function trSave(o){
     at:(editing&&editing.at)||Date.now(),
     editBy:me||'admin',editAt:Date.now()
   };
+  /* ★ v8.0 — GIỮ LẠI DẤU ĐIỂM DANH khi sửa buổi. trSave() dựng lại bản ghi
+     từ đầu, nên không chép sang là mọi xác nhận "đã tham gia" bốc hơi mỗi
+     lần quản lý sửa giờ học. Chỉ giữ dấu của người CÒN trong danh sách —
+     người đã bị bỏ khỏi buổi thì dấu điểm danh của họ cũng hết nghĩa. */
+  if(editing&&editing.done){
+    const keep={};
+    emps.forEach(id=>{if(editing.done[id])keep[id]=editing.done[id];});
+    if(Object.keys(keep).length)S.trainings[id].done=keep;
+  }
   trResetCache();
 
   /* Đơn tăng ca chỉ sinh khi buổi đã có hiệu lực. Bản chờ duyệt mà đẻ đơn
@@ -710,11 +796,20 @@ let trPreset='full', trTimeIn='08:00', trTimeOut='17:00';
 let trOvernight=false, trNoLunch=true, trNotify=true;
 let trQ='';                  // ô tìm người
 let trTeamF='__all';         // lọc theo nhóm
+let trCourseId='';           // buổi đang soạn thuộc KHOÁ nào ('' = buổi lẻ) ★ v7.8
+/* ★ v7.8 — ba màn trong CÙNG hộp thoại Đào tạo:
+     'form'   — xếp / sửa một buổi (như cũ)
+     'course' — khai khoá đào tạo và phân bổ người vào từng buổi (js/23-course.js)
+     'table'  — bảng tổng hợp để tra cứu
+   Một hộp thoại thay vì ba modal: người dùng đi qua đi lại giữa ba việc này
+   liên tục, mỗi lần mở modal mới là một lần mất chỗ đang đứng. */
+let trView='form';
 
 /* Bản mô tả buổi đang soạn — dùng lại đúng các hàm suy luận của bản đã lưu,
    nhờ vậy màn hình xem trước và kết quả lưu KHÔNG BAO GIỜ lệch nhau. */
 function trDraft(){
   return {id:trEditId||'__new',
+    courseId:trCourseId,
     title:trTitle,place:trPlace,note:trNote,
     days:Object.keys(trSel).sort(), emps:Object.keys(trPick),
     mode:trMode, dayMode:trDayM, dayTime:trDayT,
@@ -727,14 +822,16 @@ function trShiftYm(d){trYm=schedYmShift(trPeriod(),d);renderTrainMgr();}
 
 function trResetForm(){
   trEditId='';trSel={};trPick={};trDayM={};trDayT={};
-  trTitle='';trPlace='';trNote='';
+  trTitle='';trPlace='';trNote='';trCourseId='';
   trMode='auto';trSetPreset('full',true);trNotify=true;
   /* Nhân viên thường chỉ xếp cho mình → chọn sẵn chính họ, khỏi phải bấm */
   if(!trCanManage()){const me=meId();if(me)trPick[me]=true;}
 }
-function openTrainMgr(iso,empId){
+function openTrainMgr(iso,empId,view){
   if(!trCanOpen()){toast(t('Bạn không có quyền xếp lịch đào tạo'));return;}
   trResetForm();
+  /* Chỉ người xếp cho cả tổ mới có màn khoá đào tạo / bảng tổng hợp */
+  trView=(trCanManage()&&(view==='course'||view==='table'))?view:'form';
   if(iso){trSel[iso]=true;trYm=schedMonthOf(iso);}
   else if(!trYm)trYm=curSchedMonth();
   if(empId&&trCanManage())trPick[empId]=true;
@@ -849,6 +946,8 @@ function trEdit(id){
     toast(t('Lịch đã duyệt — nhờ quản lý sửa giúp'));return;
   }
   trEditId=id;
+  trView='form';                       // bấm Sửa từ bảng / màn khoá thì phải thấy form
+  trCourseId=tr.courseId||'';
   trSel={};trDays(tr).forEach(iso=>{trSel[iso]=true;});
   trPick={};trEmps(tr).forEach(x=>{trPick[x]=true;});
   trDayM=trCleanDayMode(tr.dayMode,trDays(tr));
@@ -864,7 +963,34 @@ function trEdit(id){
   const first=trDays(tr)[0];if(first)trYm=schedMonthOf(first);
   renderTrainMgr();
 }
-function trNewFrom(){trResetForm();renderTrainMgr();}
+function trNewFrom(){const v=trView;trResetForm();trView=v;renderTrainMgr();}
+/* ---- ★ v7.8: chuyển màn & gắn buổi vào khoá ---- */
+function trSetView(v){
+  trView=(trCanManage()&&(v==='course'||v==='table'))?v:'form';
+  renderTrainMgr();
+}
+function trSetCourse(id){
+  trCourseId=String(id||'');
+  const c=trCourseId?((S.courses||{})[trCourseId]||null):null;
+  /* Chọn khoá mà chưa đặt tên buổi thì lấy luôn tên khoá — buổi 1 của khoá
+     "An toàn hoá chất" đặt tên gì khác cũng chỉ là gõ lại. Đã gõ tên riêng
+     rồi thì KHÔNG đè lên. */
+  if(c){
+    if(!String(trTitle||'').trim())trTitle=c.title||'';
+    if(!String(trPlace||'').trim()&&c.place)trPlace=c.place;
+    /* Học viên của khoá là gợi ý mặc định cho buổi mới — người xếp bỏ bớt
+       ai không đi buổi này, thay vì tích lại từ đầu cho mỗi buổi. */
+    if(!trEditId&&!Object.keys(trPick).length)
+      (Array.isArray(c.emps)?c.emps:[]).forEach(x=>{if(empById(x))trPick[x]=true;});
+  }
+  renderTrainMgr();
+}
+/* Mở form xếp buổi MỚI cho đúng một khoá (nút "Thêm buổi" ở màn Khoá) */
+function trNewForCourse(cid){
+  trResetForm();
+  trView='form';
+  trSetCourse(cid);
+}
 
 function trSubmit(){
   const d=trDraft();
@@ -1046,8 +1172,29 @@ function renderTrainMgr(){
   /* ★ v7.2 — khung giờ LUÔN hiện. Giờ học là dữ liệu của buổi (vào cột báo
      cáo "Giờ đào tạo"), không phải phụ kiện của phần tăng ca. */
 
+  /* ★ v7.8 — thanh chuyển màn. Nhân viên tự khai chỉ có form, không có
+     khoá / bảng tổng hợp (họ không xếp cho ai). */
+  const tabs=manage?`<div class="ev-tabs">
+    <button class="evtab${trView==='form'?' on':''}"   onclick="trSetView('form')">✏️ ${t('Xếp buổi')}</button>
+    <button class="evtab${trView==='course'?' on':''}" onclick="trSetView('course')">📚 ${t('Khoá đào tạo')}</button>
+    <button class="evtab${trView==='table'?' on':''}"  onclick="trSetView('table')">📋 ${t('Bảng tổng hợp')}</button>
+  </div>`:'';
+
+  if(manage&&trView!=='form'){
+    box.innerHTML=`<h3>🎓 ${t('Lịch đào tạo')}</h3>`+tabs+
+      (trView==='course'
+        ? ((typeof coBodyHtml==='function')?coBodyHtml():'')
+        : ((typeof trTableHtml==='function')?trTableHtml():''))+`
+    <div class="row" style="gap:8px;margin-top:10px">
+      <button class="btn sec" style="flex:1" onclick="trSetView('form')">➕ ${t('Xếp buổi mới')}</button>
+      <button class="btn sec" onclick="closeTrainMgr()">${t('Đóng')}</button>
+    </div>`;
+    if(typeof uiRestore==='function')uiRestore(snap);
+    return;
+  }
+
   box.innerHTML=`
-  <h3>🎓 ${t('Lịch đào tạo')}</h3>
+  <h3>🎓 ${t('Lịch đào tạo')}</h3>${tabs}
   <p class="muted sm2">${manage
     ? t('Xếp lịch đào tạo cho nhân viên. Ô lịch của họ sẽ đổi màu, app tự gửi thông báo và tin Zalo gộp.')
     : t('Khai lịch đào tạo của bạn. Quản lý duyệt xong mới có hiệu lực trên lịch.')}</p>
@@ -1066,6 +1213,18 @@ function renderTrainMgr(){
     <button class="btn sec sm" onclick="trSelRange()">${t('Chọn cả dải')}</button>
     <button class="btn sec sm" onclick="trClearDays()">${t('Bỏ chọn hết')}</button>
   </div>
+
+  ${manage?`<div class="fg"><label class="fl">${t('Thuộc khoá đào tạo')}</label>
+    <div class="row" style="gap:8px">
+      <select class="inp" data-k="course" style="flex:1" onchange="trSetCourse(this.value)">
+        <option value="">${t('— Buổi lẻ (không thuộc khoá nào) —')}</option>
+        ${((typeof coAll==='function')?coAll():[]).map(c=>`<option value="${c.id}"${
+          trCourseId===c.id?' selected':''}>${esc(c.title||t('Khoá đào tạo'))}</option>`).join('')}
+      </select>
+      <button class="btn sec" onclick="trSetView('course')">📚 ${t('Quản lý khoá')}</button>
+    </div>
+    <p class="muted sm2">${t('Một khoá gồm nhiều buổi. Khai khoá một lần rồi thêm từng buổi vào đó — sau này chuyển người qua lại giữa các buổi ngay trong màn Khoá đào tạo.')}</p>
+  </div>`:''}
 
   <div class="fg"><label class="fl">${t('Nội dung đào tạo')}</label>
     <input class="inp" data-k="title" value="${esc(trTitle)}" placeholder="${t('VD: Huấn luyện an toàn hoá chất')}"
@@ -1165,8 +1324,9 @@ function trListHtml(){
     const who=trEmps(tr).map(id=>shortName((empById(id)||{}).name||id));
     const canEdit=manage||(String(tr.by)===String(me)&&!trIsActive(tr));
     const nReq=trReqsOf(tr.id).length;
+    const co=trCourseOf(tr);
     return `<div class="ev-it tr-it${past?' past':''}${live?' live':''}${tr.id===trEditId?' on':''}${trIsActive(tr)?'':' pend'}">
-      <span class="tx"><b>🎓 ${esc(tr.title||t('Đào tạo'))}${
+      <span class="tx"><b>🎓 ${co?`<span class="evtag">📚 ${esc(co.title||'')}</span> `:''}${esc(tr.title||t('Đào tạo'))}${
         trIsActive(tr)?'':' <span class="st pending">'+t('CHỜ DUYỆT')+'</span>'}</b>
         <i>${esc(trDateLabel(tr))} · ${esc(trModeLabel(tr))}${
           trIsOt(tr)&&trTimeLabel(tr)?' '+esc(trTimeLabel(tr))+' · '+trOtTotalHours(tr)+'h':''}${
@@ -1177,6 +1337,12 @@ function trListHtml(){
             m==='ot'?t('tăng ca'):m==='mix'?t('hỗn hợp'):t('trong ca')}</span>`;
         }).join('')}</i>`:''}
         <i>${who.length} ${t('người')}: ${esc(who.slice(0,8).join(', '))}${who.length>8?' …':''}</i>
+        ${/* ★ v8.0 — điểm danh: chỉ hiện khi buổi ĐÃ diễn ra, vì trước đó
+             con số "0/8 đã tham gia" chỉ làm người xem hoảng vô cớ. */''
+         }${trHappened(tr)&&trIsActive(tr)?`<i class="att">✅ ${
+            trAttendSplit(tr).done.length}/${trEmps(tr).length} ${t('đã xác nhận tham gia')}${
+            trAttendSplit(tr).todo.length?` · ${t('chưa')}: `+esc(trAttendSplit(tr).todo
+              .map(x=>shortName((empById(x)||{}).name||x)).slice(0,6).join(', ')):''}</i>`:''}
         ${nReq?`<i class="nt">${nReq} ${t('đơn tăng ca gắn với buổi này')}</i>`:''}
         ${tr.note?`<i class="nt">${esc(tr.note)}</i>`:''}</span>
       <span class="ac">
@@ -1202,13 +1368,32 @@ function trBannerHtml(isoList,empId){
   out.sort((a,b)=>String(trDays(a)[0]||'').localeCompare(String(trDays(b)[0]||'')));
   return `<div class="ev-banner">${out.map(tr=>`<div class="ev-b tr-b">
     <span class="ic">🎓</span>
-    <span class="tx"><b>${esc(tr.title||t('Đào tạo'))}${trIsActive(tr)?'':' · '+t('chờ duyệt')}</b>
+    <span class="tx"><b>${esc(tr.title||t('Đào tạo'))}${trIsActive(tr)?'':' · '+t('chờ duyệt')}${
+      trAttended(tr,id)?' <span class="evtag ok">✅ '+t('đã tham gia')+'</span>':''}</b>
       <i>${(isoList||[]).filter(x=>trOfCell(id,x).some(y=>y.id===tr.id)).map(x=>
           fmtVN(x)+' '+(trTimeLabelOf(tr,x)||'')+' '+
           (trModeFor(tr,id,x)==='ot'?t('tăng ca'):t('trong ca'))
         ).join(' · ')}${tr.place?' · '+esc(tr.place):''}${tr.note?' · '+esc(tr.note):''}</i></span>
-    ${(typeof nsWhen==='function')?`<span class="when">${esc(nsWhen(trDays(tr).find(x=>x>=todayIso())||trDays(tr)[0]))}</span>`:''}
+    ${/* ★ v8.0 — nút điểm danh của CHÍNH người đang xem. Chỉ hiện sau khi
+         buổi đã diễn ra; trước đó chỗ này vẫn là đồng hồ đếm ngược. */''
+     }${trCanAttend(tr,id)
+        ? `<button class="btn ${trAttended(tr,id)?'sec':'ok'} sm when"
+             onclick="trToggleAttend('${tr.id}','${id}')">${
+             trAttended(tr,id)?'✅ '+t('đã xác nhận'):t('Xác nhận đã tham gia')}</button>`
+        : ((typeof nsWhen==='function')
+            ? `<span class="when">${esc(nsWhen(trDays(tr).find(x=>x>=todayIso())||trDays(tr)[0]))}</span>`
+            : '')}
   </div>`).join('')}</div>`;
+}
+/* Bấm xác nhận từ dải nhắc / bảng tổng hợp — vẽ lại đúng chỗ đang mở */
+function trToggleAttend(trId,empId){
+  const r=trSetAttend(trId,empId);
+  if(!r.ok){toast(r.err);return;}
+  if(typeof renderMe==='function'&&!noSelf)renderMe(true);
+  if(typeof renderTrainMgr==='function'&&$('trMask')&&$('trMask').classList.contains('on'))renderTrainMgr();
+  /* Sheet ngày tự đọc pvSheetDate nên gọi không tham số; chỉ vẽ khi đang mở */
+  if(typeof renderDaySheet==='function'&&typeof pvSheetDate!=='undefined'&&pvSheetDate)renderDaySheet();
+  toast(r.on?t('Đã ghi nhận bạn tham gia buổi đào tạo'):t('Đã bỏ xác nhận tham gia'));
 }
 /* Số buổi đào tạo đang chờ duyệt — cho phù hiệu trên nút */
 function trPendingCount(){

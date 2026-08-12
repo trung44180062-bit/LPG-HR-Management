@@ -200,7 +200,8 @@ let S={
   printLog:{},            // printLog[batchId] = {ts, by, formType, reqIds:[...], rows, pages, reprint}
   notifs:{},              // notifs[id] = {kind, to, from, status, createdAt, ...payload} — xác nhận đổi lịch / đổi ca
   events:{},              // events[id] = {title, from, to, days?, scope, teams, notify} — sự kiện trên lịch (js/20-events.js)
-  trainings:{},           // trainings[id] = {title, days:[iso], emps:[id], mode:'shift'|'ot', ...} — lịch đào tạo (js/22-training.js)
+  trainings:{},           // trainings[id] = {title, days:[iso], emps:[id], mode:'shift'|'ot', courseId?, ...} — buổi đào tạo (js/22-training.js)
+  courses:{},             // courses[id] = {title, kind, place, emps:[id], ...} — KHOÁ đào tạo gom nhiều buổi (js/23-course.js)
   digest:{},              // digest[notifId] = {to,toName,title,lines,group,zk,at} — sổ chờ bản tin 08:00 (js/21-notify.js)
   meta:{schedFrom:'',schedTo:''},
   rev:0

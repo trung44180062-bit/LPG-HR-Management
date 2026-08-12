@@ -149,7 +149,11 @@ function repManpower(){
     /* Đếm TÁCH KHỐI: nhóm sản xuất A/B/C/D trực ca, nhóm Office làm hành chính.
        Hai khối không cover cho nhau nên định mức chỉ áp cho khối sản xuất. */
     const P=mpBucketsByPool(iso), B=P.prod, V=P.office;
-    const lowD=B.D.length<minOfShift('D'), lowN=B.N.length<minOfShift('N'), low=lowD||lowN;
+    /* ★ v8.0 — hai khung 12 giờ phải luôn có đủ 2 kỹ sư TẠI CHỖ; người đi
+       đào tạo bị trừ ra vì họ không tham gia sản xuất. Xem js/07-manpower.js */
+    const EW=(typeof mpEngDay==='function')?mpEngDay(iso,POOL_PROD):{low:false,win:{}};
+    const lowD=B.D.length<minOfShift('D'), lowN=B.N.length<minOfShift('N');
+    const low=lowD||lowN||EW.low;
     if(low)nLow++;
     if(repOnlyLow&&!low)return;
     shown++;
@@ -180,11 +184,27 @@ function repManpower(){
           ${pill(B.R.length,t2('NGHỈ CA'),'var(--cR)',false)}
           ${pill(nLeave,t2('PHÉP'),'var(--cAL)',false)}
           ${pill(nOt,t2('TĂNG CA'),'var(--cOT)',false)}
+          ${MP_WIN.map(w=>{const x=EW.win[w.k]||{n:0,need:0,low:false,train:[]};
+            return `<span class="mpw${x.low?' low':''}" title="${esc(w.ic+' '+t2(w.l)+' — '
+              +t2('cần')+' ≥'+x.need+' '+t2('kỹ sư')
+              +(x.train.length?(' · '+x.train.length+' '+t2('người đang đi đào tạo')):''))}">
+              ${w.ic}<b>${x.n}</b>/${x.need}${POSG_ICON.eng}${
+              x.train.length?`<i class="tr">🎓${x.train.length}</i>`:''}</span>`;}).join('')}
         </div>
         ${low?'<span class="st rejected">⚠</span>':''}
         <span class="chev">▼</span>
       </div>
       <div class="mp2-det">
+        ${MP_WIN.map(w=>{const x=EW.win[w.k]||{n:0,need:0,low:false,on:[],part:[],train:[]};
+          return `<div class="mp-win${x.low?' low':''}">
+            <b>${w.ic} ${t2(w.l)}</b>
+            <span class="n">${x.n}/${x.need} ${POSG_ICON.eng} ${t2('kỹ sư')}</span>
+            <span class="who">${x.on.length?x.on.map(nm).join(', '):'<i>—</i>'}</span>
+            ${x.train.length?`<span class="tr">🎓 ${t2('đang đi đào tạo')}: ${
+              x.train.map(nm).join(', ')}</span>`:''}
+            ${x.part.length?`<span class="pt">${t2('chỉ có mặt một phần khung')}: ${
+              x.part.map(nm).join(', ')}</span>`:''}
+          </div>`;}).join('')}
         <div class="mp-pool">${poolChip(POOL_PROD)} ${t2('Khối sản xuất')}</div>
         ${lineEO('D',B.D)}${lineEO('N',B.N)}${lineEO('O',B.O)}
         ${lineEO('R',B.R,'Có thể huy động tăng ca')}
@@ -199,6 +219,7 @@ function repManpower(){
     <b>${days.length} ngày</b>
     <span class="st ${nLow?'rejected':'approved'}">${nLow?('⚠ '+nLow+' ngày thiếu nhân lực'):'✓ Đủ nhân lực toàn khoảng'}</span>
     <span class="muted sm2">Chạm vào từng ngày để xem danh sách tên · định mức chỉ tính khối sản xuất</span>
+    <span class="muted sm2">☀️ 08:00–20:00 · 🌙 20:00–08:00 luôn phải có ≥ <b>${minEngOfWindow()}</b> ${POSG_ICON.eng} ${t2('kỹ sư')} tại chỗ · ${t2('người đi đào tạo không được tính')}</span>
     <span class="muted sm2">${POSG_ICON.eng} ${t2('Kỹ sư')} = Field Engineer + DCS Boardman · ${POSG_ICON.oper} ${t2('Operator')}</span></div>`;
   return shown?head+`<div class="mp2">${rows}</div>`
               :head+'<div class="card"><p class="muted">Không có ngày nào khớp bộ lọc.</p></div>';

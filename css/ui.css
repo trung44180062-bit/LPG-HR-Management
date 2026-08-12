@@ -819,3 +819,113 @@ button.meal-d .cv{margin-left:auto;color:var(--mut);font-size:10px}
 .ns-d .tag.ev {background:var(--evbg);color:#9A3412}
 .ns-d .tag.tr {background:var(--trbg);color:#5B21B6}
 .ns-d .tag.low{background:#FEE2E2;color:#B91C1C}
+
+/* ============================================================
+   ★ v7.8 — LOẠI SỰ KIỆN · BẢNG TỔNG HỢP · KHOÁ ĐÀO TẠO
+   (js/20-events.js · js/23-course.js)
+   ------------------------------------------------------------
+   Bảng trong modal luôn có nguy cơ tràn ngang trên điện thoại. Cách
+   xử lý ở đây: bọc trong .ev-tblwrap cuộn ngang được, cột nào không
+   được xuống dòng thì đánh dấu .nw — thà cuộn còn hơn vỡ chữ.
+   ============================================================ */
+/* thanh chuyển màn trong modal (Khai / Bảng · Xếp buổi / Khoá / Bảng) */
+.ev-tabs{display:flex;gap:6px;margin:2px 0 10px;flex-wrap:wrap}
+.evtab{flex:1;min-width:110px;padding:7px 10px;border:1px solid var(--bd);border-radius:10px;
+  background:#fff;cursor:pointer;font-size:12.5px;font-weight:700;color:var(--mut)}
+.evtab.on{border-color:var(--brand);background:#F1F6FF;color:var(--brand2)}
+
+/* chip chọn loại sự kiện / hình thức khoá */
+.ev-cats{display:flex;flex-wrap:wrap;gap:6px}
+.evcat{padding:6px 10px;border:1px solid var(--bd);border-radius:99px;background:#fff;
+  cursor:pointer;font-size:12px;font-weight:600}
+.evcat.on{border-color:var(--evc);background:var(--evbg);color:#9A3412}
+.evcat.add{border-style:dashed;color:var(--mut)}
+/* nhãn loại đứng cạnh tên sự kiện / tên khoá */
+.evtag{font-style:normal;font-weight:700;font-size:10.5px;padding:1px 7px;border-radius:99px;
+  background:var(--evbg);color:#9A3412;border:1px solid var(--evbd);white-space:nowrap}
+.ev-b .evtag,.ev-it.tr-it .evtag{background:var(--trbg);color:#5B21B6;border-color:var(--trbd)}
+
+/* bộ lọc phía trên bảng */
+.ev-tblbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:2px 0 6px}
+.ev-tblbar .inp.sm{min-width:150px}
+
+/* bảng tổng hợp (sự kiện & đào tạo) */
+.ev-tblwrap{overflow:auto;max-height:56vh;border:1px solid var(--bd);border-radius:10px}
+.ev-tbl{width:100%;border-collapse:collapse;font-size:12.5px;background:#fff}
+.ev-tbl th,.ev-tbl td{padding:6px 8px;border-bottom:1px solid var(--bd);text-align:left;vertical-align:top}
+.ev-tbl thead th{position:sticky;top:0;z-index:2;background:#F8FAFC;font-size:11.5px;
+  color:var(--mut);white-space:nowrap}
+.ev-tbl tfoot td{background:#F8FAFC;font-weight:700}
+.ev-tbl td.nw,.ev-tbl th.nw{white-space:nowrap}
+.ev-tbl td.ct,.ev-tbl th.ct{text-align:center;white-space:nowrap}
+.ev-tbl td i.nt{display:block;font-style:normal;font-size:11px;color:var(--mut)}
+.ev-tbl tr.past{opacity:.6}
+.ev-tbl tr.live{background:#FFF7ED}
+.evst{font-size:11px;font-weight:700;padding:1px 8px;border-radius:99px;white-space:nowrap}
+.evst.live{background:var(--evbg);color:#9A3412}
+.evst.next{background:#E8F2FB;color:#0B3B5C}
+.evst.past{background:#F1F5F9;color:var(--mut)}
+/* bảng đào tạo: dòng khoá đậm, dòng buổi thụt vào */
+.tr-tbl tr.co>td{background:var(--trbg);font-size:13px}
+.tr-tbl tr.co i{font-style:normal;font-size:11px;color:#5B21B6;margin-left:6px}
+.tr-tbl tr.cosum>td{background:#FAFAFA;font-weight:700;color:var(--mut)}
+.tr-tbl td.ind{padding-left:18px}
+.tr-tbl tr.ss.pend{background:#FFFBEB}
+
+/* ---- khoá đào tạo: thẻ khoá + bảng tích người × buổi ---- */
+.co-card{border:1px solid var(--bd);border-radius:12px;background:#fff;margin:0 0 8px}
+.co-card.on{border-color:var(--trbd);box-shadow:inset 3px 0 0 var(--trc)}
+.co-card.edit{background:#FAF5FF}
+.co-head{display:flex;gap:8px;align-items:flex-start;padding:9px 11px}
+.co-head .tx{flex:1;display:flex;flex-direction:column;line-height:1.35;min-width:0}
+.co-head .tx i{font-style:normal;font-size:11.5px;color:var(--mut)}
+.co-head .tx i.nt{color:#475569}
+.co-head .ac{display:flex;gap:4px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end}
+.co-body{padding:0 11px 11px}
+.co-mxwrap{overflow:auto;max-height:46vh;border:1px solid var(--bd);border-radius:10px}
+.co-mx{width:100%;border-collapse:collapse;font-size:12.5px;background:#fff}
+.co-mx th,.co-mx td{padding:5px 7px;border-bottom:1px solid var(--bd);border-right:1px solid var(--bd)}
+.co-mx thead th{position:sticky;top:0;z-index:2;background:#F8FAFC;text-align:center;
+  font-size:11px;color:var(--mut);line-height:1.25}
+.co-mx thead th b{display:block;font-size:12px;color:var(--ink)}
+.co-mx thead th i{display:block;font-style:normal;font-size:10px}
+.co-mx thead th i.cnt{color:var(--trc);font-weight:700}
+.co-mx thead th i.cnt.zero{color:#DC2626}
+/* cột tên dính bên trái — cuộn ngang qua 6 buổi vẫn phải biết đang xem ai */
+.co-mx td.nm,.co-mx th.nm{position:sticky;left:0;z-index:1;background:#fff;min-width:126px;text-align:left}
+.co-mx thead th.nm{z-index:3;background:#F8FAFC}
+.co-mx td.nm b{font-size:12.5px}
+.co-mx td.nm i{display:block;font-style:normal;font-size:10.5px;color:var(--mut)}
+.co-mx td.ck{text-align:center}
+.co-mx td.ck input{width:17px;height:17px;cursor:pointer}
+.co-mx td.ct{text-align:center;font-weight:700}
+.co-mx td.mv .inp.sm{min-width:104px;font-size:11.5px}
+.co-mx tr.none td.nm b{color:#B91C1C}
+.co-mx tr.none td.ct{color:#B91C1C}
+
+/* ★ v8.0 — điểm danh đào tạo & hai khung 12 giờ (js/22-training.js ·
+   js/23-course.js · js/07-manpower.js) */
+.ev-tbl td.att,.ev-tbl th.att{max-width:210px;font-size:11.5px;line-height:1.5}
+.ev-tbl th.att.yes{color:#166534}.ev-tbl th.att.no{color:#B91C1C}
+.attp{display:inline-block;padding:1px 7px;margin:1px 2px 1px 0;border-radius:99px;
+  border:1px solid var(--bd);background:#fff;font-size:11px;cursor:default;font-weight:600}
+button.attp{cursor:pointer}
+.ev-tbl td.att.yes .attp{background:#DCFCE7;border-color:#86EFAC;color:#166534}
+.ev-tbl td.att.no  .attp{background:#FEF2F2;border-color:#FECACA;color:#B91C1C}
+.ev-tbl td.att i.n{display:block;font-style:normal;font-size:10.5px;color:var(--mut);margin-top:1px}
+.ev-tbl td.att.yes{background:#F6FEF9}.ev-tbl td.att.no{background:#FFFBFB}
+.ev-it .att{font-style:normal;font-size:11.5px;color:#166534}
+.evtag.ok{background:#DCFCE7;color:#166534;border-color:#86EFAC}
+/* dải khung 12h ở bảng Nhân lực */
+.mpw{display:inline-flex;align-items:center;gap:2px;padding:2px 8px;border-radius:99px;
+  background:#EEF2FF;color:#3730A3;font-size:11.5px;font-weight:700;border:1px solid #C7D2FE}
+.mpw.low{background:#FEE2E2;color:#B91C1C;border-color:#FCA5A5}
+.mpw i.tr{font-style:normal;font-size:10.5px;margin-left:3px;opacity:.85}
+.mp-win{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline;padding:6px 8px;margin:4px 0;
+  border:1px solid var(--bd);border-radius:9px;background:#F8FAFC;font-size:12px}
+.mp-win.low{background:#FEF2F2;border-color:#FCA5A5}
+.mp-win b{min-width:170px}
+.mp-win .n{font-weight:800}
+.mp-win .who{flex:1;min-width:160px;color:#334155}
+.mp-win .tr{color:#5B21B6}
+.mp-win .pt{color:var(--mut)}

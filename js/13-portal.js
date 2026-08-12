@@ -319,8 +319,11 @@ function notifReqText(n,r){
   }
   const H={
     approved    :'✅ '+tf('Đơn {type} đã được DUYỆT chính thức',{type}),
-    provapproved:'🕒 '+tf('Đơn {type} đã được {lvl} TẠM DUYỆT (chờ Quản lý người Hàn chốt)',
+    /* ★ v7.9 — Section Chief duyệt là ĐÃ DUYỆT. Phần ghi nhận của Quản lý
+       người Hàn nói ở vế sau, không phải một điều kiện còn treo. */
+    provapproved:'✅ '+tf('Đơn {type} đã được DUYỆT · {lvl} · Quản lý người Hàn sẽ ghi nhận sau',
                     {type,lvl:(typeof lvlLabel==='function')?lvlLabel('trung'):''}),
+    final       :'🧾 '+tf('Quản lý người Hàn đã ghi nhận đơn {type}',{type}),
     fe          :'☑️ '+tf('Đơn {type} đã được Field Engineer duyệt (chờ cấp trên)',{type}),
     rejected    :'❌ '+tf('Đơn {type} bị TỪ CHỐI',{type}),
     revoked     :'↩️ '+tf('Đơn {type} đã bị HUỶ DUYỆT',{type}),
@@ -349,7 +352,12 @@ function notifText(n){
     /* Sự kiện trên lịch */
     if(n.kind==='event'&&n.evId&&S.events&&S.events[n.evId]&&typeof evDateLabel==='function'){
       const ev=S.events[n.evId];
-      return t('Sự kiện trên lịch')+': '+(ev.title||t('Sự kiện'))
+      /* ★ v7.8 — nhãn loại đứng trước tên, đúng như lúc gửi (js/20-events.js).
+         Câu ở đây dựng LẠI từ dữ liệu sống nên phải khớp, không thì cùng một
+         thông báo mà trong app một kiểu, tin Zalo một kiểu. */
+      const cat=(typeof evCatInfo==='function')?evCatInfo(ev.cat):null;
+      return t('Sự kiện trên lịch')+': '+(cat?(cat.ic+' '+t(cat.l)+': '):'')
+        +(ev.title||t('Sự kiện'))
         +' — '+evDateLabel(ev)+(ev.note?' · '+ev.note:'');
     }
     /* Lịch đào tạo */
@@ -1559,7 +1567,7 @@ function renderDaySheet(){
           ${x.withId?`<i>với ${esc((empById(x.withId)||{}).name||x.withId)}</i>`:''}
           ${x.coverId?`<i>${reqCoverChip(x)}</i>`:''}
           ${x.reason?`<i>Lý do từ chối: ${esc(x.reason)}</i>`:''}</span>
-        <span class="st ${reqStatusClass(x)}">${{pending:'CHỜ',approved:reqIsProvisional(x)?'TẠM DUYỆT':'DUYỆT',rejected:'TỪ CHỐI'}[x.status]||''}</span>
+        <span class="st ${reqStatusClass(x)}">${{pending:'CHỜ',approved:'DUYỆT',rejected:'TỪ CHỐI'}[x.status]||''}</span>
         ${canCancelReq(x,id)?`<button class="btn warn sm" onclick="cancelMyReq('${x.id}')">${x.status==='approved'?'Huỷ đơn đã duyệt':'Huỷ'}</button>`:''}
       </div>`).join('')}
    </div>`:''}
@@ -2191,7 +2199,10 @@ function myPanelNtf(id){
     }).join('')}</div>`:'';
   const item=r=>{
     const fresh=(r.decidedAt||0)>seenAt;
-    const stTxt=r.status==='approved'?(reqIsProvisional(r)?'🕒 Tạm duyệt (chờ QL Hàn)':'✅ Đã duyệt')
+    /* ★ v7.9 — nhân viên chỉ thấy MỘT trạng thái "đã duyệt". Việc ghi nhận
+       của Quản lý người Hàn là chuyện nội bộ của chuỗi duyệt, hiện ra chỉ
+       làm người ta tưởng đơn chưa xong. */
+    const stTxt=r.status==='approved'?'✅ Đã duyệt'
                :r.status==='rejected'?'❌ Bị từ chối':r.status;
     return `<div class="ntf-item ${r.status}${fresh?' fresh':''}" onclick="closeMyPanel();openDaySheet('${r.from}')">
       <span class="ic">${REQ_ICON[r.type]||'📄'}</span>
@@ -2297,7 +2308,7 @@ function myPanelReq(id){
         ${r.byId&&r.byId!==r.empId?`<i>✍️ ${r.byId===id?'Bạn khai hộ '+esc((empById(r.empId)||{}).name||r.empId):'Khai hộ bởi '+esc((empById(r.byId)||{}).name||r.byId)}</i>`:''}
         ${r.coverId?`<i>${reqCoverChip(r)}</i>`:''}
         ${r.note?`<i>${esc(r.note)}</i>`:''}${r.reason?`<i>Lý do: ${esc(r.reason)}</i>`:''}</span>
-      <span class="st ${reqStatusClass(r)}">${{pending:'CHỜ',approved:reqIsProvisional(r)?'TẠM DUYỆT':'DUYỆT',rejected:'TỪ CHỐI'}[r.status]||esc(r.status)}</span>
+      <span class="st ${reqStatusClass(r)}">${{pending:'CHỜ',approved:'DUYỆT',rejected:'TỪ CHỐI'}[r.status]||esc(r.status)}</span>
       <span class="act">
         ${canSetCover(r,id)?`<button class="btn sec sm" onclick="openCoverPicker('${r.id}')" title="${t('Người OT cover')}">🤝</button>`:''}
         ${canCancelReq(r,id)?`<button class="btn warn sm" onclick="cancelMyReq('${r.id}');renderMyPanel()">${r.status==='approved'?'Huỷ đơn':'Huỷ'}</button>`:''}

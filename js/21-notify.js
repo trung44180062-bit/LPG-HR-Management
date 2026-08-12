@@ -75,8 +75,18 @@ const ZALO_INFO_CHANNEL = {
      (vẫn để null) nên tổng số tin KHÔNG tăng mà lại tới đúng người cần biết. */
   apprNeed    : 'now',
 
+  /* ★ v7.9 — LỜI MỜI GHI NHẬN GỬI CẤP CUỐI.
+     Đơn đã được Section Chief duyệt và lịch đã ghi; phần còn lại của Quản lý
+     người Hàn là GHI NHẬN, không phải điều kiện để việc chạy. Bắn ngay từng
+     đơn cho một người gần như không mở app thì chỉ tạo tiếng ồn — và tệ hơn,
+     ai đọc chung kênh cũng tưởng đơn còn treo. Nên gom về bản tin 08:00. */
+  finalNote   : 'digest',
+
   /* Nhóm B — kết quả duyệt đơn */
   approved    : 'now',      // B3 kết quả cuối, ảnh hưởng lịch đi làm
+  /* Cấp cuối ghi nhận một đơn ĐÃ báo "đã duyệt" — im lặng, chỉ trong app.
+     Báo lần hai cho cùng một đơn là làm người nhận tưởng có gì đổi. */
+  final       : null,
   rejected    : 'now',      // B4 phải làm lại đơn
   revoked     : 'now',      // B5 lịch vừa bị đổi ngược
   cancelled   : 'batch',    // B6 đơn bị người khác huỷ
@@ -148,17 +158,21 @@ const DIGEST_REQ_TYPES = ['ot','multi','late','wt'];
    chối thì phải biết SỚM, không thì họ đi làm thừa. Hai tin này ở lại kênh
    'now'. Nghỉ phép và đổi ca thì mọi tin đều 'now' như cũ — chúng đổi lịch
    đi làm thật, biết muộn là đi sai ca. */
-const DIGEST_ZK        = ['apprNeed','approved','cancelled'];
+const DIGEST_ZK        = ['apprNeed','approved','cancelled','finalNote'];
 /* Tiêu đề bản tin gom, theo khoá nhóm (ZALO_GROUP_KEY) */
 const DIGEST_TITLE = {
   apprNeed :'📥 DAILY DIGEST — APPROVAL REQUIRED',
   reqResult:'✅ DAILY DIGEST — REQUESTS APPROVED / CLOSED',
+  /* ★ v8.1 — gói RIÊNG của Quản lý người Hàn: mọi đơn cần họ xem, gom một
+     lần mỗi sáng để review tổng. Không dùng chữ "required" — phần lớn đơn
+     ở đây đã được Section Chief duyệt và đang chạy. */
+  finalNote:'🧾 DAILY REVIEW — KOREAN MANAGER',
   misc     :'🗂 DAILY DIGEST'
 };
 
 /* Khoá gộp: cùng người nhận + cùng khoá này trong 10 phút → gộp 1 tin. */
 const ZALO_GROUP_KEY = {
-  apprNeed:'apprNeed', schedBulk:'sched',
+  apprNeed:'apprNeed', finalNote:'finalNote', schedBulk:'sched',
   approved:'reqResult', rejected:'reqResult', revoked:'reqResult', cancelled:'reqResult',
   schedChange:'sched', schedRevoke:'sched', schedDecline:'sched',
   swapConfirm:'swap', swapNo:'swap',
@@ -200,6 +214,8 @@ const ZALO_GROUP_KEY = {
 /* Tiêu đề tin — dòng đầu phải là kết luận, liếc 1 giây là hiểu. */
 const ZALO_TITLE = {
   apprNeed    : '📥 APPROVAL REQUIRED',
+  /* Gói review của cấp cuối (luôn đi kênh digest — xem ZALO_INFO_CHANNEL) */
+  finalNote   : '🧾 FOR REVIEW',
   schedBulk   : '📅 SCHEDULE UPDATED',
   schedChange : '📅 SHIFT CHANGED',
   swapConfirm : '🔄 SWAP REQUEST',
@@ -220,6 +236,9 @@ const ZALO_TITLE = {
 /* Việc người nhận phải làm — dòng cuối. Ngắn: người ta biết "app" là gì. */
 const ZALO_ACTION = {
   apprNeed    : 'Approve in app',
+  /* ★ v8.1 — finalNote KHÔNG có dòng "việc phải làm". Bản tin sáng của cấp
+     cuối là bản REVIEW TỔNG; thêm một câu giục ở cuối chỉ làm dài tin mà
+     không nói thêm gì họ chưa biết. */
   schedBulk   : 'Confirm in app',
   schedChange : 'Confirm in app',
   swapConfirm : 'Accept / decline in app',
@@ -781,6 +800,10 @@ function zaloEnqueue(n){
 
       /* --- các trường chỉ sống trong hộp gửi, không ghi xuống Firebase --- */
       zk      : zk,
+      /* ★ v8.1 — sổ chờ 08:00 giữ luôn mã đơn để lúc gom còn dựng lại được
+         bảng tổng theo loại đơn / theo giờ. Nếu chỉ giữ mấy dòng chữ đã
+         dựng sẵn thì bản tin sáng vĩnh viễn chỉ là một chồng dòng rời. */
+      reqId   : n.reqId || '',
       fromId  : n.from || '',
       /* một dòng sửa lịch, để phép gộp 1 cuộn nhiều người vào một tin */
       sc      : (zk==='schedChange')
@@ -819,6 +842,11 @@ function digestApplies(n,zk){
   if(!n.reqId)return false;
   const r=(typeof S!=='undefined'&&S.requests)?S.requests[n.reqId]:null;
   if(!r)return false;
+  /* ★ v7.9 — lời mời ghi nhận gửi cấp cuối luôn gom, KHÔNG xét loại đơn.
+     Danh sách DIGEST_REQ_TYPES tồn tại để tin gấp (nghỉ phép, đổi ca) không
+     bị hoãn tới sáng mai; còn tin này thì không có gì gấp cả — đơn đã duyệt
+     và đã áp dụng rồi, giục ngay chỉ làm phiền. */
+  if(zk==='finalNote')return true;
   return DIGEST_REQ_TYPES.indexOf(r.type)>=0;
 }
 function digestHold(item){
@@ -826,7 +854,7 @@ function digestHold(item){
   S.digest[item.notifId]={
     to:item.to, toName:item.toName, title:item.title, lines:item.lines,
     action:item.action||'', group:item.group||'misc', bcast:item.bcast?1:0,
-    zk:item.zk||'', at:Date.now()
+    zk:item.zk||'', reqId:item.reqId||'', at:Date.now()
   };
   if(typeof save==='function')save();
 }
@@ -882,6 +910,18 @@ function digestStale(id,row){
   /* Nhắc "cần duyệt" chỉ còn nghĩa khi đơn vẫn đang chờ */
   const zk=(row&&row.zk)||n.zk||'';
   if(zk==='apprNeed'&&r.status!=='pending')return 'decided';
+  /* ★ v8.1 — mục review của cấp cuối còn nghĩa khi đơn CHƯA được chính họ
+     ký. Đơn đang chờ Section Chief vẫn phải nằm trong bản tin sáng (họ cần
+     thấy toàn cảnh), nên KHÔNG được lấy "chưa approved" làm cớ để loại —
+     đó đúng là lỗi sẽ nuốt sạch bản tin sau khi mọi tin gửi cấp cuối
+     chuyển hết sang kênh này.
+     Chỉ bỏ khi: cấp cuối đã ký, hoặc đơn bị từ chối. */
+  if(zk==='finalNote'){
+    if(r.status==='rejected')return 'rejected';
+    const ap=r.appr||{};
+    const fin=(typeof LVL_FINAL!=='undefined')?LVL_FINAL:'kmgr';
+    if(ap[fin]&&!ap[fin].reject)return 'endorsed';
+  }
   return '';
 }
 /* Sổ chờ còn mục nào ĐÁNG gửi không — bỏ mục đã lỗi thời. Không lọc thì bản
@@ -896,17 +936,133 @@ function digestLive(){
   return out.sort((a,b)=>(a.at||0)-(b.at||0));
 }
 /* Gom sổ chờ thành CÁC GÓI, mỗi THỂ LOẠI một gói. */
+/* ============================================================
+   ★ v8.1 — BẢN TIN 08:00 CỦA QUẢN LÝ NGƯỜI HÀN LÀ MỘT BẢNG REVIEW
+   ------------------------------------------------------------
+   Các gói digest khác chỉ cần nối các dòng đã dựng sẵn lại: người nhận là
+   nhân viên, mỗi dòng là việc của chính họ, đọc tới đâu hiểu tới đó.
+
+   Gói của cấp cuối thì khác hẳn về mục đích: một người bận, mỗi sáng liếc
+   MỘT tin để nắm cả nhà máy. Nối 20 khối dòng rời rạc là bắt họ tự cộng
+   nhẩm. Nên gói này được dựng lại từ CHÍNH các đơn (nhờ `reqId` lưu trong
+   sổ chờ):
+
+       · một khối TỔNG QUAN: mỗi loại đơn mấy cái, tăng ca tổng bao nhiêu giờ,
+         bao nhiêu đơn đã được Section Chief duyệt / còn chờ duyệt;
+       · rồi từng loại một khối, đơn xếp theo NGÀY, mỗi đơn một dòng gọn;
+       · đơn còn chờ Section Chief đánh dấu "⏳" để phân biệt với đơn đã duyệt.
+
+   Đơn nào tra không ra (đã xoá, hoặc mục cũ chưa có reqId) thì rơi về cách
+   nối dòng cũ — không bao giờ nuốt mất một mục nào của sổ chờ.
+   ============================================================ */
+const DG_TYPE_ORDER=['ot','multi','leave','swap','change','wt','late'];
+const DG_TYPE_EN={leave:'LEAVE',swap:'SHIFT SWAP',ot:'OVERTIME',change:'SHIFT CHANGE',
+                  wt:'MISSING SCAN',late:'LATE / EARLY LEAVE',multi:'CONSECUTIVE DAYS'};
+/* Tổng giờ tăng ca của một đơn — dùng đúng số giờ đã tính trong đơn */
+/* reqDays() nằm ở js/08-requests.js. File này vốn chạy được độc lập (bộ
+   kiểm thử nạp riêng), nên đọc thẳng r.days khi không có hàm đó — mất giờ
+   OT trong bản tin review là mất đúng con số người ta cần nhất. */
+function dgDays(r){
+  if(typeof reqDays==='function')return reqDays(r)||[];
+  return (r&&Array.isArray(r.days))?r.days:[];
+}
+function dgOtHours(r){
+  if(!r||r.type!=='ot')return 0;
+  return dgDays(r).reduce((a,d)=>a+(+d.hours||0),0);
+}
+/* Một đơn = MỘT dòng trong bảng review. Ngắn hơn zReqLines vì ở đây người
+   đọc quét cả chục dòng, không soi từng đơn. */
+function dgOneRow(r){
+  const days=dgDays(r);
+  const d0=days[0]||{iso:r.from};
+  const when=(r.type==='multi')
+    ? (zDate(r.from)+' → '+zDate(r.to))
+    : (zDate(d0.iso)+(days.length>1?(' +'+(days.length-1)+'d'):''));
+  const who=zName(r.empId);
+  let what='';
+  if(r.type==='ot'){
+    const h=dgOtHours(r);
+    what=(d0.timeIn||'')+'–'+(d0.timeOut||'')+(h?('  '+rnd1x(h)+'h'):'');
+  }else if(r.type==='swap'){
+    what=zShift(zStd(r.empId,d0.iso))+' ⇄ '+zName(r.withId);
+  }else if(r.type==='wt'||r.type==='late'){
+    what=(d0.timeIn||'')+'–'+(d0.timeOut||'');
+  }else{
+    what=zShift(d0.code||r.code||'');
+  }
+  /* ⏳ = còn chờ Section Chief; không dấu = đã duyệt, đang áp dụng */
+  return {wait:(r.status!=='approved'),when,who,what};
+}
+/* Đệm cột NGÀY và cột TÊN cho một khối — Zalo dùng phông tỉ lệ nên không
+   thẳng tuyệt đối, nhưng mắt vẫn dò được cột giờ nhanh hơn hẳn so với các
+   dòng dài ngắn tuỳ tiện. Cùng cách làm với zHoldLines(). */
+function dgPadBlock(rows){
+  const w1=Math.min(16,rows.reduce((m,x)=>Math.max(m,x.when.length),0));
+  const w2=Math.min(20,rows.reduce((m,x)=>Math.max(m,x.who.length),0));
+  const pad=(s,w)=>s.length>=w?s:(s+' '.repeat(w-s.length));
+  return rows.map(x=>'  '+(x.wait?'⏳ ':'   ')+pad(x.when,w1)+'  '+pad(x.who,w2)+'  '+x.what);
+}
+function rnd1x(v){return Math.round((+v||0)*10)/10;}
+/* Thân tin review — trả null nếu không dựng được (để rơi về cách cũ) */
+function dgReviewLines(rows){
+  const reqs=[],seen={};
+  rows.forEach(x=>{
+    const id=x&&x.reqId;
+    if(!id||seen[id])return;
+    const r=(typeof S!=='undefined'&&S.requests)?S.requests[id]:null;
+    if(!r)return;
+    seen[id]=1;reqs.push(r);
+  });
+  if(!reqs.length)return null;
+
+  const byType={};
+  reqs.forEach(r=>{(byType[r.type]=byType[r.type]||[]).push(r);});
+  const types=DG_TYPE_ORDER.filter(k=>byType[k]).concat(
+    Object.keys(byType).filter(k=>DG_TYPE_ORDER.indexOf(k)<0));
+
+  const nWait=reqs.filter(r=>r.status!=='approved').length;
+  const otH=reqs.reduce((a,r)=>a+dgOtHours(r),0);
+  const people=new Set(reqs.map(r=>r.empId)).size;
+
+  const L=[];
+  L.push('SUMMARY');
+  const wT=Math.min(20,types.reduce((m,k)=>Math.max(m,(DG_TYPE_EN[k]||k).length),0));
+  types.forEach(k=>{
+    const n=byType[k].length;
+    const nm=(DG_TYPE_EN[k]||String(k).toUpperCase());
+    const extra=(k==='ot'&&otH)?('   '+rnd1x(otH)+'h total'):'';
+    L.push('  '+(nm.length>=wT?nm:nm+' '.repeat(wT-nm.length))+'  '+n+extra);
+  });
+  L.push('  ── '+reqs.length+' request(s) · '+people+' employee(s)');
+  L.push(nWait?('  '+(reqs.length-nWait)+' approved by Section Chief · '+nWait+' still waiting for Section Chief')
+              :'  All approved by Section Chief — schedule already updated');
+
+  types.forEach(k=>{
+    const list=byType[k].slice().sort((a,b)=>String(a.from||'').localeCompare(String(b.from||'')));
+    L.push('');
+    L.push((DG_TYPE_EN[k]||String(k).toUpperCase())+' ('+list.length+')');
+    dgPadBlock(list.map(dgOneRow)).forEach(x=>L.push(x));
+  });
+  return L;
+}
+
 function digestBuild(rows,dayLabel){
   const byGroup=Object.create(null);
   rows.forEach(r=>{(byGroup[r.group||'misc']=byGroup[r.group||'misc']||[]).push(r);});
   return Object.keys(byGroup).map(g=>{
     const list=byGroup[g];
     const tos=[];list.forEach(r=>{if(r.to&&tos.indexOf(r.to)<0)tos.push(r.to);});
-    let lines=[];
-    list.forEach((r,i)=>{
-      if(i)lines.push('— — —');
-      lines=lines.concat(r.lines||[]);
-    });
+    let lines=null;
+    /* Gói của cấp cuối dựng lại thành BẢNG REVIEW (xem khối ★ v8.1 ở trên);
+       tra không ra đơn nào thì rơi về cách nối dòng cũ. */
+    if(g==='finalNote')lines=dgReviewLines(list);
+    if(!lines){
+      lines=[];
+      list.forEach((r,i)=>{
+        if(i)lines.push('— — —');
+        lines=lines.concat(r.lines||[]);
+      });
+    }
     if(lines.length>DIGEST_MAX_LINES){
       const cut=lines.length-DIGEST_MAX_LINES;
       lines=lines.slice(0,DIGEST_MAX_LINES).concat(['','… and '+cut+' more line(s) — open the app to see all']);
@@ -914,7 +1070,8 @@ function digestBuild(rows,dayLabel){
     const item={
       to:list[0].to,
       toName:tos.length>1?(tos.length+' employees'):(list[0].toName||''),
-      title:(DIGEST_TITLE[g]||DIGEST_TITLE.misc)+' · '+list.length+' item(s)'+(dayLabel?(' · '+dayLabel):''),
+      title:(DIGEST_TITLE[g]||DIGEST_TITLE.misc)+' · '+list.length+
+            (g==='finalNote'?' request(s)':' item(s)')+(dayLabel?(' · '+dayLabel):''),
       lines:lines,
       action:list[0].action||'',
       group:g, bcast:1, pri:'batch',
@@ -1150,6 +1307,16 @@ function zaloLines(n, zk){
       break;
     }
 
+    /* ---- ★ v7.9: mời cấp cuối ghi nhận ----
+       Cùng thân tin với apprNeed (người đọc vẫn cần biết ai · ngày nào ·
+       bao nhiêu giờ), nhưng thêm MỘT dòng nói rõ đơn đã duyệt và đang áp
+       dụng — để không ai hiểu là công việc đang chờ họ mới chạy được. */
+    case 'finalNote': {
+      if(!req) break;
+      zReqLines(req,{full:1}).forEach(x=>L.push(x));
+      break;
+    }
+
     /* ---- Nhóm F: sửa lịch hàng loạt, gộp thành MỘT tin ----
        Mỗi thay đổi một dòng thẳng cột. Dữ liệu ở n.hold (mảng
        {to,iso,std,was,now}) do schedHoldFlush() ở js/06-calendar.js dựng. */
@@ -1187,7 +1354,8 @@ function zaloLines(n, zk){
       if(!tr){ if(n.text) L.push(String(n.text).replace(/^[^\p{L}\p{N}]+/u,'').trim()); break; }
       const days=(typeof trDays==='function')?trDays(tr):(tr.days||[]);
       const emps=(typeof trEmps==='function')?trEmps(tr):(tr.emps||[]);
-      L.push(String(tr.title||'Training').trim());
+      /* Tên khoá đứng trước tên buổi khi buổi thuộc một khoá (★ v7.8) */
+      L.push(String(((typeof trFullTitle==='function')&&trFullTitle(tr))||tr.title||'Training').trim());
       /* ★ v7.1 — MỖI NGÀY MỘT DÒNG, nói rõ ngày đó là trong ca hay tăng ca.
          Trước đây in một câu duy nhất cho cả buổi; nay chế độ quyết theo
          từng cặp (người, ngày) nên một câu là NÓI SAI với một nửa người
@@ -1218,7 +1386,17 @@ function zaloLines(n, zk){
       if(req){
         const lastBy=(zk==='approved'&&req.decidedBy)?req.decidedBy:(n.from||'');
         zReqLines(req).forEach(x=>L.push(x));
-        if(zk==='approved')      L.push('Final: '+(lastBy?zName(lastBy):zLevelPlain('kmgr'))+' — schedule updated');
+        /* ★ v7.9 — đơn qua Section Chief là ĐÃ DUYỆT và lịch đã ghi. Nói
+           "Final:" ở đây là sai sự thật khi cấp cuối chưa ghi nhận, mà nói
+           "pending the Korean manager" thì người nhận tưởng đơn còn treo.
+           Câu dưới nói đúng cả hai: đã duyệt, đã áp dụng, phần ghi nhận của
+           cấp cuối sẽ tới sau. */
+        if(zk==='approved'){
+          const prov=(typeof reqIsProvisional==='function')&&reqIsProvisional(req);
+          L.push((prov?'Approved by ':'Final: ')
+                +(lastBy?zName(lastBy):zLevelPlain('kmgr'))+' — schedule updated');
+          if(prov)L.push('Final endorsement by the Korean manager will follow.');
+        }
         else if(zk==='rejected') L.push('Rejected by '+zName(lastBy));
         else if(zk==='revoked')  L.push('Withdrawn by '+zName(lastBy)+' — back to standard');
         else                     L.push('Cancelled by '+zName(lastBy));

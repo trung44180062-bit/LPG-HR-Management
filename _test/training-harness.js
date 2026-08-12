@@ -106,7 +106,8 @@ function build(opt){
     }
     function notifyApprovers(r,by){__notifApprCalls.push({req:r.id,by:by});}
     function cancelReq(rid){delete S.requests[rid];return{reverted:0};}
-    function defaultNoPrint(type){return type!=='wt'&&type!=='swap';}
+    /* Giữ khớp với REQ_MUST_PRINT ở js/08-requests.js (★ v7.8: multi + swap) */
+    function defaultNoPrint(type){return type!=='multi'&&type!=='swap';}
     function teamList(){
       var s=[];(S.employees||[]).forEach(function(e){var x=e.team||'';if(s.indexOf(x)<0)s.push(x);});
       return s.sort();
