@@ -1943,7 +1943,16 @@ const I18N_EN={
 'Cả':'All',
 'học viên đều đã có buổi.':'attendees have a session.',
 'Danh sách này là BẢN ĐIỂM DANH GỐC của khoá — dùng để biết còn ai chưa học. Bảng phân bổ sẽ báo ngay nếu có người trong danh sách chưa được xếp buổi nào, và người chọn ở đây được tích sẵn khi bạn thêm buổi mới.':
-  'This is the course roll — it tells you who still has not attended. The allocation table flags anyone on the roll with no session yet, and the people picked here are pre-ticked when you add a new session.'
+  'This is the course roll — it tells you who still has not attended. The allocation table flags anyone on the roll with no session yet, and the people picked here are pre-ticked when you add a new session.',
+/* ★ v8.3 — chặn đơn trùng */
+'đang chờ duyệt':'pending approval',
+'Ngày này đã có đơn cùng loại':'This day already has a request of the same type',
+'Ngày này đã có đơn cùng loại:':'This day already has a request of the same type:',
+'Mỗi ngày chỉ được một đơn cùng loại. Huỷ đơn cũ ở «Đơn của tôi» rồi gửi lại.':
+  'Only one request of each type per day. Cancel the old one under “My requests”, then submit again.',
+'Huỷ đơn cũ và gửi đơn mới này?':'Cancel the old request and submit this new one?',
+'Không gửi được — ngày này đã có đơn cùng loại:':
+  'Cannot submit — this day already has a request of the same type:'
 };
 
 /* ============================================================

@@ -66,7 +66,11 @@ const EMPS=[
   {id:'e5',name:'VO VAN E',    pos:'field_eng',team:'B',perm:'staff',active:true,shiftType:'shift'},
   {id:'ad',name:'QUAN TRI',    pos:'office',   team:'', perm:'admin',active:true,shiftType:'none'}
 ];
-const ISO='2026-08-24', PAST='2026-08-01';
+/* ★ 24/08/2026 — ISO phải là NGÀY TƯƠNG LAI (bài E1: "chưa tới ngày học thì
+   không xác nhận được"). Trước đây ghi cứng '2026-08-24'; tới đúng hôm đó thì
+   2 bài E1 hỏng oan. Nay tính lệch so với hôm nay để không bao giờ hết hạn. */
+const shift_=n=>{const d=new Date();d.setDate(d.getDate()+n);return d.toISOString().slice(0,10);};
+const ISO=shift_(30), PAST=shift_(-30);
 
 function build(){
   const sb={console,JSON,Object,Array,String,Number,Math,RegExp,Set,Map,Date,

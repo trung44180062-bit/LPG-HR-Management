@@ -3059,3 +3059,76 @@ lớp học.
 > trúc lưu trữ (`S.over`) thì mỗi lần app có thêm một dạng "khác chuẩn" mới, nó
 > sẽ sai một cách im lặng. Đưa câu hỏi về một hàm có tên đúng như câu hỏi
 > (`cellIsDiff`) là chỗ duy nhất phải sửa cho lần sau.
+
+---
+
+## v8.3 (24/08/2026) — Chặn đơn trùng
+
+**Việc**: "Xin nghỉ phép ngày đó quên ghi lý do, user tạo thêm đơn nữa ghi lý
+do → có 2 đơn y chang nhau. Cái này cần chặn, phải xoá đơn cũ mới tạo được đơn
+mới."
+
+Trước đây `dsFormUI()` chỉ **cảnh báo mềm** qua `conflictReqs()` rồi vẫn cho
+gửi. Hai đơn giống hệt nằm cạnh nhau ở hàng duyệt; duyệt cả hai thì ô lịch bị
+ghi hai lần và bản in nộp nhân sự có hai tờ cho cùng một ngày.
+
+**Luật mới**: *một người · một loại đơn · một ngày = chỉ MỘT đơn còn sống*
+(`pending` hoặc `approved`). Đơn đã bị **từ chối** không tính — người ta phải
+được làm lại đơn.
+
+### Hai ngoại lệ cố ý
+
+- **Tăng ca** — một ngày tăng ca nhiều lần là bình thường (có từ v4.3, xem
+  `dsAddRow`). Nên OT chỉ tính là trùng khi **khung giờ đè lên nhau**:
+  `OT 08:00–12:00` rồi `OT 18:00–20:00` cùng ngày vẫn gửi được;
+  `OT 08:00–12:00` rồi `OT 11:00–14:00` thì bị chặn. Chạm mép (12:00 tiếp
+  12:00) không tính là đè. Ca đêm `20:00–08:00` quy về phút có cộng 1 ngày nên
+  nuốt đúng `22:00–23:00`.
+- **Khác loại đơn** — nghỉ phép ngày 19 rồi xin đổi ca ngày 19 là *mâu thuẫn
+  nghiệp vụ* chứ không phải đơn trùng. Chỗ đó **giữ nguyên** cảnh báo mềm của
+  `conflictReqs()` để người làm đơn tự quyết.
+
+### Cài ở đâu
+
+- `js/08-requests.js` — `DUP_ALIVE` · `otRowSpan()` · `otRowsOverlap()` ·
+  **`reqDupHits(empId,type,rows,skipId)`** → `[{id,r,isos[]}]` ·
+  `reqDupLine(h)` dựng dòng đọc được ("Nghỉ phép 19/08 — đang chờ duyệt").
+  Tham số `skipId` để sẵn cho lúc app có chức năng **sửa** đơn.
+- `js/13-portal.js` — `dsDupRows(ty)` gom ngày đang khai trên form (đơn khoảng
+  ngày trải ra từng ngày; đơn OT kèm khung giờ đã giải mẫu). Dải ⛔ đỏ trong
+  `dsFormUI()` đứng **trước** cảnh báo mềm, và chặn hẳn trong `dsSubmit()` đặt
+  **sau khi dựng xong danh sách ngày, trước khi chụp `r.before`** — một chỗ lo
+  cho cả hai nhánh khai theo dòng / khai theo khoảng ngày.
+- `css/portal.css` — `.pv-alert.stop` (đỏ). Khác `.warn`: *warn* là "cân
+  nhắc", *stop* là "không gửi được".
+- `js/14-i18n.js` — +6 khoá EN.
+
+### Cách xử khi vướng
+
+- Đơn cũ **còn chờ duyệt** và người này huỷ được → `confirm()` mời huỷ ngay
+  tại chỗ rồi gửi đơn mới, khỏi bắt họ đóng form đi tìm. Huỷ bằng
+  `cancelReq(id, false)` — **không** báo Zalo, vì đơn mới thay thế nó ngay
+  trong cùng một thao tác; bắn "đơn đã bị huỷ" rồi "có đơn cần duyệt" chỉ làm ồn.
+- Đơn cũ **đã duyệt** hoặc **đã in nộp nhân sự** → chặn hẳn bằng `alert()`.
+  Huỷ đơn đã duyệt là gỡ ô lịch thật, việc đó phải cố ý bấm ở «Đơn của tôi»
+  chứ không lẫn vào một thao tác gửi đơn.
+
+### Hai cái bẫy đã vấp
+
+1. **`dateRange()` là hàm sinh (`function*`)** — `dateRange(a,b).map(...)` ném
+   lỗi. Phải `[...dateRange(a,b)].map(...)`.
+2. **Trong `dsFormUI()` và `dsSubmit()`, biến `t` LÀ LOẠI ĐƠN**, không phải hàm
+   dịch. Mọi chuỗi ở đó phải gọi `t2()`. (Cùng loại bẫy đã làm trắng trang
+   màn Nhân lực ở v4.9 — xem mục tương ứng phía trên.)
+
+### Kiểm thử
+
+`_test/dup-req-harness.js` — **25 phép thử**, gồm 4 bài soi thẳng mã nguồn để
+chứng minh **đi đúng đường người dùng bấm** (`dsSubmit` có gọi, và gọi trước
+`r.before`; dải ⛔ đứng trước cảnh báo mềm; dùng `t2()` chứ không `t()`).
+
+Sửa kèm: `_test/manpower-v80-harness.js` ghi cứng `ISO='2026-08-24'` làm "ngày
+tương lai" cho bài E1 — tới đúng hôm đó thì 2 bài hỏng oan. Nay tính lệch
+±30 ngày so với hôm nay nên không bao giờ hết hạn.
+
+**Tổng 28 bộ harness, 0 hỏng.** Cache `?v=88`.

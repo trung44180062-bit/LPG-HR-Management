@@ -1326,6 +1326,24 @@ function dsSetPreset(i,v){
 }
 /* Số giờ của một dòng OT — ĐÃ trừ nghỉ trưa nếu có tích (js/01-core.js) */
 function dsRowOtHours(r){return otNetHours(r.iso,r.timeIn,r.isoEnd,r.timeOut,r.noLunch);}
+/* Các ngày đang khai trên form, đủ dùng để soi ĐƠN TRÙNG (reqDupHits ở
+   js/08-requests.js). Đơn khai theo khoảng ngày (multi) trải ra từng ngày;
+   đơn tăng ca phải kèm khung giờ đã giải mẫu, vì OT chỉ trùng khi ĐÈ GIỜ. */
+function dsDupRows(ty){
+  if(isRangeForm(ty)){
+    if(!dsMultiFrom)return [];
+    const to=dsMultiTo||dsMultiFrom;
+    if(to<dsMultiFrom)return [];
+    /* dateRange() là HÀM SINH (function*) — phải trải ra mảng mới .map được. */
+    return [...dateRange(dsMultiFrom,to)].map(iso=>({iso}));
+  }
+  return dsRows.filter(r=>r&&r.iso).map(r=>{
+    if(ty!=='ot')return {iso:r.iso};
+    const p=(typeof otPreset==='function')?(otPreset(r.preset||'')||{}):{};
+    return {iso:r.iso,isoEnd:r.isoEnd||'',
+            timeIn:r.timeIn||p.from||'',timeOut:r.timeOut||p.to||''};
+  });
+}
 /* Bật/tắt ô "Không làm trưa" rồi vẽ lại để số giờ đổi ngay trước mắt */
 function dsSetNoLunch(i,on){
   const r=dsRows[i];if(!r)return;
@@ -1820,6 +1838,14 @@ function dsFormUI(){
       Chỉ đổi ca giữa hai người đang có ca O / D / N / R — nghỉ phép hay tăng ca thì không đổi ca được.</div>`;
   }
 
+  /* ★ v8.3 — ĐƠN TRÙNG thì CHẶN, không phải cảnh báo. Dải này phải đứng
+     TRƯỚC cảnh báo mềm bên dưới: nó là lý do không gửi được, đọc trước.
+     ⚠ Trong hàm này `t` là LOẠI ĐƠN, hàm dịch phải gọi bằng t2(). */
+  const dupF=(typeof reqDupHits==='function')?reqDupHits(own,t,dsDupRows(t)):[];
+  if(dupF.length)h+=`<div class="pv-alert stop sm">⛔ ${t2('Ngày này đã có đơn cùng loại')}:
+     ${dupF.slice(0,3).map(x=>esc(reqDupLine(x))).join(' · ')}${dupF.length>3?' …':''}.
+     ${t2('Mỗi ngày chỉ được một đơn cùng loại. Huỷ đơn cũ ở «Đơn của tôi» rồi gửi lại.')}</div>`;
+
   const cf=conflictReqs(own,isos,t);
   if(cf.length)h+=`<div class="pv-alert warn sm">⚠️ Đã có ${cf.length} đơn khác phủ lên ngày đang khai
      (${cf.slice(0,3).map(r=>esc(REQ_LABEL[r.type]||r.type)+' '+fmtVN(r.from)).join(', ')}). Gửi tiếp có thể bị trùng.</div>`;
@@ -1943,6 +1969,35 @@ function dsSubmit(t){
     if(t==='late'){
       r.subType=dsLateType||'come_late';
       r.timeFrom=days[0].timeIn;r.timeTo=days[0].timeOut;
+    }
+  }
+
+  /* ============================================================
+     ★ v8.3 — CHẶN ĐƠN TRÙNG  (reqDupHits ở js/08-requests.js)
+     Đặt ĐÚNG Ở ĐÂY: sau khi cả hai nhánh (khai theo dòng / khai theo khoảng
+     ngày) đã dựng xong danh sách ngày, và trước khi chụp r.before — một chỗ
+     lo cho mọi loại đơn, không phải rải điều kiện ra hai nhánh.
+     ⚠ `t` ở đây là LOẠI ĐƠN, hàm dịch phải gọi bằng t2().
+     ============================================================ */
+  const dupS=(typeof reqDupHits==='function')?reqDupHits(empId,t,dsDupRows(t)):[];
+  if(dupS.length){
+    const lines=dupS.map(x=>'• '+reqDupLine(x)).join('\n');
+    /* Đơn cũ CÒN CHỜ DUYỆT và người này huỷ được → mời huỷ ngay tại chỗ, khỏi
+       bắt họ đóng form đi tìm. Đơn ĐÃ DUYỆT hoặc đã in nộp nhân sự thì KHÔNG
+       tự động huỷ: huỷ đơn đã duyệt là gỡ ô lịch thật, việc đó phải cố ý bấm
+       ở «Đơn của tôi» chứ không lẫn vào một thao tác gửi đơn. */
+    const quick=dupS.every(x=>x.r.status==='pending'
+                  &&typeof canCancelReq==='function'&&canCancelReq(x.r,me));
+    if(quick){
+      if(!confirm(t2('Ngày này đã có đơn cùng loại:')+'\n'+lines+'\n\n'
+                 +t2('Huỷ đơn cũ và gửi đơn mới này?')))return;
+      /* notify=false: đơn mới thay thế nó NGAY trong cùng một thao tác, nên
+         bắn thêm tin "đơn đã bị huỷ" rồi tin "có đơn cần duyệt" chỉ làm ồn. */
+      dupS.forEach(x=>{ if(typeof cancelReq==='function')cancelReq(x.id,false); });
+    }else{
+      alert(t2('Không gửi được — ngày này đã có đơn cùng loại:')+'\n'+lines+'\n\n'
+           +t2('Mỗi ngày chỉ được một đơn cùng loại. Huỷ đơn cũ ở «Đơn của tôi» rồi gửi lại.'));
+      return;
     }
   }
 

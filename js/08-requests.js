@@ -73,6 +73,85 @@ function reqDaySet(r){
 function reqWriter(r){return r.byId&&r.byId!==r.empId?r.byId:r.empId;}
 
 /* ============================================================
+   CHẶN ĐƠN TRÙNG   ★ v8.3
+   ------------------------------------------------------------
+   MỘT NGƯỜI · MỘT LOẠI ĐƠN · MỘT NGÀY = chỉ được có MỘT đơn còn sống.
+
+   Cảnh thật: xin nghỉ ngày 19/08, gửi xong mới nhớ chưa ghi lý do, nên gửi
+   thêm một đơn nữa có lý do. Hai đơn y hệt nằm cạnh nhau ở hàng duyệt; duyệt
+   cả hai thì ô lịch bị ghi hai lần và bản in nộp nhân sự có hai tờ cho cùng
+   một ngày. Trước đây app chỉ CẢNH BÁO ở form (conflictReqs) rồi vẫn cho gửi.
+
+   HAI NGOẠI LỆ CỐ Ý:
+     · Tăng ca — một ngày tăng ca nhiều lần là bình thường (có từ v4.3, xem
+       dsAddRow). Nên OT chỉ tính là trùng khi KHUNG GIỜ ĐÈ LÊN NHAU, chứ
+       không phải cứ cùng ngày. OT 08:00–12:00 và OT 18:00–20:00 cùng ngày
+       vẫn gửi được.
+     · KHÁC loại đơn — nghỉ phép ngày 19 rồi xin đổi ca ngày 19 là mâu thuẫn
+       nghiệp vụ chứ không phải đơn trùng. Chỗ đó giữ nguyên cảnh báo mềm của
+       conflictReqs() để người làm đơn tự quyết.
+
+   Đơn đã bị TỪ CHỐI không tính — người ta phải được làm lại đơn.
+   ============================================================ */
+const DUP_ALIVE=st=>st==='pending'||st==='approved';
+
+/* Khung giờ một dòng tăng ca, quy về SỐ PHÚT tính từ 00:00 của ngày dòng đó.
+   Giờ ra ≤ giờ vào, hoặc khai rõ isoEnd khác ngày → qua nửa đêm, cộng 1 ngày. */
+function otRowSpan(d){
+  if(!d)return null;
+  const num=s=>{const m=/^(\d{1,2}):(\d{2})/.exec(String(s||''));return m?(+m[1]*60+(+m[2])):null;};
+  const a=num(d.timeIn), b0=num(d.timeOut);
+  if(a===null||b0===null)return null;
+  let b=b0;
+  if(b<=a)b+=1440;
+  else if(d.isoEnd&&d.isoEnd!==d.iso)b+=1440;
+  return [a,b];
+}
+/* Hai dòng tăng ca CÙNG NGÀY có đè giờ lên nhau không.
+   Thiếu giờ thì trả true — thà chặn nhầm còn hơn để lọt một đơn trùng. */
+function otRowsOverlap(a,b){
+  const x=otRowSpan(a),y=otRowSpan(b);
+  if(!x||!y)return true;
+  return x[0]<y[1]&&y[0]<x[1];
+}
+/* Những đơn CÒN SỐNG đang giẫm lên đúng loại + đúng ngày mình sắp gửi.
+     rows   = [{iso,timeIn,timeOut,isoEnd}] — loại không phải OT chỉ cần iso
+     skipId = bỏ qua chính đơn đang sửa (để sẵn cho lúc app có chức năng sửa đơn)
+   Trả [{id, r, isos[]}]. */
+function reqDupHits(empId,type,rows,skipId){
+  const hits=[];
+  const mine=(rows||[]).filter(d=>d&&d.iso);
+  if(!empId||!type||!mine.length)return hits;
+  const all=(typeof S!=='undefined'&&S.requests)?S.requests:{};
+  for(const k in all){
+    const r=all[k];
+    if(!r||r.empId!==empId||r.type!==type)continue;
+    if(!DUP_ALIVE(r.status))continue;
+    if(skipId&&(k===skipId||r.id===skipId))continue;
+    const isos=[];
+    if(type==='ot'){
+      const od=reqDays(r);
+      mine.forEach(d=>{
+        if(isos.indexOf(d.iso)>=0)return;
+        if(od.some(o=>o.iso===d.iso&&otRowsOverlap(d,o)))isos.push(d.iso);
+      });
+    }else{
+      const set=reqDaySet(r);
+      mine.forEach(d=>{ if(set.has(d.iso)&&isos.indexOf(d.iso)<0)isos.push(d.iso); });
+    }
+    if(isos.length)hits.push({id:k,r:r,isos:isos.sort()});
+  }
+  return hits;
+}
+/* Một dòng người đọc hiểu ngay: "Nghỉ phép 19/08 — đang chờ duyệt" */
+function reqDupLine(h){
+  const tr=(typeof t==='function')?t:(x=>x);
+  const lb=(typeof REQ_LABEL!=='undefined'&&REQ_LABEL[h.r.type])||h.r.type;
+  const dd=h.isos.map(x=>(typeof fmtVN==='function')?fmtVN(x):x).join(', ');
+  return tr(lb)+' '+dd+' — '+tr(h.r.status==='approved'?'đã duyệt':'đang chờ duyệt');
+}
+
+/* ============================================================
    NGƯỜI OT COVER (đơn nghỉ phép)
    Nhân viên xin nghỉ có thể chỉ luôn người ở lại tăng ca gánh ca cho mình.
    Lưu ở đơn: r.coverId (mã NV) + r.coverSt = pending | confirmed | declined.

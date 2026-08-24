@@ -88,6 +88,8 @@ body.locked .holdbar{display:none!important}
 }
 .pv-alert.warn{background:#FFF4E5;color:#92400E;border:1px solid #FDE3BF}
 .pv-alert.info{background:#E8F2FB;color:#0B3B5C;border:1px solid #C9E0F2}
+/* ⛔ CHẶN — khác warn: warn là “cân nhắc”, stop là “không gửi được” */
+.pv-alert.stop{background:#FDECEC;color:#8A1F1A;border:1px solid #F3C4C0}
 .pv-alert.sm{padding:8px 10px;font-size:11.5px;margin:8px 0}
 .pv-alert .btn{margin-left:auto;flex:none}
 
