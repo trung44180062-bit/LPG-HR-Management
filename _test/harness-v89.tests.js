@@ -389,6 +389,50 @@ roNewDraft();roKinds={pause:true};
 roPauses.o1={from:'2026-10-10',to:'2026-10-01',code:'NP'};
 ok('khoảng nghỉ ngược thì chặn',/khoảng nghỉ/.test(roValidate()),roValidate());
 
+
+
+console.log('\n[15] CHUỖI DUYỆT — kỹ sư KHÔNG duyệt đơn của kỹ sư (★ v9.2)');
+/* Lỗi thật: sau khi gom 2 nhóm, nhóm "Field" toàn Field Engineer. Bản cũ lấy
+   teamFieldEngId() = người đầu danh sách, nên Mr Hùng (field) đi duyệt đơn của
+   Mr Nhân (cũng field). Hai người ngang cấp — chuyện đó sai về mặt tổ chức. */
+S.employees=[
+ {id:'hung', name:'Nguyễn Quốc Hùng',team:'Field',role:'eng', pos:'field_eng',shiftType:'type2',active:true},
+ {id:'nhan', name:'Trần Văn Nhân',   team:'Field',role:'eng', pos:'field_eng',shiftType:'type2',active:true},
+ {id:'an',   name:'Lâm Thuận An',    team:'Field',role:'eng', pos:'field_eng',shiftType:'type2',active:true},
+ {id:'loc',  name:'Nguyễn Bá Lộc',   team:'DCS',  role:'eng', pos:'boardman', shiftType:'type1',active:true},
+ /* nhóm A cũ: 1 field engineer + 2 operator — cơ cấu 4 nhóm còn nguyên */
+ {id:'feA',  name:'Kỹ sư nhóm A',    team:'A',    role:'eng', pos:'field_eng',shiftType:'type1',active:true},
+ {id:'opA',  name:'Operator A',      team:'A',    role:'oper',pos:'operator', shiftType:'type1',active:true},
+ {id:'opB',  name:'Operator B',      team:'B',    role:'oper',pos:'operator', shiftType:'type1',active:true},
+ {id:'vp',   name:'Thư ký',          team:'Office',role:'other',pos:'interpreter',shiftType:'none',active:true}
+];
+S.settings.noFeAppr=false;S.rev++;
+
+const chainOf=id=>reqChain({empId:id}).join('>');
+ok('ĐƠN CỦA FIELD ENGINEER: không còn cấp fe',chainOf('nhan')==='trung>kmgr',chainOf('nhan'));
+ok('không ai được chỉ định duyệt cấp fe cho Nhân',feApproverFor('nhan')==='',feApproverFor('nhan'));
+ok('Hùng KHÔNG phải cấp duyệt của Nhân',feApproverFor('nhan')!=='hung');
+ok('ĐƠN CỦA DCS BOARDMAN: cũng không có cấp fe',chainOf('loc')==='trung>kmgr',chainOf('loc'));
+ok('ĐƠN CỦA OPERATOR nhóm A: vẫn qua Field Engineer nhóm A',
+   chainOf('opA')==='fe>trung>kmgr'&&feApproverFor('opA')==='feA',
+   [chainOf('opA'),feApproverFor('opA')]);
+ok('OPERATOR nhóm B (nhóm không còn kỹ sư): đi thẳng Section Chief',
+   chainOf('opB')==='trung>kmgr'&&feApproverFor('opB')==='',chainOf('opB'));
+ok('KHỐI VĂN PHÒNG: không có cấp fe',chainOf('vp')==='trung>kmgr',chainOf('vp'));
+ok('Field Engineer nhóm A tự đứng đơn thì không tự duyệt',
+   chainOf('feA')==='trung>kmgr'&&feApproverFor('feA')==='',chainOf('feA'));
+
+/* --- công tắc tắt hẳn cấp fe --- */
+S.settings.noFeAppr=true;S.rev++;
+ok('bật công tắc: operator cũng đi thẳng Section Chief',
+   chainOf('opA')==='trung>kmgr'&&feApproverFor('opA')==='',chainOf('opA'));
+S.settings.noFeAppr=false;S.rev++;
+ok('tắt công tắc: trả lại cấp fe cho operator',chainOf('opA')==='fe>trung>kmgr');
+
+/* --- teamFieldEngId không bao giờ trả về chính người đứng đơn --- */
+ok('teamFieldEngId bỏ qua chính người đó',
+   teamFieldEngId('Field','hung')!=='hung',teamFieldEngId('Field','hung'));
+
 console.log('\n────────────────────────');
 console.log(pass+' đạt · '+fail+' hỏng');
 if(fail)process.exitCode=1;

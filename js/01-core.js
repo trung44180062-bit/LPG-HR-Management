@@ -536,13 +536,48 @@ function posSelectHtml(e,extraStyle){
     +POSITIONS.map(p=>`<option value="${p.v}"${p.v===cur?' selected':''}>${esc(p.l)}</option>`).join('')
     +`</select>`;
 }
-/* Field Engineer của một nhóm sản xuất — người duyệt cấp 1.
-   Ưu tiên người đã điền tên (có tài khoản). Trả về mã NV hoặc ''. */
-function teamFieldEngId(team){
+/* Field Engineer của một nhóm sản xuất — người duyệt cấp 1 cho OPERATOR.
+   Ưu tiên người đã điền tên (có tài khoản). Trả về mã NV hoặc ''.
+   `forId` = người đứng đơn, để không bao giờ tự trả về chính họ. */
+function teamFieldEngId(team,forId){
   if(!team)return '';
-  const list=activeEmps().filter(e=>(e.team||'')===team&&posCode(e)==='field_eng');
+  const list=activeEmps().filter(e=>(e.team||'')===team
+                                 &&posCode(e)==='field_eng'
+                                 &&(!forId||e.id!==forId));
   const named=list.find(e=>String(e.name||'').trim());
   return (named||list[0]||{}).id||'';
+}
+/* ============================================================
+   ★ v9.2 — AI MỚI CÓ CẤP DUYỆT 'fe'?
+   ------------------------------------------------------------
+   Cấp 'fe' sinh ra cho cơ cấu 4 nhóm: mỗi nhóm có ĐÚNG MỘT Field Engineer,
+   là trưởng ca tại hiện trường của các operator trong nhóm. Đơn của operator
+   đi qua người đó trước rồi mới lên Section Chief.
+
+   Cơ cấu 2 nhóm phá vỡ giả định đó: nhóm "Field" gồm TOÀN Field Engineer.
+   teamFieldEngId() lấy người đầu danh sách, thế là một kỹ sư đi duyệt đơn
+   của kỹ sư khác — họ ngang cấp nhau, chuyện đó sai về mặt tổ chức.
+
+   Luật đúng, không phụ thuộc cơ cấu nhóm nào:
+     · Đơn của KỸ SƯ (Field Engineer / DCS Boardman) KHÔNG có cấp 'fe' —
+       đi thẳng lên Section Chief.
+     · Đơn của OPERATOR mới có cấp 'fe', và người duyệt phải là một Field
+       Engineer CÙNG NHÓM, khác chính người đứng đơn.
+   Nhóm nào không còn Field Engineer (như A/B/C/D sau khi kỹ sư gom về
+   DCS/Field) thì cấp 'fe' tự biến mất — chuỗi rút còn Trung → QL người Hàn.
+
+   Công tắc `S.settings.noFeAppr` (tab Dữ liệu) tắt hẳn cấp 'fe' cho mọi đơn,
+   nếu tổ muốn bỏ luôn khâu duyệt tại hiện trường.
+   ============================================================ */
+function feApprOff(){return !!(S.settings&&S.settings.noFeAppr);}
+/* Người duyệt cấp 'fe' cho một đơn — '' nghĩa là đơn này không có cấp 'fe' */
+function feApproverFor(empId){
+  if(feApprOff())return '';
+  const e=empById(empId);
+  if(!e)return '';
+  if(poolOf(e)!==POOL_PROD)return '';          // khối văn phòng không có cấp fe
+  if(posGroupOf(e)===POSG_ENG)return '';       // kỹ sư: ngang cấp, không ai duyệt ai
+  return teamFieldEngId(e.team,empId);
 }
 
 /* ============================================================
@@ -617,10 +652,10 @@ function setKmgrDelegate(on,toId,note){
 }
 /* Chuỗi cấp cần duyệt cho một đơn — suy từ khối & nhóm của người đứng đơn */
 function reqChain(r){
-  const emp=empById(r&&r.empId);
-  const pool=poolOfId(r&&r.empId);
-  if(pool===POOL_PROD && emp && teamFieldEngId(emp.team) && teamFieldEngId(emp.team)!==r.empId)
-    return ['fe','trung','kmgr'];
+  /* Xem khối ★ v9.2 ở trên: có cấp 'fe' hay không do feApproverFor() quyết,
+     KHÔNG so tay teamFieldEngId()!==empId như bản cũ — phép so đó cho phép
+     một kỹ sư duyệt đơn của kỹ sư khác trong cùng nhóm Field. */
+  if(r&&r.empId&&feApproverFor(r.empId))return ['fe','trung','kmgr'];
   return ['trung','kmgr'];
 }
 /* Cấp mà 'who' được phép duyệt cho đơn r (null nếu không có quyền) */
@@ -635,7 +670,9 @@ function apprLevelOf(who,r){
   const e=empById(who);
   if(e&&posCode(e)==='field_eng'){
     const emp=empById(r.empId);
-    if(reqChain(r).includes('fe')&&emp&&emp.team&&emp.team===e.team)return 'fe';
+    /* Phải là ĐÚNG người mà feApproverFor() chỉ định — chỉ so "cùng nhóm" là
+       chưa đủ: nhóm Field toàn kỹ sư thì ai cũng lọt qua phép so đó. */
+    if(feApproverFor(r.empId)===who&&emp&&emp.team&&emp.team===e.team)return 'fe';
   }
   if(p==='appr')return 'trung';   // tương thích: quyền "Duyệt đơn" cũ = cấp Trung
   return null;

@@ -2196,7 +2196,12 @@ const I18N_EN={
 'Đã xếp':'Assigned',
 'Ca & mốc':'Shift & anchor',
 'chưa xếp':'not assigned',
-'Đặt ca / mốc riêng cho người này':'Set a separate shift / anchor for this person'
+'Đặt ca / mốc riêng cho người này':'Set a separate shift / anchor for this person',
+/* ★ v9.2 — công tắc cấp duyệt Field Engineer (js/01-core.js) */
+'Cấp duyệt Field Engineer':'Field Engineer approval level',
+'Bỏ hẳn cấp Field Engineer — mọi đơn đi thẳng lên Section Chief':'Remove the Field Engineer level entirely — every request goes straight to the Section Chief',
+'Đã bỏ cấp duyệt Field Engineer — đơn đi thẳng lên Section Chief':'Field Engineer approval removed — requests go straight to the Section Chief',
+'Đã bật lại cấp duyệt Field Engineer cho đơn của operator':'Field Engineer approval re-enabled for operator requests'
 };
 
 /* ============================================================

@@ -261,6 +261,19 @@ function renderData(){
   $('setMinD').value=S.settings.minD;$('setMinN').value=S.settings.minN;
   $('setMinD').onchange=()=>{S.settings.minD=+$('setMinD').value||0;save();};
   $('setMinN').onchange=()=>{S.settings.minN=+$('setMinN').value||0;save();};
+  /* ★ v9.2 — công tắc bỏ hẳn cấp duyệt Field Engineer. Xem khối chú thích
+     feApproverFor() ở js/01-core.js. */
+  if($('setNoFeAppr')){
+    $('setNoFeAppr').checked=!!S.settings.noFeAppr;
+    $('setNoFeAppr').onchange=()=>{
+      S.settings.noFeAppr=!!$('setNoFeAppr').checked;save();
+      if(typeof renderAppr==='function')renderAppr();
+      if(typeof refreshBadge==='function')refreshBadge();
+      toast(S.settings.noFeAppr
+        ? t('Đã bỏ cấp duyệt Field Engineer — đơn đi thẳng lên Section Chief')
+        : t('Đã bật lại cấp duyệt Field Engineer cho đơn của operator'));
+    };
+  }
   if($('setOtLimit')){
     $('setOtLimit').value=S.settings.otLimit||40;
     $('setOtLimit').onchange=()=>{S.settings.otLimit=+$('setOtLimit').value||40;save();

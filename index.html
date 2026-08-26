@@ -15,10 +15,10 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 
 <!-- ===== CSS ===== -->
-<link rel="stylesheet" href="css/app.css?v=91">
-<link rel="stylesheet" href="css/portal.css?v=91">
-<link rel="stylesheet" href="css/print.css?v=91">
-<link rel="stylesheet" href="css/ui.css?v=91">
+<link rel="stylesheet" href="css/app.css?v=92">
+<link rel="stylesheet" href="css/portal.css?v=92">
+<link rel="stylesheet" href="css/print.css?v=92">
+<link rel="stylesheet" href="css/ui.css?v=92">
 <style id="pageDyn">@page{size:A4 portrait;margin:8mm}</style>
 </head>
 <body class="locked">
@@ -389,6 +389,12 @@
            đi đào tạo không được tính. Xem js/07-manpower.js. -->
       <div class="fg"><label class="fl">Tối thiểu kỹ sư mỗi khung 12h (08–20 · 20–08)</label><input type="number" class="inp" id="setMinEng" min="0" placeholder="2"></div>
       <div class="fg"><label class="fl">Tối đa người nghỉ / nhóm / ngày</label><input type="number" class="inp" id="setMaxOffTeam" min="0" placeholder="1"></div>
+      <!-- ★ v9.2 — cấp duyệt Field Engineer chỉ áp cho đơn của OPERATOR, và
+           người duyệt phải là FE cùng nhóm. Kỹ sư không bao giờ bị một kỹ sư
+           khác duyệt đơn. Ô này tắt hẳn cấp đó — xem js/01-core.js. -->
+      <div class="fg"><label class="fl">Cấp duyệt Field Engineer</label>
+        <label class="cal-chk" style="padding:8px 0"><input type="checkbox" id="setNoFeAppr">
+          Bỏ hẳn cấp Field Engineer — mọi đơn đi thẳng lên Section Chief</label></div>
     </div>
     <p class="muted" style="margin:4px 0 0">Vượt trần thì bảng Tổng quan phê duyệt sẽ tô đỏ và gắn cờ 🚨 (mặc định 40 giờ/tháng theo Bộ luật Lao động).</p>
     <p class="muted" style="margin:4px 0 0"><b>Tối đa người nghỉ / nhóm / ngày</b> là tiêu chí chính của trợ lý duyệt đơn: cùng một nhóm mà số người đã nghỉ chạm mức này thì đơn tiếp theo trong ngày đó được khuyến nghị 🔴 <i>không nên duyệt</i>. Nhóm A/B/C/D là khối sản xuất, nhóm Office là khối văn phòng — hai khối tính tách bạch vì không trực thay ca cho nhau được.</p>
@@ -488,42 +494,42 @@
      config.js PHAI dung dau tien (khong co trong repo GitHub,
      copy tu js/config.example.js)
      ============================================================ -->
-<script src="js/config.js?v=91"></script>
-<script src="js/01-core.js?v=91"></script>
+<script src="js/config.js?v=92"></script>
+<script src="js/01-core.js?v=92"></script>
 <!-- i18n phai nap ngay sau 01-core (can bien LS) va truoc moi man hinh -->
-<script src="js/14-i18n.js?v=91"></script>
-<script src="js/00-icons.js?v=91"></script>
-<script src="js/02-storage.js?v=91"></script>
-<script src="js/03-nav.js?v=91"></script>
-<script src="js/04-schedule.js?v=91"></script>
-<script src="js/05-roster.js?v=91"></script>
-<script src="js/06-calendar.js?v=91"></script>
-<script src="js/07-manpower.js?v=91"></script>
-<script src="js/08-requests.js?v=91"></script>
-<script src="js/09-print.js?v=91"></script>
-<script src="js/10-account.js?v=91"></script>
-<script src="js/11-stats-data.js?v=91"></script>
-<script src="js/13-portal.js?v=91"></script>
-<script src="js/16-otlog-data.js?v=91"></script>
-<script src="js/15-report.js?v=91"></script>
-<script src="js/17-appr-sum.js?v=91"></script>
-<script src="js/18-advice.js?v=91"></script>
-<script src="js/19-meal.js?v=91"></script>
-<script src="js/20-events.js?v=91"></script>
-<script src="js/22-training.js?v=91"></script>
+<script src="js/14-i18n.js?v=92"></script>
+<script src="js/00-icons.js?v=92"></script>
+<script src="js/02-storage.js?v=92"></script>
+<script src="js/03-nav.js?v=92"></script>
+<script src="js/04-schedule.js?v=92"></script>
+<script src="js/05-roster.js?v=92"></script>
+<script src="js/06-calendar.js?v=92"></script>
+<script src="js/07-manpower.js?v=92"></script>
+<script src="js/08-requests.js?v=92"></script>
+<script src="js/09-print.js?v=92"></script>
+<script src="js/10-account.js?v=92"></script>
+<script src="js/11-stats-data.js?v=92"></script>
+<script src="js/13-portal.js?v=92"></script>
+<script src="js/16-otlog-data.js?v=92"></script>
+<script src="js/15-report.js?v=92"></script>
+<script src="js/17-appr-sum.js?v=92"></script>
+<script src="js/18-advice.js?v=92"></script>
+<script src="js/19-meal.js?v=92"></script>
+<script src="js/20-events.js?v=92"></script>
+<script src="js/22-training.js?v=92"></script>
 <!-- Khoá đào tạo (gom nhiều buổi) + bảng tổng hợp — nạp SAU 22-training.js
      vì dùng lại trAll/trSave/trHoursOfEmp… của file đó. -->
-<script src="js/23-course.js?v=91"></script>
+<script src="js/23-course.js?v=92"></script>
 <!-- Tái cơ cấu nhóm khi có người nghỉ việc — nạp SAU 04-schedule (genForEmp,
      parseShiftPattern) và SAU 13-portal (newNotif, notifDrop). -->
-<script src="js/24-reorg.js?v=91"></script>
+<script src="js/24-reorg.js?v=92"></script>
 <!-- Lịch nhập tàu nhiều phương án — mỗi phương án là một sự kiện trên lịch
      nên phải nạp SAU 20-events.js. -->
-<script src="js/25-vessel.js?v=91"></script>
+<script src="js/25-vessel.js?v=92"></script>
 <!-- Tên file cố tình KHÔNG chứa chữ "zalo": mạng công ty chặn mọi URL có tên
      ứng dụng nhắn tin, file cũ js/21-zalo.js bị proxy cắt với lỗi HTTP 499. -->
-<script src="js/21-notify.js?v=91"></script>
-<script src="js/12-main.js?v=91"></script>
+<script src="js/21-notify.js?v=92"></script>
+<script src="js/12-main.js?v=92"></script>
 
 </body>
 </html>

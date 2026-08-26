@@ -122,8 +122,13 @@ function roApplied(){return roAll().filter(r=>r.status==='applied');}
 /* Ảnh chụp khai báo hiện tại của một người — dùng cho `prev` (hoàn tác)
    và để so "có gì đổi không". */
 function roSnapEmp(e){
+  /* a2 nằm trong ảnh chụp để HOÀN TÁC trả lại được, dù roMoveChanged() không
+     so nó. Lý do phải quan tâm tới a2: genForEmp() lấy khoảng cách a2−a1 làm
+     CHU KỲ nếu khoảng đó ≥ số pha. Đổi a1 sang mốc mới mà để nguyên a2 cũ là
+     chu kỳ nhảy thành một con số vô nghĩa — cả nhóm lệch ca mà không ai hiểu
+     vì sao. roApply() vì thế xoá a2 khi ghi cơ cấu mới. */
   return {team:e.team||'',shiftType:e.shiftType||'type1',
-          pattern:e.pattern||'',a1:e.a1||''};
+          pattern:e.pattern||'',a1:e.a1||'',a2:e.a2||''};
 }
 function roMoveChanged(cur,nw){
   if(!nw)return false;
@@ -298,6 +303,7 @@ function roApply(id){
     e.team=nw.team;e.shiftType=nw.shiftType;
     e.pattern=nw.pattern||'';
     if(nw.a1)e.a1=nw.a1;
+    e.a2='';                       /* chu kỳ mới do kiểu ca quyết, xem roSnapEmp */
     const gen=genForEmp(e,days);
     days.forEach(iso=>{cells+=roPut(undo,pid,iso,gen[iso]||'');});
   });
@@ -312,6 +318,7 @@ function roApply(id){
     if(j.shiftType)e.shiftType=j.shiftType;
     e.pattern=j.pattern||'';
     if(j.a1)e.a1=j.a1;
+    e.a2='';
     const mine=days.filter(iso=>iso>=e.joinAt);
     const gen=genForEmp(e,mine);
     mine.forEach(iso=>{cells+=roPut(undo,pid,iso,gen[iso]||'');});
@@ -362,6 +369,7 @@ function roUndo(id){
     const p=rec.prev[pid];
     e.team=p.team;e.shiftType=p.shiftType;e.pattern=p.pattern||'';
     if(p.a1)e.a1=p.a1;
+    if(Object.prototype.hasOwnProperty.call(p,'a2'))e.a2=p.a2||'';
     if(Object.prototype.hasOwnProperty.call(p,'leftAt'))e.leftAt=p.leftAt||'';
     if(Object.prototype.hasOwnProperty.call(p,'joinAt'))e.joinAt=p.joinAt||'';
   });

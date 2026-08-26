@@ -1658,8 +1658,10 @@ function apprLevelRecipients(r,lvl){
   const out=new Set();
   if(!r||!lvl)return [];
   if(lvl==='fe'){
-    const emp=empById(r.empId);
-    const fe=(emp&&emp.team&&typeof teamFieldEngId==='function')?teamFieldEngId(emp.team):null;
+    /* ★ v9.2 — đúng MỘT nguồn sự thật cho "ai là cấp fe của đơn này":
+       feApproverFor() ở js/01-core.js. Bản cũ tự tra teamFieldEngId() nên
+       khi nhóm Field toàn kỹ sư thì gửi nhầm cho một kỹ sư ngang cấp. */
+    const fe=(typeof feApproverFor==='function')?feApproverFor(r.empId):'';
     if(fe&&fe!==r.empId)out.add(fe);
   }else if(lvl==='trung'){
     if(typeof ROOT_ADMIN!=='undefined'&&ROOT_ADMIN&&empById(ROOT_ADMIN))out.add(ROOT_ADMIN);
