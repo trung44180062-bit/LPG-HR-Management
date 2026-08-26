@@ -110,6 +110,7 @@ function renderAccTbl(){
       <td><select class="inp sm" style="min-width:150px" onchange="updType('${e.id}',this.value)">
         <option value="type1"${sel('type1',e.shiftType)}>Ca 8 ngày (OODDNNRR)</option>
         <option value="type2"${sel('type2',e.shiftType)}>Ca 6 ngày (DDNNRR)</option>
+        <option value="custom"${sel('custom',e.shiftType)}>Mẫu ca tự khai…</option>
         <option value="admin"${sel('admin',e.shiftType)}>Hành chính T2–T6</option>
         <option value="office6"${sel('office6',e.shiftType)}>Hành chính T2–T7 (học việc)</option>
         <option value="none"${sel('none',e.shiftType)}>Không xếp lịch</option>
@@ -132,6 +133,7 @@ function renderAccTbl(){
 /* Nhãn kiểu ca — dùng cho bảng tài khoản bản chỉ đọc */
 const SHIFT_TYPE_LABEL={
   type1:'Ca 8 ngày (OODDNNRR)', type2:'Ca 6 ngày (DDNNRR)',
+  custom:'Mẫu ca tự khai',
   admin:'Hành chính T2–T6', office6:'Hành chính T2–T7 (học việc)',
   none:'Không xếp lịch'
 };

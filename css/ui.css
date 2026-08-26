@@ -929,3 +929,225 @@ button.attp{cursor:pointer}
 .mp-win .who{flex:1;min-width:160px;color:#334155}
 .mp-win .tr{color:#5B21B6}
 .mp-win .pt{color:var(--mut)}
+
+/* ============================================================
+   ★ v8.9 — TÁI CƠ CẤU NHÓM (js/24-reorg.js)
+   ------------------------------------------------------------
+   Một kỳ công có thể chứa HAI cơ cấu nhóm. Bảng lịch vẫn là một bảng
+   liền — người ta nộp bảng công cả kỳ, không tách làm đôi được — nên
+   ranh giới phải nhìn thấy được ngay trên bảng: cột của ngày áp dụng
+   mang một VẠCH DỌC ĐẬM ở mép trái, chạy suốt từ hàng tiêu đề xuống
+   hàng cuối. Không đổi màu ô, không đổi chữ: mọi thứ khác giữ nguyên
+   để bảng vẫn đọc được như thường.
+   ============================================================ */
+:root{--roc:#0F766E;--robg:#ECFDF5;--robd:#5EEAD4}
+.mtx th.cut, .mtx td.cut{border-left:3px solid var(--roc)!important}
+.mtx th.cut{position:relative}
+/* Nhãn "cơ cấu mới" ngay trên hàng số ngày — chỉ vẽ ở hàng số cho khỏi lặp */
+.mtx tr.dnum th.cut::before{content:'🔀';position:absolute;top:-1px;left:1px;
+  font-size:8px;line-height:1;opacity:.9}
+/* Cột "Tổ" của người vừa đổi nhóm: ghi A→DCS, chữ nhỏ lại cho vừa 24px */
+.mtx td.c1.movedteam{font-size:8.5px;font-weight:800;letter-spacing:-.4px;line-height:1.05;
+  padding:0 1px;white-space:nowrap}
+.mtx td.c1.movedteam i{font-style:normal;opacity:.7;margin:0 .5px}
+
+/* ---- THANH CƠ CẤU TỔ (trong thẻ Tạo / điền lịch ca) ---- */
+.struct-bar{margin-top:12px;padding:12px;border:1px solid var(--robd);border-radius:12px;
+  background:linear-gradient(180deg,var(--robg),#fff)}
+.sb-now{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.sb-now .lb{font-size:11.5px;font-weight:700;color:var(--roc);text-transform:uppercase;letter-spacing:.4px}
+.sb-now b{font-size:15px}
+.sb-acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.sb-btn.cur{border-color:var(--roc);box-shadow:inset 0 0 0 1px var(--roc)}
+.sb-hint{margin-top:8px;line-height:1.45}
+
+/* ---- trình 3 bước ---- */
+.ro-steps{display:flex;gap:6px;margin:2px 0 12px}
+.rost{flex:1;display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--bd);
+  border-radius:10px;background:#fff;cursor:pointer;text-align:left;min-width:0}
+.rost b{flex-shrink:0;width:20px;height:20px;border-radius:50%;background:#E2E8F0;color:#475569;
+  font-size:11.5px;display:flex;align-items:center;justify-content:center}
+.rost span{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rost.ok b{background:var(--roc);color:#fff}
+.rost.on{border-color:var(--brand);background:#F1F6FF}
+.rost.on span{color:var(--brand2)}
+
+/* Bước 1 — thẻ chọn loại việc */
+.ro-kinds{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px}
+.rok{display:flex;align-items:flex-start;gap:10px;padding:12px;border:1px solid var(--bd);
+  border-radius:12px;background:#fff;cursor:pointer;text-align:left}
+.rok .ic{font-size:20px;line-height:1.1;flex-shrink:0}
+.rok .tx{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+.rok .tx b{font-size:13.5px}
+.rok .tx i{font-style:normal;font-size:11.5px;color:var(--mut);line-height:1.35}
+.rok .ck{flex-shrink:0;width:20px;height:20px;border-radius:6px;border:1px solid var(--bd);
+  display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff}
+.rok.on{border-color:var(--roc);background:var(--robg)}
+.rok.on .ck{background:var(--roc);border-color:var(--roc)}
+
+/* Bước 2 — mốc */
+.ro-dates{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+.ro-dates .fg{flex:1;min-width:160px;margin:0}
+.ro-quick{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:8px 0}
+
+/* Bước 3 — các khối */
+.ro-h{margin:16px 0 4px;display:flex;align-items:center;gap:8px;font-size:14px}
+.ro-h:first-child{margin-top:4px}
+.ro-badge{font-size:11px;font-weight:800;padding:1px 8px;border-radius:99px;
+  background:var(--robg);color:var(--roc);border:1px solid var(--robd)}
+
+/* Cơ cấu dựng sẵn */
+.ro-presets{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px;margin-bottom:10px}
+.rop{display:flex;align-items:flex-start;gap:9px;padding:10px;border:1px solid var(--bd);
+  border-radius:11px;background:#fff;cursor:pointer;text-align:left}
+.rop .ic{font-size:17px;line-height:1.1;flex-shrink:0}
+.rop .tx{display:flex;flex-direction:column;gap:2px;min-width:0}
+.rop .tx b{font-size:12.5px}
+.rop .tx i{font-style:normal;font-size:11px;color:var(--mut);line-height:1.35}
+.rop.on{border-color:var(--roc);background:var(--robg);box-shadow:inset 0 0 0 1px var(--roc)}
+
+/* Danh sách bấm-để-chọn (nghỉ việc / mới vào / nghỉ dài hạn) */
+.ro-pick{display:flex;flex-direction:column;gap:4px;max-height:30vh;overflow:auto;
+  border:1px solid var(--bd);border-radius:10px;padding:6px;background:#FBFCFD}
+.ropk{display:flex;align-items:center;gap:8px;flex-wrap:wrap;border-radius:8px;padding:2px}
+.ropk.on{background:var(--robg);box-shadow:inset 0 0 0 1px var(--robd)}
+.ropk .nm{flex:1;min-width:190px;display:flex;align-items:center;gap:8px;padding:6px 8px;
+  border:0;background:transparent;cursor:pointer;text-align:left;border-radius:8px}
+.ropk .nm:hover{background:#EFF4F9}
+.ropk .nm .ck{flex-shrink:0;width:18px;height:18px;border-radius:5px;border:1px solid var(--bd);
+  background:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff}
+.ropk.on .nm .ck{background:var(--roc);border-color:var(--roc)}
+.ropk .nm b{font-size:12.5px}
+.ropk .nm i{font-style:normal;font-size:11px;color:var(--mut)}
+.ropk .nm i b.new{color:#B45309}
+.ropk .fl2,.ropk .jn-f .fl2{display:flex;flex-direction:column;gap:2px;font-size:10.5px;color:var(--mut)}
+.ropk .jn-f{display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;padding:0 8px 6px}
+
+/* Bảng khai nhóm */
+.ro-flt{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0 6px}
+.ro-flt .inp{flex:1;min-width:140px}
+.ro-bulk{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px;
+  padding:8px;border:1px dashed var(--bd);border-radius:10px;background:var(--robg)}
+.ro-bulk .inp{width:150px}
+.ro-tbl-wrap{overflow:auto;max-height:38vh;border:1px solid var(--bd);border-radius:10px}
+.ro-tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.ro-tbl th{position:sticky;top:0;z-index:1;background:#F1F5F9;text-align:left;
+  padding:6px 8px;font-size:11.5px;color:var(--mut);white-space:nowrap}
+.ro-tbl td{padding:5px 8px;border-top:1px solid var(--bd);vertical-align:top}
+.ro-tbl td.nw{white-space:nowrap}
+.ro-tbl tr.chg{background:var(--robg)}
+.ro-tbl tr.chg td{border-top-color:var(--robd)}
+.ro-tbl i.nt{display:block;font-style:normal;font-size:11px;color:var(--mut)}
+.inp.pat.bad{border-color:#DC2626;background:#FEF2F2}
+
+/* Xem trước */
+.ro-pvbar{display:flex;align-items:center;gap:12px;margin:14px 0 4px;flex-wrap:wrap}
+.ro-pv{overflow:auto;max-height:34vh;border:1px solid var(--bd);border-radius:10px;margin-bottom:8px}
+.ro-pvtbl{border-collapse:collapse;font-size:10.5px;white-space:nowrap}
+.ro-pvtbl th{background:#F1F5F9;padding:2px 3px;font-weight:700;color:var(--mut);
+  position:sticky;top:0;z-index:1}
+.ro-pvtbl th.cut,.ro-pvtbl td.cut{border-left:2px solid var(--roc)}
+.ro-pvtbl th.nm,.ro-pvtbl td.nm{position:sticky;left:0;z-index:2;background:#fff;
+  text-align:left;min-width:160px;max-width:160px;white-space:normal;padding:3px 6px}
+.ro-pvtbl th.nm{z-index:3;background:#F1F5F9}
+.ro-pvtbl td.nm i.nt{display:block;font-style:normal;font-size:10px;color:var(--mut)}
+.ro-pvtbl td.nm2{font-size:9.5px;color:var(--mut);padding:0 4px;text-align:right}
+.ro-pvtbl td{border:1px solid #E2E8F0;text-align:center;padding:2px 3px;min-width:20px}
+.ro-pvtbl tr.b td{background:#F8FAFC;color:var(--mut)}
+.ro-pvtbl tr.b td.x{background:#FEF3C7;color:#92400E;font-weight:700}
+.ro-pvtbl tr.a td.x{background:var(--robg);color:var(--roc);font-weight:800}
+
+/* Chân màn: tóm tắt + nút */
+.ro-foot{position:sticky;bottom:-14px;margin-top:14px;padding:10px 0 2px;background:#fff;
+  border-top:1px solid var(--bd)}
+.ro-sum{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.rosum{font-size:11.5px;font-weight:700;padding:2px 9px;border-radius:99px;border:1px solid var(--bd)}
+.rosum.mv{background:var(--robg);color:var(--roc);border-color:var(--robd)}
+.rosum.lv{background:#FEF2F2;color:#B91C1C;border-color:#FECACA}
+.rosum.jn{background:#EFF6FF;color:#1D4ED8;border-color:#BFDBFE}
+.rosum.ps{background:#FDF4FF;color:#A21CAF;border-color:#F5D0FE}
+
+/* Lịch sử các đợt */
+.ro-list{display:flex;flex-direction:column;gap:6px;max-height:52vh;overflow:auto}
+.ro-it{display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border:1px solid var(--bd);
+  border-radius:10px;background:#fff}
+.ro-it.on{border-color:var(--roc);background:var(--robg)}
+.ro-it .tx{flex:1;display:flex;flex-direction:column;line-height:1.35;min-width:0}
+.ro-it .tx i{font-style:normal;font-size:11.5px;color:var(--mut)}
+.ro-it .ac{display:flex;gap:4px;flex-shrink:0;align-items:center}
+.evtag.ok{background:#DCFCE7;color:#166534}
+.evtab .cnt{font-style:normal;font-size:10.5px;font-weight:800;margin-left:5px;
+  padding:0 6px;border-radius:99px;background:#E2E8F0;color:#475569}
+
+/* ============================================================
+   ★ v8.9 — LỊCH NHẬP TÀU NHIỀU PHƯƠNG ÁN (js/25-vessel.js)
+   ------------------------------------------------------------
+   Phương án CHƯA CHỐT phải khác hẳn ngày đã chốt bằng mắt, nếu không cả
+   tổ chuẩn bị nhầm. Quy ước dùng khắp app: VIỀN ĐỨT + nền nhạt hơn.
+   ============================================================ */
+.mtx th.evday.evprov{background:#FFFBF5!important;color:#B45309!important;
+  box-shadow:none;border-bottom:2px dashed var(--evc)}
+.pv-d.evday.evprov{background:#FFFBF5;border-style:dashed}
+.cwg-row.hd .c.ev.evprov{background:#FFFBF5;box-shadow:none;
+  border-bottom:2px dashed var(--evc)}
+.ev-b.prov,.ev-it.prov{border-style:dashed;background:#FFFBF5}
+
+.vs-opts{display:flex;flex-direction:column;gap:6px;margin-bottom:8px}
+.vs-op{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:8px;
+  border:1px dashed var(--evbd);border-radius:10px;background:#FFFBF5}
+.vs-op.fixed{border-style:solid;border-color:#86EFAC;background:#F0FDF4}
+.vs-op .pa{font-size:11.5px;font-weight:800;color:#9A3412;min-width:64px}
+.vs-op.fixed .pa{color:#166534}
+.vs-op .fl2{display:flex;flex-direction:column;gap:2px;font-size:10.5px;color:var(--mut)}
+.vs-op .inp.nm{width:150px}
+.vs-op .inp.nt{flex:1;min-width:150px}
+.vs-list{display:flex;flex-direction:column;gap:8px;max-height:56vh;overflow:auto}
+.vs-pl{border:1px solid var(--bd);border-radius:12px;padding:10px;background:#fff}
+.vs-pl.fixed{border-color:#86EFAC;background:#F7FEF9}
+.vs-pl.past{opacity:.6}
+.vs-pl .hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.vs-pl>i.nt{display:block;font-style:normal;font-size:11.5px;color:var(--mut);margin:2px 0 6px}
+.vs-pl .ops{display:flex;flex-direction:column;gap:4px;margin-top:6px}
+.vs-pl .op{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:6px 8px;
+  border:1px dashed var(--evbd);border-radius:9px;background:#FFFBF5}
+.vs-pl .op.fixed{border-style:solid;border-color:#86EFAC;background:#F0FDF4}
+.vs-pl .op .pa{font-size:11px;font-weight:800;color:#9A3412;min-width:44px}
+.vs-pl .op.fixed .pa{color:#166534}
+.vs-pl .op .dt{font-size:12.5px;font-weight:700}
+.vs-pl .op .tx{flex:1;font-size:11.5px;color:#475569;min-width:100px}
+.vs-pl .op .tx i{font-style:normal;color:var(--mut)}
+.vs-pl .op .ac{display:flex;gap:4px;align-items:center;flex-shrink:0}
+@media(max-width:640px){
+  .ro-bulk .inp{width:100%}
+  .ro-tbl-wrap{max-height:none}
+  .ro-pick{max-height:none}
+  .vs-op .inp.nm,.vs-op .inp.nt{width:100%;flex:none}
+  /* Trên điện thoại dải 3 bước chỉ còn số — chữ dài làm vỡ hàng */
+  .rost span{display:none}
+  .rost{flex:0 0 auto;justify-content:center}
+  .rost.on{flex:1}
+  .rost.on span{display:inline}
+  .sb-acts .btn{flex:1;min-width:140px}
+}
+
+/* ★ v9.1 — nhóm đích trong khối Cơ cấu (js/24-reorg.js) */
+.ro-sub{margin:12px 0 6px;font-size:12px;font-weight:800;color:var(--roc);
+  text-transform:uppercase;letter-spacing:.4px}
+.ro-tip{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;
+  padding:8px 10px;border:1px dashed #FDBA74;border-radius:10px;background:#FFF7ED;
+  font-size:12px;color:#9A3412}
+.ro-teams{border:1px solid var(--robd);border-radius:10px;padding:8px;background:var(--robg)}
+.ro-teams.empty{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ro-teams.empty p{margin:0;flex:1;min-width:200px}
+.ro-ttbl{width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:6px}
+.ro-ttbl th{text-align:left;padding:4px 6px;font-size:11px;color:var(--mut);
+  font-weight:700;white-space:nowrap}
+.ro-ttbl th.ct,.ro-ttbl td.ct{text-align:center}
+.ro-ttbl td{padding:4px 6px;border-top:1px solid var(--robd);vertical-align:top}
+.ro-ttbl td.nw{white-space:nowrap}
+.ro-ttbl i.nt{display:block;font-style:normal;font-size:10.5px;color:var(--mut);margin-top:2px}
+.ro-ttbl td.ct b{font-size:15px;color:var(--roc)}
+.ro-derived{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11.5px;font-weight:700}
+.ro-derived i.nt{flex-basis:100%;font-weight:400}
+.ro-own{display:block}
+.ro-own .inp{width:100%}

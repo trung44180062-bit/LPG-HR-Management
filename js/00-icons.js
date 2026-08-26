@@ -16,6 +16,9 @@
 /* ---- Bộ icon: name → ruột SVG (viewBox 24×24, stroke currentColor) ---- */
 const IC_SVG={
   home:'<path d="M3 9.5 12 3l9 6.5V20a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M9 22v-8h6v8"/>',
+  /* ★ v8.9 — tái cơ cấu nhóm (shuffle) + lịch nhập tàu (anchor) */
+  shuffle:'<path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="m15 15 6 6"/><path d="M4 4l5 5"/>',
+  anchor:'<circle cx="12" cy="5" r="3"/><path d="M12 22V8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/>',
   calendar:'<rect x="3" y="4" width="18" height="17" rx="3"/><path d="M16 2v4M8 2v4M3 10h18"/>',
   'check-circle':'<path d="M22 11.1V12a10 10 0 1 1-5.93-9.14"/><path d="m22 4-10 10-3-3"/>',
   chart:'<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M7 14v3M12 9v8M17 5v12"/>',
@@ -110,6 +113,8 @@ const IC_MAP={
   '🤝':'users','🙅':'hand',
   /* v5.6 — đặt cơm tăng ca: 4 mốc bữa ăn + bát cơm */
   '🌅':'sunrise','🍚':'bowl','🌆':'sunset','🌙':'moon','🍽':'utensils',
+  /* ★ v8.9 — 🔀 tái cơ cấu nhóm (js/24-reorg.js) · 🚢 lịch nhập tàu (js/25-vessel.js) */
+  '🔀':'shuffle','🚢':'anchor','⛴':'anchor','🛳':'anchor',
 };
 
 /* ---- dựng markup ---- */

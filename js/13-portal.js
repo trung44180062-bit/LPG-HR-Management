@@ -1222,7 +1222,7 @@ function renderPvCal(){
     /* Ngày mình có lịch đào tạo — js/22-training.js */
     const trL=trOn?trOfCell(id,iso):[];
     const trC=trOn?trCellCls(id,iso):'';
-    h+=`<button class="pv-d${iso===t?' today':''}${r.code?'':' empty'}${dw===0||dw===6?' we':''}${head?' pmo':''}${ev.length?' evday':''}${trC}"
+    h+=`<button class="pv-d${iso===t?' today':''}${r.code?'':' empty'}${dw===0||dw===6?' we':''}${head?' pmo':''}${ev.length?(ev.every(x=>x.prov)?' evday evprov':' evday'):''}${trC}"
         onclick="openDaySheet('${iso}')" title="${fmtVNfull(iso)} ${dowOf(iso)}${info?' — '+esc(info.l):''}${ev.length?' · 📌 '+esc(evTitleOfDay(iso)):''}${trL.length?' · '+esc(trCellTitle(id,iso)):''}">
       <span class="dn">${dd}${dd===1?`<i class="mo">/${mm}</i>`:''}</span>
       ${pvMode==='week'?`<span class="dw">${dowOf(iso)}</span>`:''}

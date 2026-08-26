@@ -15,6 +15,8 @@ function renderAll(){
   /* Băng "đang giữ thông báo lịch" — dựng lại sau mỗi lượt đồng bộ Firebase,
      để quản trị khác cũng thấy và bấm gửi hộ được (js/06-calendar.js). */
   if(typeof renderHoldBar==='function')renderHoldBar();
+  /* Badge "còn chuyến tàu chưa chốt phương án" — js/25-vessel.js */
+  if(typeof refreshVesselBadge==='function')refreshVesselBadge();
   renderGate();
   if(curView==='me')renderMe();
   if(curView==='rep')renderReport();
@@ -31,6 +33,10 @@ syncAccounts();
   let _pn=0;
   if(typeof sweepStaleNotifs==='function')_pn+=sweepStaleNotifs(false);
   if(typeof pruneOldNotifs==='function')  _pn+=pruneOldNotifs();
+  /* Người đã nghỉ việc: dọn nốt ô lịch lỡ có sau ngày làm việc cuối cùng.
+     Bình thường roApply() đã dọn rồi — đây là lưới an toàn cho trường hợp
+     lịch kỳ mới được điền TRƯỚC khi khai ngày nghỉ. Xem js/24-reorg.js. */
+  if(typeof roSweepLeavers==='function')  _pn+=roSweepLeavers();
   if(_pn)save();
 }
 renderAll();

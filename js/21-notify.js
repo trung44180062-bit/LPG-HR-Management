@@ -100,6 +100,13 @@ const ZALO_INFO_CHANNEL = {
      tin này, liệt kê mọi người mọi ngày. Xem js/06-calendar.js schedHold*. */
   schedBulk   : 'now',
 
+  /* ★ v8.9 — TÁI CƠ CẤU NHÓM (js/24-reorg.js).
+     'now' vì đây là tin đổi LỊCH ĐI LÀM của cả tổ, biết muộn là đi sai ca.
+     Fan-out được xử lý ở nơi gọi: mỗi người nhận một tin trong app mang nz:1
+     (không tốn Zalo), còn Zalo chỉ nhận ĐÚNG MỘT tin gộp liệt kê cả đợt —
+     cùng cách làm với schedBulk ở trên. */
+  reorg       : 'now',
+
   /* Nhóm C — phản hồi hai chiều giữa nhân viên */
   schedRevoke : 'now',      // C2 NV có thể đã gửi đơn theo thay đổi đó
   swapNo      : 'now',      // C4 A phải tìm người khác gấp
@@ -177,7 +184,7 @@ const ZALO_GROUP_KEY = {
   schedChange:'sched', schedRevoke:'sched', schedDecline:'sched',
   swapConfirm:'swap', swapNo:'swap',
   coverConfirm:'cover', coverNo:'cover', coverRemoved:'cover',
-  event:'event', training:'training'
+  event:'event', training:'training', reorg:'reorg'
 };
 
 /* ============================================================
@@ -221,6 +228,7 @@ const ZALO_TITLE = {
   swapConfirm : '🔄 SWAP REQUEST',
   coverConfirm: '🙋 OT COVER REQUEST',
   event       : '📢 ANNOUNCEMENT',
+  reorg       : '🔀 TEAM RESTRUCTURE',
   training    : '🎓 TRAINING SCHEDULE',
   approved    : '✅ APPROVED',
   rejected    : '❌ REJECTED',
@@ -245,6 +253,7 @@ const ZALO_ACTION = {
   coverConfirm: 'Accept / decline in app',
   rejected    : 'Submit a new request if needed',
   training    : 'See the training schedule in app',
+  reorg       : 'Check your new roster in app',
   swapNo      : 'Choose another colleague',
   coverNo     : 'Assign another colleague'
 };
@@ -522,11 +531,31 @@ function zaloTitle(n, zk){
     return '📅 SCHEDULE UPDATED'
          + (p?(' — '+p+' people / '+rows.length+' changes'):'');
   }
+  /* ★ v8.9 — LỊCH TÀU NHIỀU PHƯƠNG ÁN (js/25-vessel.js).
+     Tin đi chung kênh 'event', nhưng tiêu đề phải nói ngay đây là lịch DỰ
+     KIẾN hay đã CHỐT — đọc preview mà tưởng đã chốt thì cả tổ chuẩn bị sai. */
+  if(zk==='event'&&n&&n.vs){
+    return n.vs.fixed ? '🚢 VESSEL SCHEDULE — CONFIRMED'
+                      : '🚢 VESSEL SCHEDULE — TENTATIVE';
+  }
+  /* ★ v8.9 — TÁI CƠ CẤU NHÓM: số người ngay trên tiêu đề, như schedBulk. */
+  if(zk==='reorg'&&n&&n.ro){
+    const r=n.ro;
+    const k=(r.moves||[]).length+(r.leavers||[]).length
+           +(r.joiners||[]).length+(r.pauses||[]).length;
+    /* Tiêu đề nói đúng việc CHÍNH của đợt: không có ai đổi nhóm thì gọi là
+       "STAFF CHANGE", đừng bắt người đọc mở tin ra mới biết. */
+    const head=(r.moves||[]).length ? '🔀 TEAM RESTRUCTURE' : '👥 STAFF CHANGE';
+    return head+(k?(' — '+k+' people'):'');
+  }
   return ZALO_TITLE[zk] || '🔔 NOTIFICATION';
 }
 /* Tin gửi CHUNG cho cả nhóm chứ không phải riêng một người → Apps Script bỏ
    dòng "👤 <tên người nhận>" ở đầu tin, vì ghi tên một người là gây hiểu nhầm. */
 function zaloIsBroadcast(n, zk){
+  /* Tin gộp tái cơ cấu liệt kê cả tổ — ghi tên một người ở đầu tin là gán
+     nhầm cả đợt cho đúng người đó (xem zaloAudienceName ngay dưới). */
+  if(zk==='reorg') return (n && n.ro) ? 1 : 0;
   return (zk==='event' || zk==='schedBulk' || zk==='training') ? 1 : 0;
 }
 /* NHÃN NGƯỜI NHẬN — tin gửi CHUNG ghi nhãn NHÓM, tin cá nhân ghi tên cá nhân.
@@ -550,6 +579,12 @@ function zaloAudienceName(n, zk, emp){
   if(zk==='schedBulk'){
     const p=new Set(((n&&n.hold)||[]).map(x=>x.to)).size;
     return p>1 ? (p+' employees') : (emp ? (emp.name||n.to) : n.to);
+  }
+  if(zk==='reorg'&&n&&n.ro){
+    const r=n.ro;
+    const k=(r.moves||[]).length+(r.leavers||[]).length
+           +(r.joiners||[]).length+(r.pauses||[]).length;
+    return k+' employees';
   }
   return emp ? (emp.name||n.to) : n.to;
 }
@@ -1342,8 +1377,56 @@ function zaloLines(n, zk){
       /* Dòng đầu = NHÓM người nhận + ngày, để đọc preview là biết ngay tin
          này gửi cho ai và cho hôm nào. */
       L.push(((n.aud)?('👥 '+n.aud):'')+(n.iso?('  '+zDate(n.iso)):''));
+      /* ★ v8.9 — PHƯƠNG ÁN NHẬP TÀU (js/25-vessel.js). Dựng câu tiếng Anh
+         từ chính dữ liệu phương án thay vì bê câu tiếng Việt của app sang.
+         Bốn thứ người đọc cần: tàu nào · phương án mấy trên mấy · ngày nào ·
+         đã chốt hay chưa. Chữ "TENTATIVE" phải nằm TRONG thân tin nữa, không
+         chỉ ở tiêu đề: tin gộp nhiều phương án thì tiêu đề chỉ hiện một lần. */
+      if(n.vs){
+        const v=n.vs;
+        L.push((v.vessel||'Vessel')+'  ·  Option '+(v.opt||1)
+               +((v.n>1)?('/'+v.n):'')+'  ·  '+(v.dates||''));
+        L.push(v.fixed ? '✅ CONFIRMED arrival date — plan your shift accordingly.'
+                       : '⏳ TENTATIVE — arrival date not fixed yet. Other options may follow.');
+        if(n.text){
+          /* Ghi chú riêng của phương án (nếu có) — cắt phần tiêu đề tiếng Việt
+             đã nói ở hai dòng trên, chỉ giữ đuôi ghi chú. */
+          const tail=String(n.text).split(' · ').slice(2).join(' · ').trim();
+          if(tail) L.push(tail);
+        }
+        break;
+      }
       if(n.text) L.push(n.text);
       break;
+
+    /* ---- ★ v8.9: TÁI CƠ CẤU NHÓM (js/24-reorg.js) ----
+       Chỉ tin GỘP (mang n.ro) mới tới được đây — tin riêng của từng người
+       gắn nz:1 nên không vào Zalo. Mỗi người một dòng thẳng cột:
+           <tên>   <nhóm cũ> › <nhóm mới>   <mẫu ca>
+       Người nghỉ việc gom xuống cuối, ghi rõ ngày làm việc cuối cùng. */
+    case 'reorg': {
+      const ro=n.ro;
+      if(!ro){ if(n.text) L.push(String(n.text).replace(/^[^\p{L}\p{N}]+/u,'').trim()); break; }
+      L.push('Effective '+zDate(ro.effFrom||'')+(ro.title?('  ·  '+ro.title):''));
+      const mv=(ro.moves||[]).slice(0,25);
+      mv.forEach(m=>{
+        L.push('· '+zName(m.id)+'   '+(m.old||'—')+' › '+(m.team||'—')
+               +(m.pat?('   '+m.pat):''));
+      });
+      if((ro.moves||[]).length>mv.length) L.push('… +'+((ro.moves||[]).length-mv.length)+' more');
+      (ro.joiners||[]).forEach(x=>{
+        L.push('· '+zName(x.id)+'   joins '+(x.team||'—')+' from '+zDate(x.from||''));
+      });
+      (ro.pauses||[]).forEach(x=>{
+        L.push('· '+zName(x.id)+'   long leave '+(x.code||'')+'  '
+               +zDate(x.from||'')+' → '+zDate(x.to||''));
+      });
+      (ro.leavers||[]).forEach(x=>{
+        L.push('· '+zName(x.id)+'   leaving — last working day '+zDate(x.last||''));
+      });
+      L.push('Rosters from '+zDate(ro.effFrom||'')+' to '+zDate(ro.toIso||'')+' have been rebuilt.');
+      break;
+    }
 
     /* ---- Nhóm G: lịch đào tạo (js/22-training.js) ----
        Dựng thân tin từ CHÍNH BẢN GHI đào tạo, không bê câu tiếng Việt của

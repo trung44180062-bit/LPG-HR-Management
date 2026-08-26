@@ -291,6 +291,14 @@ function evTblSet(k,v){
 /* Mở một sự kiện có sẵn để sửa */
 function evEdit(id){
   const ev=(S.events||{})[id];if(!ev){toast(t('Không tìm thấy sự kiện'));return;}
+  /* ★ v8.9 — sự kiện thuộc một CHUYẾN TÀU nhiều phương án (js/25-vessel.js)
+     phải sửa ở màn Lịch tàu: sửa lẻ ở đây sẽ làm lệch đánh số PA và làm hỏng
+     nhóm phương án. Chuyển thẳng sang đúng màn thay vì báo lỗi. */
+  if(typeof vsIsOpt==='function'&&vsIsOpt(ev)){
+    closeEventMgr();
+    if(typeof openVesselMgr==='function'){openVesselMgr('list');vsEdit(ev.plan);}
+    return;
+  }
   evEditId=id;
   evView='form';                       // bấm Sửa từ bảng thì phải thấy form
   evSel={};evDays(ev).forEach(iso=>{evSel[iso]=true;});
@@ -338,6 +346,15 @@ function evSave(){
 function evDelete(id){
   if(!hrGuard())return;
   const ev=(S.events||{})[id];if(!ev)return;
+  /* ★ v8.9 — xoá lẻ một PHƯƠNG ÁN TÀU ở đây sẽ để lại đánh số hổng
+     ("PA 1/3" và "PA 3/3" mà không có PA 2). Chuyển sang màn Lịch tàu, nơi
+     vsDelOpt() xoá xong còn đánh số lại. */
+  if(typeof vsIsOpt==='function'&&vsIsOpt(ev)&&typeof vsDelOpt==='function'){
+    closeEventMgr();
+    if(typeof openVesselMgr==='function')openVesselMgr('list');
+    vsDelOpt(ev.plan,id);
+    return;
+  }
   if(!confirm(t('Xoá sự kiện')+' "'+(ev.title||'')+'"? '+t('Thông báo đã gửi cũng được thu hồi.')))return;
   const n=evRevokeNotifs(id);
   delete S.events[id];
@@ -465,7 +482,7 @@ function evListHtml(){
   return list.map(ev=>{
     const d=evDays(ev), past=d.length&&d[d.length-1]<tIso;
     const live=d.includes(tIso);
-    return `<div class="ev-it${past?' past':''}${live?' live':''}${ev.id===evEditId?' on':''}">
+    return `<div class="ev-it${past?' past':''}${live?' live':''}${ev.prov?' prov':''}${ev.id===evEditId?' on':''}">
       <span class="tx"><b>${evCatInfo(ev.cat).ic} ${esc(ev.title||t('Sự kiện'))}
         <span class="evtag">${esc(t(evCatInfo(ev.cat).l))}</span></b>
         <i>${esc(evDateLabel(ev))} · ${t(evScopeInfo(ev.scope).l)}${
@@ -562,7 +579,7 @@ function evBannerHtml(isoList){
   }));
   if(!out.length)return '';
   out.sort((a,b)=>String(evDays(a)[0]||'').localeCompare(String(evDays(b)[0]||'')));
-  return `<div class="ev-banner">${out.map(ev=>`<div class="ev-b">
+  return `<div class="ev-banner">${out.map(ev=>`<div class="ev-b${ev.prov?' prov':''}">
     <span class="ic">${evCatInfo(ev.cat).ic}</span>
     <span class="tx"><b>${esc(ev.title||t('Sự kiện'))} <span class="evtag">${esc(t(evCatInfo(ev.cat).l))}</span></b>
       <i>${esc(evDateLabel(ev))}${ev.note?' · '+esc(ev.note):''}</i></span>

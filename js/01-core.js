@@ -381,6 +381,26 @@ const ROLE_ORD={eng:0,oper:1,other:2};
    "Không xếp lịch" (shiftType='none') — vẫn có tài khoản, vẫn thao tác phần
    mềm, nhưng không hiện trong bảng lịch, không tính vào định mức nhân lực. */
 function inSchedule(e){return !!e&&e.shiftType!=='none';}
+/* ★ v8.9 — NGÀY ĐÓ NGƯỜI NÀY CÒN TRONG BIÊN CHẾ KHÔNG?
+   `joinAt` = ngày vào làm, `leftAt` = ngày làm việc CUỐI CÙNG (khai ở màn
+   Tái cơ cấu nhóm, js/24-reorg.js). Người đã nghỉ việc KHÔNG bị xoá khỏi
+   S.employees — bảng công và đơn của các kỳ trước vẫn phải tra được — nên
+   mọi chỗ vẽ lịch / đếm quân số phải hỏi qua hàm này thay vì chỉ nhìn
+   e.active. */
+function inServiceOn(e,iso){
+  if(!e)return false;
+  if(e.joinAt&&iso<e.joinAt)return false;
+  if(e.leftAt&&iso>e.leftAt)return false;
+  return true;
+}
+/* Có mặt trong khoảng ngày (dùng để lọc DÒNG của bảng lịch: người nghỉ việc
+   giữa kỳ vẫn phải hiện ở kỳ đó, sang kỳ sau mới biến mất). */
+function inServiceRange(e,fromIso,toIso){
+  if(!e)return false;
+  if(e.joinAt&&toIso&&e.joinAt>toIso)return false;
+  if(e.leftAt&&fromIso&&e.leftAt<fromIso)return false;
+  return true;
+}
 /* Nhãn nhóm viết gọn: nhóm "Office" chỉ hiện "O" cho đỡ chiếm chỗ */
 function teamShort(tm){
   const s=String(tm||'').trim();

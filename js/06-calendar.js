@@ -154,6 +154,10 @@ function renderMatrix(C){
   else if(rg==='p3')days=days.filter(iso=>{const d=+iso.slice(8);return d>=11&&d<=20;});
   const fGrp=$(C.grp).value;
   let emps=schedEmps();if(fGrp&&fGrp!=='__all')emps=emps.filter(e=>(e.team||'')===fGrp);
+  /* ★ v8.9 — bỏ dòng của người đã nghỉ việc TRƯỚC khoảng đang xem (và người
+     chưa vào làm). Kỳ có ngày nghỉ việc thì họ VẪN hiện, ô ca dừng đúng ngày
+     cuối — đó chính là bản lịch trộn người ta cần khi bàn giao. */
+  if(days.length)emps=emps.filter(e=>inServiceRange(e,days[0],days[days.length-1]));
   const tIso=todayIso();
   const wkClass=iso=>{const dw=new Date(iso+'T00:00:00').getDay();return dw===0||dw===6?' wknd':'';};
   const diffOnly=C.real&&$('realDiffOnly')&&$('realDiffOnly').checked;
@@ -193,15 +197,43 @@ function renderMatrix(C){
   /* Ngày có sự kiện (nhập tàu, bảo dưỡng…) tô khác ngày thường — js/20-events.js */
   const evOn=typeof eventsOfDay==='function';
   const trOn=typeof trCellCls==='function';       // lịch đào tạo — js/22-training.js
-  const evCls=iso=>(evOn&&eventsOfDay(iso).length)?' evday':'';
-  const evTit=iso=>(evOn&&eventsOfDay(iso).length)?` title="📌 ${esc(evTitleOfDay(iso))}"`:'';
+  /* Ngày chỉ có PHƯƠNG ÁN CHƯA CHỐT (lịch tàu nhiều phương án, js/25-vessel.js)
+     tô nhạt + viền đứt, để không ai nhầm là đã chốt ngày cập. */
+  const evCls=iso=>{
+    if(!evOn||!eventsOfDay(iso).length)return '';
+    const all=eventsOfDay(iso);
+    return all.every(x=>x.prov)?' evday evprov':' evday';
+  };
+  /* ★ v8.9 — VẠCH CHUYỂN CƠ CẤU NHÓM (js/24-reorg.js). Cột của ngày áp dụng
+     mang viền trái đậm: nhìn một bảng liền vẫn thấy ngay đâu là ranh giới
+     giữa cơ cấu cũ và cơ cấu mới. */
+  const roOn=typeof roCutAt==='function';
+  const cutCls=iso=>(roOn&&roCutAt(iso))?' cut':'';
+  /* Nhãn nhóm CŨ→MỚI ở cột "Tổ" — chỉ khi mốc chuyển rơi vào khoảng đang xem.
+     Xem lịch kỳ sau thì chỉ còn nhóm mới, thêm mũi tên là thêm nhiễu. */
+  const roPair=id=>(roOn&&typeof roTeamPair==='function')?roTeamPair(id,days):null;
+  const roPairTxt=(id,tm)=>{
+    const p=roPair(id);
+    return p?`${esc(teamShort(p.old))}<i>→</i>${esc(teamShort(p.now))}`:esc(teamShort(tm));
+  };
+  const roPairTit=id=>{
+    const p=roPair(id);
+    return p?` title="${esc('Nhóm '+p.old+' → '+p.now+' từ '+fmtVNfull(p.iso))}"`:'';
+  };
+  /* Tooltip gộp — một ngày có thể vừa là mốc chuyển vừa có sự kiện. */
+  const evTit=iso=>{
+    const a=[];
+    if(evOn&&eventsOfDay(iso).length)a.push('📌 '+evTitleOfDay(iso));
+    if(roOn&&roCutAt(iso))a.push('🔀 '+roCutTitle(iso));
+    return a.length?` title="${esc(a.join('\n'))}"`:'';
+  };
   h+='<tr class="dnum"><th class="c0">No.</th><th class="c1">Tổ</th><th class="c2">ID</th><th class="c3">Họ tên</th><th class="c4">Vị trí</th>';
-  days.forEach(iso=>{h+=`<th class="${iso===tIso?'today':wkClass(iso)}${evCls(iso)}"${evTit(iso)}>${+iso.slice(8)}</th>`;});
+  days.forEach(iso=>{h+=`<th class="${iso===tIso?'today':wkClass(iso)}${evCls(iso)}${cutCls(iso)}"${evTit(iso)}>${+iso.slice(8)}</th>`;});
   h+='</tr>';
   h+='<tr class="dow"><th class="c0"></th><th class="c1"></th><th class="c2"></th><th class="c3"></th><th class="c4"></th>';
   /* Giữ nguyên chữ thứ (Mon/Tue…) — ngày sự kiện nhận diện bằng MÀU + tooltip,
      không thay chữ thứ, vì mất chữ thứ là mất thông tin đọc lịch quan trọng nhất. */
-  days.forEach(iso=>{const dw=new Date(iso+'T00:00:00').getDay();h+=`<th class="${iso===tIso?'today ':wkClass(iso)+' '}${dw===0?'dowSun':dw===6?'dowSat':''}${evCls(iso)}"${evTit(iso)}>${DOW_EN[dw]}</th>`;});
+  days.forEach(iso=>{const dw=new Date(iso+'T00:00:00').getDay();h+=`<th class="${iso===tIso?'today ':wkClass(iso)+' '}${dw===0?'dowSun':dw===6?'dowSat':''}${evCls(iso)}${cutCls(iso)}"${evTit(iso)}>${DOW_EN[dw]}</th>`;});
   h+='</tr></thead><tbody>';
 
   const byTeam={};emps.forEach(e=>{const t=e.team||'';(byTeam[t]=byTeam[t]||[]).push(e);});
@@ -210,13 +242,13 @@ function renderMatrix(C){
     const mem=byTeam[tm];
     const col=teamColor(tm);
     h+=`<tr class="grp"><td class="c0" style="background:${col}"></td><td class="c1" style="background:${col}"></td><td class="c2" colspan="3" style="background:#E7EEF5;font-weight:800">${esc(tm?('Nhóm '+tm):'(Chưa phân nhóm)')}</td>`;
-    days.forEach(iso=>{h+=`<td class="cell${iso===tIso?' today':''}"></td>`;});
+    days.forEach(iso=>{h+=`<td class="cell${iso===tIso?' today':''}${cutCls(iso)}"></td>`;});
     h+='</tr>';
     mem.forEach((e,i)=>{
       const roleLbl=e.role==='eng'?'Kỹ sư':e.role==='oper'?'Operator':(e.role==='other'?'':'');
       h+=`<tr>`+
         `<td class="c0">${i+1}</td>`+
-        `<td class="c1" style="background:${col}">${esc(teamShort(tm))}</td>`+
+        `<td class="c1${roPair(e.id)?' movedteam':''}" style="background:${col}"${roPairTit(e.id)}>${roPairTxt(e.id,tm)}</td>`+
         `<td class="c2">${esc(e.id)}</td>`+
         `<td class="c3">${esc(e.name||'(chưa đặt tên)')}</td>`+
         `<td class="c4">${esc(posLabel(posCode(e))||roleLbl)}</td>`;
@@ -232,7 +264,7 @@ function renderMatrix(C){
         const trT=trC?` title="${esc(trCellTitle(e.id,iso))}"`:'';
         /* .ovr = CÓ GHI ĐÈ (chấm tròn góc ô) — chỉ khi thật sự có S.over.
            .diff = KHÁC CHUẨN (viền) — gồm cả ô chỉ có đào tạo. */
-        h+=`<td class="cell${editable?' editable':''}${r.ovr?' ovr':''}${dif?' diff':''}${r.o&&r.o.prov?' prov':''}${iso===tIso?' today':''}${trC}" style="${style}"${trT} ${editable?`onclick="openCell('${e.id}','${iso}')"`:''}>${r.code||''}</td>`;
+        h+=`<td class="cell${editable?' editable':''}${r.ovr?' ovr':''}${dif?' diff':''}${r.o&&r.o.prov?' prov':''}${iso===tIso?' today':''}${cutCls(iso)}${trC}" style="${style}"${trT} ${editable?`onclick="openCell('${e.id}','${iso}')"`:''}>${r.code||''}</td>`;
       });
       h+='</tr>';
     });
@@ -735,7 +767,7 @@ function renderCalWeekGrid(){
                           :(noSelf?'':`onclick="openDaySheet('${iso}')"`);
         const trC=(typeof trCellCls==='function')?trCellCls(e.id,iso):'';
         body+=`<div class="c${iso===tIso?' today':''}${r.ovr?' ovr':''}${r.o&&r.o.prov?' prov':''}${
-          evOn&&eventsOfDay(iso).length?' ev':''}${trC}"${
+          evOn&&eventsOfDay(iso).length?(eventsOfDay(iso).every(x=>x.prov)?' ev evprov':' ev'):''}${trC}"${
           trC?` title="${esc(trCellTitle(e.id,iso))}"`:''} ${act}>${r.code?chip(r.code):'<i class="dash">—</i>'}</div>`;
       });
       body+='</div>';
@@ -745,7 +777,7 @@ function renderCalWeekGrid(){
   const hdr=`<div class="cwg-row hd"><div class="nm"></div>${days.map(iso=>{
       const dw=new Date(iso+'T00:00:00').getDay();
       const ev=evOn?eventsOfDay(iso):[];
-      return `<div class="c${iso===tIso?' today':''}${dw===0||dw===6?' we':''}${ev.length?' ev':''}"
+      return `<div class="c${iso===tIso?' today':''}${dw===0||dw===6?' we':''}${ev.length?(ev.every(x=>x.prov)?' ev evprov':' ev'):''}"
         ${ev.length?`title="📌 ${esc(evTitleOfDay(iso))}"`:''}>
         <b>${dowOf(iso)}</b><i>${+iso.slice(8)}</i>${ev.length?'<u class="evd">📌</u>':''}</div>`;
     }).join('')}</div>`;

@@ -15,10 +15,10 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 
 <!-- ===== CSS ===== -->
-<link rel="stylesheet" href="css/app.css?v=88">
-<link rel="stylesheet" href="css/portal.css?v=88">
-<link rel="stylesheet" href="css/print.css?v=88">
-<link rel="stylesheet" href="css/ui.css?v=88">
+<link rel="stylesheet" href="css/app.css?v=91">
+<link rel="stylesheet" href="css/portal.css?v=91">
+<link rel="stylesheet" href="css/print.css?v=91">
+<link rel="stylesheet" href="css/ui.css?v=91">
 <style id="pageDyn">@page{size:A4 portrait;margin:8mm}</style>
 </head>
 <body class="locked">
@@ -193,6 +193,13 @@
     <!-- Gọi thẳng BẢNG tổng hợp sự kiện (lọc theo loại / theo kỳ) — js/20-events.js -->
     <button class="btn sec sm hr-only" onclick="openEventMgr('','table')"
       title="Xem lại toàn bộ sự kiện dưới dạng bảng, lọc theo loại và theo kỳ">📋 Bảng sự kiện</button>
+    <!-- Lịch nhập tàu nhiều phương án — js/25-vessel.js. Badge = số chuyến còn
+         phương án chưa chốt, để không ai quên chốt lại khi hãng báo giờ cập. -->
+    <button class="btn sec sm hr-only" id="vesselBtn" style="position:relative" onclick="openVesselMgr()"
+      title="Khai 2–3 phương án ngày cập, cả tổ nắm trước; có lịch chốt thì bấm Chốt">🚢 Lịch tàu<span class="bdg" id="vesselBdg" style="display:none;position:static;margin-left:6px">0</span></button>
+    <!-- Tái cơ cấu nhóm khi có người nghỉ việc — js/24-reorg.js -->
+    <button class="btn sec sm hr-only" onclick="openReorgMgr()"
+      title="Khai ngày nghỉ việc và nhóm mới; phần mềm điền lại lịch từ mốc đó trở đi">🔀 Tái cơ cấu</button>
     <!-- Xếp lịch đào tạo — js/22-training.js. Quản trị / SC / thư ký / QL người Hàn
          xếp cho cả tổ; nhân viên thường vào bằng nút ở Trang chính để tự khai. -->
     <button class="btn sec sm secr-only" id="trainBtn" style="position:relative" onclick="openTrainMgr()"
@@ -231,6 +238,10 @@
       <button class="btn warn sm" onclick="clearSchedRange()">🗑️ Xóa lịch (khoảng)</button>
       <button class="btn warn sm" onclick="clearSchedAll()">🗑️ Xóa toàn bộ lịch</button>
     </div>
+    <!-- ★ v9.0 — CƠ CẤU TỔ. Lối vào chính của màn Biến động nhân sự
+         (js/24-reorg.js): người ta nghĩ tới cơ cấu đúng lúc đang tạo lịch,
+         nên nút phải nằm ở đây chứ không phải trong tab Lịch. -->
+    <div id="structBar" class="hr-only"></div>
     <div class="hint" style="margin-top:10px">
       <b>Kỳ lịch Hyosung: kỳ Tháng N = 21 tháng trước → 20 tháng này</b> (VD kỳ Tháng 7 = 21/06 → 20/07). Chọn <b>Kỳ lịch</b> (hoặc bấm <b>📍 Theo mốc</b> để phần mềm tự nhận kỳ chứa Mốc 1) rồi bấm <b>⚡ Điền lịch tự động</b> — hệ thống tạo đủ lịch cả kỳ.<br>
       Các kiểu ca: Ca 8 ngày là O O D D N N R R. Ca 6 ngày là D D N N R R. Hành chính T2–T6 làm ca O, nghỉ thứ bảy và chủ nhật. Hành chính T2–T7 làm ca O, chỉ nghỉ chủ nhật — operator mới nhận việc đi ca này để học việc. Không xếp lịch dành cho thư ký và quản lý cấp trên, vẫn có tài khoản nhưng không nằm trong bảng lịch.<br>
@@ -405,6 +416,18 @@
   <div class="modal" id="evBody"></div>
 </div>
 
+<!-- tái cơ cấu nhóm (người nghỉ việc, đổi nhóm) — js/24-reorg.js -->
+<div class="mask" id="roMask" onclick="if(event.target===this)closeReorgMgr()">
+  <!-- xwide: bảng khai nhóm mới có 7 cột + bảng xem trước cả kỳ, khổ 560px
+       của .modal thường cắt cụt. Xem .modal.xwide trong css/ui.css. -->
+  <div class="modal xwide" id="roBody"></div>
+</div>
+
+<!-- lịch nhập tàu nhiều phương án — js/25-vessel.js -->
+<div class="mask" id="vsMask" onclick="if(event.target===this)closeVesselMgr()">
+  <div class="modal xwide" id="vsBody"></div>
+</div>
+
 <!-- lịch đào tạo modal — js/22-training.js -->
 <div class="mask" id="trMask" onclick="if(event.target===this)closeTrainMgr()">
   <!-- xwide: màn này có bảng người + bảng từng ngày, khổ 560px của .modal
@@ -465,36 +488,42 @@
      config.js PHAI dung dau tien (khong co trong repo GitHub,
      copy tu js/config.example.js)
      ============================================================ -->
-<script src="js/config.js?v=88"></script>
-<script src="js/01-core.js?v=88"></script>
+<script src="js/config.js?v=91"></script>
+<script src="js/01-core.js?v=91"></script>
 <!-- i18n phai nap ngay sau 01-core (can bien LS) va truoc moi man hinh -->
-<script src="js/14-i18n.js?v=88"></script>
-<script src="js/00-icons.js?v=88"></script>
-<script src="js/02-storage.js?v=88"></script>
-<script src="js/03-nav.js?v=88"></script>
-<script src="js/04-schedule.js?v=88"></script>
-<script src="js/05-roster.js?v=88"></script>
-<script src="js/06-calendar.js?v=88"></script>
-<script src="js/07-manpower.js?v=88"></script>
-<script src="js/08-requests.js?v=88"></script>
-<script src="js/09-print.js?v=88"></script>
-<script src="js/10-account.js?v=88"></script>
-<script src="js/11-stats-data.js?v=88"></script>
-<script src="js/13-portal.js?v=88"></script>
-<script src="js/16-otlog-data.js?v=88"></script>
-<script src="js/15-report.js?v=88"></script>
-<script src="js/17-appr-sum.js?v=88"></script>
-<script src="js/18-advice.js?v=88"></script>
-<script src="js/19-meal.js?v=88"></script>
-<script src="js/20-events.js?v=88"></script>
-<script src="js/22-training.js?v=88"></script>
+<script src="js/14-i18n.js?v=91"></script>
+<script src="js/00-icons.js?v=91"></script>
+<script src="js/02-storage.js?v=91"></script>
+<script src="js/03-nav.js?v=91"></script>
+<script src="js/04-schedule.js?v=91"></script>
+<script src="js/05-roster.js?v=91"></script>
+<script src="js/06-calendar.js?v=91"></script>
+<script src="js/07-manpower.js?v=91"></script>
+<script src="js/08-requests.js?v=91"></script>
+<script src="js/09-print.js?v=91"></script>
+<script src="js/10-account.js?v=91"></script>
+<script src="js/11-stats-data.js?v=91"></script>
+<script src="js/13-portal.js?v=91"></script>
+<script src="js/16-otlog-data.js?v=91"></script>
+<script src="js/15-report.js?v=91"></script>
+<script src="js/17-appr-sum.js?v=91"></script>
+<script src="js/18-advice.js?v=91"></script>
+<script src="js/19-meal.js?v=91"></script>
+<script src="js/20-events.js?v=91"></script>
+<script src="js/22-training.js?v=91"></script>
 <!-- Khoá đào tạo (gom nhiều buổi) + bảng tổng hợp — nạp SAU 22-training.js
      vì dùng lại trAll/trSave/trHoursOfEmp… của file đó. -->
-<script src="js/23-course.js?v=88"></script>
+<script src="js/23-course.js?v=91"></script>
+<!-- Tái cơ cấu nhóm khi có người nghỉ việc — nạp SAU 04-schedule (genForEmp,
+     parseShiftPattern) và SAU 13-portal (newNotif, notifDrop). -->
+<script src="js/24-reorg.js?v=91"></script>
+<!-- Lịch nhập tàu nhiều phương án — mỗi phương án là một sự kiện trên lịch
+     nên phải nạp SAU 20-events.js. -->
+<script src="js/25-vessel.js?v=91"></script>
 <!-- Tên file cố tình KHÔNG chứa chữ "zalo": mạng công ty chặn mọi URL có tên
      ứng dụng nhắn tin, file cũ js/21-zalo.js bị proxy cắt với lỗi HTTP 499. -->
-<script src="js/21-notify.js?v=88"></script>
-<script src="js/12-main.js?v=88"></script>
+<script src="js/21-notify.js?v=91"></script>
+<script src="js/12-main.js?v=91"></script>
 
 </body>
 </html>

@@ -8,6 +8,9 @@ function teamList(){
   return seen.sort((a,b)=>{if(a==='')return 1;if(b==='')return -1;return a.localeCompare(b,'vi',{numeric:true});});
 }
 function renderSetup(){
+  /* Thanh Cơ cấu tổ — js/24-reorg.js. Dựng trước bảng nhân sự để nó luôn
+     có mặt kể cả khi danh sách còn trống (lúc đó vẫn cần biết cơ cấu). */
+  if(typeof renderStructBar==='function')renderStructBar();
   if(!$('setFrom').value||!$('setTo').value){
     const p=periodFor(S.meta.schedFrom?schedMonthOf(S.meta.schedFrom):curSchedMonth());
     $('setFrom').value=S.meta.schedFrom||p.from;$('setTo').value=S.meta.schedTo||p.to;
@@ -51,9 +54,14 @@ function memberRow(e){
    <td><select class="inp sm" onchange="updType('${e.id}',this.value)">
      <option value="type1"${sel('type1',e.shiftType)}>Ca 8 ngày (OODDNNRR)</option>
      <option value="type2"${sel('type2',e.shiftType)}>Ca 6 ngày (DDNNRR)</option>
+     <option value="custom"${sel('custom',e.shiftType)}>Mẫu ca tự khai…</option>
      <option value="admin"${sel('admin',e.shiftType)}>Hành chính T2–T6</option>
      <option value="office6"${sel('office6',e.shiftType)}>Hành chính T2–T7 (học việc)</option>
-     <option value="none"${sel('none',e.shiftType)}>Không xếp lịch</option></select></td>
+     <option value="none"${sel('none',e.shiftType)}>Không xếp lịch</option></select>
+     ${e.shiftType==='custom'?`<input class="inp sm pat${shiftPatternOk(e.pattern)?'':' bad'}" style="margin-top:4px;font-family:var(--mono)"
+        value="${esc(e.pattern||'')}" placeholder="VD: D D N N R R"
+        title="Chuỗi mã ca lặp lại kể từ Mốc 1. Viết liền OODDNNRR hoặc cách nhau bằng dấu cách / phẩy."
+        onchange="updPattern('${e.id}',this.value)">`:''}</td>
    <td><input type="date" class="inp sm" value="${e.joinAt||''}" title="Nhân viên vào giữa kỳ: chỉ điền lịch từ ngày này trở đi" onchange="updEmp('${e.id}','joinAt',this.value)"></td>
    <td><input type="date" class="inp sm" value="${e.a1||''}" ${dis} title="Ngày đầu của cặp Office / ca đầu" onchange="updEmp('${e.id}','a1',this.value)"></td>
    <td><input type="date" class="inp sm" value="${e.a2||''}" ${dis} title="Cặp kế tiếp (để đo chu kỳ)" onchange="updEmp('${e.id}','a2',this.value)"></td>
@@ -72,6 +80,19 @@ function updEmp(id,f,v,rerender){
   if(typeof renderAccTbl==='function')renderAccTbl();
 }
 function updType(id,v){if(!hrGuard())return;const e=empById(id);if(!e)return;e.shiftType=v;e.empType=(v==='admin')?'admin':'shift';save();renderSetup();}
+/* Mẫu ca tự khai — xem khối ★ v8.9 ở js/04-schedule.js.
+   Lưu nguyên chuỗi người dùng gõ (không chuẩn hoá) để họ nhìn lại đúng thứ
+   mình viết; phần đọc hiểu do parseShiftPattern() lo. Khai sai thì cảnh báo
+   ngay chứ không đợi tới lúc điền lịch mới phát hiện cả nhóm trống ca. */
+function updPattern(id,v){
+  if(!hrGuard())return;
+  const e=empById(id);if(!e)return;
+  e.pattern=String(v||'').trim();
+  save();renderSetup();
+  if(!e.pattern)toast(t('Chưa khai mẫu ca — người này sẽ không được điền lịch'));
+  else if(!shiftPatternOk(e.pattern))toast(t('Mẫu ca có mã lạ')+': '+esc(e.pattern));
+  else toast(t('Mẫu ca')+': '+shiftPatternLabel(e.pattern)+' ('+parseShiftPattern(e.pattern).length+' '+t('ngày')+')');
+}
 function changeId(oldId,val){
   if(!hrGuard())return;
   const e=empById(oldId);if(!e)return;

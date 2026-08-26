@@ -145,12 +145,76 @@ function buildSlots(period,phases){
   phases.forEach((p,i)=>{const cnt=base+(i<rem?1:0);for(let k=0;k<cnt;k++)slots.push(p);});
   return slots;
 }
+/* ============================================================
+   ★ v8.9 — MẪU CA TỰ KHAI
+   ------------------------------------------------------------
+   VÌ SAO CẦN
+
+   Bộ sinh lịch cũ chỉ biết đúng hai mẫu cứng: 8 ngày O-D-N-R (type1) và
+   6 ngày D-N-R (type2), chia đều bằng buildSlots(). Mẫu cứng đủ dùng khi
+   tổ có 4 nhóm luân phiên. Khi tổ rút xuống 2 nhóm — một nhóm trực DCS,
+   một nhóm đi field — thì chu kỳ không còn chia đều được nữa: người ta
+   muốn khai thẳng "D D N N R R" hay "O O D D N N R R" và để phần mềm lặp
+   lại đúng như thế.
+
+   CÁCH LÀM
+
+   Thêm kiểu ca thứ sáu `shiftType='custom'` + trường `e.pattern` là chuỗi
+   mã ca. Chuỗi lặp lại vô hạn kể từ MỐC 1 (e.a1) — cùng một mốc neo với
+   các kiểu ca cũ, nên mọi thứ khác (điền lịch, người vào giữa kỳ, tái cơ
+   cấu nhóm) dùng lại nguyên xi, không phải viết nhánh riêng.
+
+   Viết sao cũng nhận: "OODDNNRR" · "O-O-D-D-N-N-R-R" · "O,O,D,D,N,N,R,R"
+   · "o o d d n n r r". Mã dài (AL8, OTD…) phải có dấu ngăn, vì dính liền
+   thì không cách nào biết "ALO" là "AL8"? hay "A"+"L"+"O".
+   ============================================================ */
+/* Cắt chuỗi mẫu ca thành mảng mã. Trả [] nếu không đọc được mã nào. */
+function parseShiftPattern(str){
+  const s=String(str||'').trim();
+  if(!s)return [];
+  /* Có dấu ngăn (khoảng trắng, phẩy, gạch, gạch đứng) → cắt theo dấu ngăn.
+     Đây là cách khai duy nhất dùng được cho mã nhiều ký tự. */
+  if(/[\s,\-|/]/.test(s)){
+    return s.split(/[\s,\-|/]+/).map(x=>x.trim().toUpperCase()).filter(Boolean);
+  }
+  /* Dính liền → chỉ nhận mã MỘT ký tự (O D N R và mã tự khai 1 ký tự khác).
+     Ký tự lạ bị bỏ qua chứ không làm hỏng cả mẫu. */
+  const one=new Set((typeof allCodes==='function'?allCodes():DEFAULT_CODES)
+                      .map(x=>x.c).filter(c=>c.length===1));
+  return s.toUpperCase().split('').filter(ch=>one.has(ch));
+}
+/* Mẫu ca hợp lệ chưa? (dùng cho ô khai trong danh sách nhân sự) */
+function shiftPatternOk(str){
+  const a=parseShiftPattern(str);
+  if(!a.length)return false;
+  const known=new Set((typeof allCodes==='function'?allCodes():DEFAULT_CODES).map(x=>x.c));
+  return a.every(c=>known.has(c));
+}
+/* Viết lại cho gọn mắt: "O·O·D·D·N·N·R·R" */
+function shiftPatternLabel(str){
+  const a=parseShiftPattern(str);
+  return a.length?a.join('·'):'';
+}
+/* Vài mẫu hay dùng — chỉ là gợi ý bấm cho nhanh, không phải danh mục cứng. */
+const PATTERN_PRESETS=[
+  {p:'D D N N R R',       l:'2 ngày · 2 đêm · 2 nghỉ (6 ngày)'},
+  {p:'O O D D N N R R',   l:'2 hành chính · 2 ngày · 2 đêm · 2 nghỉ (8 ngày)'},
+  {p:'D D R R N N R R',   l:'2 ngày · 2 nghỉ · 2 đêm · 2 nghỉ (8 ngày)'},
+  {p:'D N R R',           l:'1 ngày · 1 đêm · 2 nghỉ (4 ngày)'},
+  {p:'D D D D R R',       l:'4 ngày · 2 nghỉ (6 ngày)'},
+  {p:'O O O O O R R',     l:'5 hành chính · 2 nghỉ (7 ngày)'}
+];
+
 // Generate {iso:code} for one employee across the given day list.
 function genForEmp(e,days){
   const out={};
   // Người mới vào giữa kỳ: chỉ xếp lịch từ NGÀY VÀO LÀM trở đi,
   // những ngày trước đó để trống (chưa thuộc biên chế).
   if(e.joinAt)days=days.filter(iso=>iso>=e.joinAt);
+  /* ★ v8.9 — người NGHỈ VIỆC: không sinh lịch quá ngày làm việc cuối cùng.
+     Đối xứng với joinAt ở trên. Họ vẫn nằm trong danh sách nhân sự để bảng
+     công các kỳ trước tra được — xem js/24-reorg.js. */
+  if(e.leftAt)days=days.filter(iso=>iso<=e.leftAt);
   if(!days.length)return out;
 
   if(e.shiftType==='none')return out;                      // thư ký / sếp — không xếp lịch
@@ -162,6 +226,19 @@ function genForEmp(e,days){
   // Hành chính T2–T7 (chỉ nghỉ Chủ nhật) — operator mới nhận việc đi ca này để học việc
   if(e.shiftType==='office6'){
     days.forEach(iso=>{const dw=new Date(iso+'T00:00:00').getDay();out[iso]=(dw===0)?'R':'O';});
+    return out;
+  }
+  /* Mẫu ca tự khai — lặp chuỗi e.pattern kể từ Mốc 1 (xem khối ★ v8.9 trên).
+     Khai sai / bỏ trống thì KHÔNG rơi về mẫu 8 ngày: rơi âm thầm là cách
+     chắc chắn nhất để cả nhóm nhận nhầm lịch mà không ai biết vì sao. */
+  if(e.shiftType==='custom'){
+    const slots=parseShiftPattern(e.pattern);
+    if(!slots.length)return out;
+    const anchor=e.a1||e.joinAt||days[0];const a0=dayNum(anchor);
+    days.forEach(iso=>{
+      const di=dayNum(iso)-a0;
+      out[iso]=slots[((di%slots.length)+slots.length)%slots.length];
+    });
     return out;
   }
   const type1=e.shiftType!=='type2'; // default type1

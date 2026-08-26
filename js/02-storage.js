@@ -56,7 +56,10 @@
    hôm sau mới gom thành một tin Zalo. Xem js/21-notify.js. */
 /* 'courses' = KHOÁ ĐÀO TẠO (★ v7.8) — một khoá gom nhiều buổi, xem
    js/23-course.js. Buổi vẫn nằm ở 'trainings', chỉ mang thêm courseId. */
-const FB_MAP_BRANCHES=['base','over','requests','accounts','printLog','notifs','events','digest','trainings','courses'];
+/* 'reorgs' = TÁI CƠ CẤU NHÓM (★ v8.9) — mỗi bản ghi là một mốc đổi cơ cấu
+   (ai nghỉ việc, ai sang nhóm nào) kèm ảnh chụp lịch cũ để hoàn tác.
+   Xem js/24-reorg.js. */
+const FB_MAP_BRANCHES=['base','over','requests','accounts','printLog','notifs','events','digest','trainings','courses','reorgs'];
 /* Nhánh nghe trọn gói (nhỏ, và luôn cần đủ để render).
    'del' = SỔ BIA MỘ: id nào đã bị xoá thì mọi máy tôn trọng, không hồi sinh —
    xem applyTombstones() và mục "CHỐNG HỒI SINH" bên dưới. */
@@ -143,6 +146,7 @@ function normalizeState(){
   S.digest=S.digest||{};                 // sổ chờ bản tin 08:00 — xem js/21-notify.js
   S.trainings=S.trainings||{};           // lịch đào tạo — xem js/22-training.js
   S.courses=S.courses||{};               // khoá đào tạo (gom nhiều buổi) — xem js/23-course.js
+  S.reorgs=S.reorgs||{};                 // tái cơ cấu nhóm — xem js/24-reorg.js
   S.del=S.del||{};                       // sổ bia mộ id đã xoá — xem applyTombstones()
   S.settings=S.settings||{minD:3,minN:3};
   S.settings.hours=S.settings.hours||{};
@@ -437,6 +441,7 @@ function fbTouch(){
      đệm khoá theo S.rev phải được xoá tay ở đây, nếu không sẽ hiện số cũ. */
   if(typeof mealResetCache==='function')mealResetCache();
   if(typeof evResetCache==='function')evResetCache();
+  if(typeof roResetCache==='function')roResetCache();   // ★ v8.9 — js/24-reorg.js
   if(typeof trResetCache==='function')trResetCache();
   _fbRenderT=setTimeout(()=>{
     if(typeof renderAll==='function')renderAll();
